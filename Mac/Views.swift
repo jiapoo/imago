@@ -5,14 +5,18 @@ enum SidebarItem: Hashable {
     case overview
     case library
     case storage
+    case folder(String)
     case device(String)
     case manage(String)
 }
 
 struct MainView: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
     @State private var selection: SidebarItem? = .overview
     @State private var showingAddPhone = false
+    @State private var naming: FolderNaming?
+    @State private var deletingFolder: String?
 
     var body: some View {
         NavigationSplitView {
@@ -21,6 +25,25 @@ struct MainView: View {
                     Label("Overview", systemImage: "checkmark.shield").tag(SidebarItem.overview)
                     Label("Library", systemImage: "photo.on.rectangle.angled").tag(SidebarItem.library)
                     StorageRow().tag(SidebarItem.storage)
+                }
+                Section("Folders") {
+                    ForEach(library.folders) { folder in
+                        FolderRow(folder: folder)
+                            .tag(SidebarItem.folder(folder.name))
+                            .contextMenu {
+                                Button("Rename…") { naming = .rename(folder.name) }
+                                Button("Show in Finder") { server.revealInFinder(server.foldersURL.appending(path: folder.name)) }
+                                Divider()
+                                Button("Delete Folder…", role: .destructive) { deletingFolder = folder.name }
+                                    .disabled(folder.count > 0)
+                            }
+                    }
+                    Button { naming = .newFolder(moving: []) } label: {
+                        Label("New Folder", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .disabled(!server.location.isAvailable)
                 }
                 Section("iPhones") {
                     ForEach(server.devices) { device in
@@ -43,7 +66,9 @@ struct MainView: View {
                 case .overview:
                     OverviewView(showingAddPhone: $showingAddPhone, selection: $selection)
                 case .library:
-                    LibraryView()
+                    BrowserView(scope: .all)
+                case .folder(let name):
+                    BrowserView(scope: .folder(name))
                 case .storage:
                     StorageView()
                 case .device(let id):
@@ -70,7 +95,53 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showingAddPhone) { AddPhoneSheet() }
+        .folderNameAlert($naming, library: library, server: server) { selection = .folder($0) }
+        .confirmationDialog("Delete “\(deletingFolder ?? "")”?", isPresented: Binding(get: { deletingFolder != nil }, set: { if !$0 { deletingFolder = nil } })) {
+            Button("Move to Trash", role: .destructive) {
+                guard let folder = deletingFolder else { return }
+                if selection == .folder(folder) { selection = .library }
+                Task { await library.deleteFolder(folder, server: server) }
+            }
+        } message: {
+            Text("The folder is empty.")
+        }
+        .task(id: server.catalogRevision) { await library.load(from: server) }
         .focusEffectDisabled()
+    }
+}
+
+/// A Folder in the sidebar. Drop photos or videos on it to move them in.
+struct FolderRow: View {
+    @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    let folder: MediaLibrary.Folder
+    @State private var targeted = false
+
+    var body: some View {
+        Label {
+            HStack {
+                Text(folder.name).lineLimit(1)
+                Spacer()
+                if folder.count > 0 {
+                    Text(folder.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: targeted ? "folder.fill.badge.plus" : "folder.fill")
+                .foregroundStyle(.tint)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            let dropped = Set(urls.map(\.standardizedFileURL))
+            let items = library.items.filter { dropped.contains($0.url.standardizedFileURL) }
+            guard !items.isEmpty else { return false }
+            // Dragging one selected item moves the whole selection.
+            let moving = items.contains { library.selection.contains($0.id) }
+                ? library.items.filter { library.selection.contains($0.id) }
+                : items
+            Task { await library.move(moving, to: folder.name, server: server) }
+            return true
+        } isTargeted: { targeted = $0 }
     }
 }
 
@@ -378,53 +449,6 @@ struct DeviceView: View {
         }
         if let last = summary?.lastBackup { return "Last backup \(last.shortRelative)" }
         return "Waiting for the first backup"
-    }
-}
-
-// MARK: - Library
-
-struct LibraryView: View {
-    @Environment(BackupServer.self) private var server
-    @State private var deviceID: String = "all"
-    @State private var files: [URL] = []
-
-    var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-                ForEach(files, id: \.self) { url in
-                    ThumbnailView(url: url)
-                        .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
-                        .contextMenu {
-                            Button("Open") { NSWorkspace.shared.open(url) }
-                            Button("Show in Finder") { server.revealInFinder(url) }
-                        }
-                }
-            }
-            .padding(24)
-        }
-        .overlay {
-            if files.isEmpty {
-                ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle.angled",
-                                       description: Text("Photos appear here as your iPhones back up."))
-            }
-        }
-        .navigationTitle("Library")
-        .navigationSubtitle("Recently backed up")
-        .toolbar {
-            if server.devices.count > 1 {
-                ToolbarItem(placement: .principal) {
-                    Picker("iPhone", selection: $deviceID) {
-                        Text("All iPhones").tag("all")
-                        ForEach(server.devices) { Text($0.name).tag($0.id) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-            }
-        }
-        .task(id: "\(deviceID)-\(server.totalAssets)") {
-            let device = server.devices.first { $0.id == deviceID }
-            files = await server.recentFiles(for: device, limit: 400)
-        }
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os
 import Testing
 @testable import PhotoBackupKit
 
@@ -25,6 +26,40 @@ import Testing
         var replies = client.frames.makeAsyncIterator()
         #expect(try await replies.next() == .control(.hello(deviceID: "d", deviceName: "n", protocolVersion: 4, proof: nil)))
         #expect(try await replies.next() == .chunk(key: key, offset: 7, data: payload))
+    }
+
+    /// A peer that never answers must not hang the caller: the deadline fails the connection.
+    @Test func silentPeerTripsTheDeadline() async throws {
+        let key = Secret.random()
+        let listener = try NWListener(using: BackupService.parameters(keys: [.init(identity: "phone", key: key)]), on: .any)
+        let accepted = OSAllocatedUnfairLock<[PeerConnection]>(initialState: [])
+        listener.newConnectionHandler = { connection in
+            let peer = PeerConnection(connection: connection)
+            accepted.withLock { $0.append(peer) }   // keep it open, never reply
+            Task { try await peer.start() }
+        }
+        let port: NWEndpoint.Port = try await withCheckedThrowingContinuation { continuation in
+            listener.stateUpdateHandler = { state in
+                if case .ready = state { continuation.resume(returning: listener.port!) }
+                if case .failed(let error) = state { continuation.resume(throwing: error) }
+            }
+            listener.start(queue: .global())
+        }
+        defer { listener.cancel() }
+
+        let client = PeerConnection(
+            endpoint: .hostPort(host: "127.0.0.1", port: port),
+            parameters: BackupService.parameters(secret: key, identity: "phone")
+        )
+        try await client.start()
+        try await client.send(.control(.goodbye))
+        var replies = client.frames.makeAsyncIterator()
+
+        let started = ContinuousClock.now
+        await #expect(throws: PeerConnection.PeerError.stalled("waiting for the Mac")) {
+            _ = try await client.withDeadline(1, "waiting for the Mac") { try await replies.next() }
+        }
+        #expect(ContinuousClock.now - started < .seconds(5))
     }
 
     @Test func wrongSecretIsRefused() async throws {

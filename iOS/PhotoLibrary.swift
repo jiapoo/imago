@@ -10,8 +10,10 @@ enum PhotoLibrary {
     }
 
     /// One entry per asset, oldest first. No file data is read here.
-    static func scan() -> [ManifestEntry] {
+    /// `progress` gets 0...1 as assets are read.
+    static func scan(progress: @escaping (Double) -> Void = { _ in }) -> [ManifestEntry] {
         let albums = albumMembership()
+        progress(0.1)
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         options.includeAssetSourceTypes = [.typeUserLibrary, .typeiTunesSynced]
@@ -19,16 +21,19 @@ enum PhotoLibrary {
 
         var entries: [ManifestEntry] = []
         entries.reserveCapacity(assets.count)
-        assets.enumerateObjects { asset, _, _ in
+        let count = max(assets.count, 1)
+        assets.enumerateObjects { asset, index, _ in
             if let entry = entry(for: asset, albums: albums[asset.localIdentifier] ?? []) {
                 entries.append(entry)
             }
+            if index % 200 == 0 { progress(0.1 + 0.9 * Double(index) / Double(count)) }
         }
         return entries
     }
 
     /// Writes one resource to a temporary file, downloading the original from iCloud if needed.
-    static func export(_ key: ResourceKey) async throws -> URL {
+    /// `progress` gets 0...1 while the original downloads from iCloud; it isn't called for files already on the iPhone.
+    static func export(_ key: ResourceKey, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [key.assetID], options: nil).firstObject,
               let resource = PHAssetResource.assetResources(for: asset).first(where: { ResourceKind($0.type) == key.kind })
         else { throw ExportError.missing(key) }
@@ -37,6 +42,7 @@ enum PhotoLibrary {
             .appending(path: UUID().uuidString + "-" + resource.originalFilename)
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
+        options.progressHandler = { progress($0) }
         try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
         return url
     }

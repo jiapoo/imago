@@ -131,3 +131,43 @@ private func metadata(filename: String = "IMG_4821.HEIC", date: Date? = Date(tim
         #expect(FileHasher.sha256(of: Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     }
 }
+
+@Suite struct LibraryRecordTests {
+    @Test func phonesKeepTheirFoldersAndNewOnesGetFreeNames() {
+        var record = LibraryRecord()
+        #expect(record.folder(for: "A", name: "iPhone", preferred: "iPhone") == "iPhone")
+        #expect(record.folder(for: "B", name: "iPhone", preferred: "iPhone") == "iPhone 2")
+        #expect(record.folder(for: "C", name: "iphone", preferred: "IPHONE") == "IPHONE 3")
+        // Pairing again, under a new name, keeps the folder and updates the name.
+        #expect(record.folder(for: "A", name: "Tennis iPhone", preferred: "Tennis iPhone") == "iPhone")
+        #expect(record.device("A")?.name == "Tennis iPhone")
+        #expect(record.devices.count == 3)
+    }
+
+    @Test func savesAndLoadsFromTheLibraryRoot() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        #expect(try LibraryRecord.load(from: root) == nil)
+
+        var record = LibraryRecord(createdAt: Date(timeIntervalSince1970: 1_792_506_612))
+        record.folder(for: "A", name: "Jia's iPhone", preferred: "Jia's iPhone")
+        try record.save(to: root)
+        #expect(try LibraryRecord.load(from: root) == record)
+        #expect(FileManager.default.fileExists(atPath: root.appending(path: ".photobackup/library.json").path))
+    }
+
+    @Test func sidecarsWithoutADeviceStillDecode() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        let old = Sidecar(metadata: metadata(), files: [])
+        let decoded = try decoder.decode(Sidecar.self, from: encoder.encode(old))
+        #expect(decoded.deviceID == nil)
+        #expect(!String(decoding: try encoder.encode(old), as: UTF8.self).contains("deviceID"))
+
+        let new = Sidecar(metadata: metadata(), files: [], deviceID: "A")
+        #expect(try decoder.decode(Sidecar.self, from: encoder.encode(new)).deviceID == "A")
+    }
+}

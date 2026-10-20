@@ -9,7 +9,6 @@ struct PhotoBackupApp: App {
     init() {
         let client = BackupClient()
         BackgroundBackup.register(client: client)
-        if #available(iOS 26, *) { ContinuedBackup.register(client: client) }
         _client = State(initialValue: client)
     }
 
@@ -75,41 +74,24 @@ enum BackgroundBackup {
 enum ContinuedBackup {
     static let prefix = "com.example.photobackup.ios.continued"
 
-    static func register(client: BackupClient) {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: prefix + ".*", using: .main) { bgTask in
-            let task = UncheckedSendable(value: bgTask)
-            MainActor.assumeIsolated {
-                guard let continued = task.value as? BGContinuedProcessingTask else {
-                    task.value.setTaskCompleted(success: false)
-                    return
-                }
-                log.info("iOS started the continued-processing task")
-                let work = Task { await client.run(automatic: false, systemTask: continued) }
-                continued.expirationHandler = {
-                    log.notice("iOS expired the continued-processing task")
-                    work.cancel()
-                }
-                Task {
-                    // Started too late: the app is already backing up without it.
-                    guard await work.value else {
-                        task.value.setTaskCompleted(success: true)
-                        return
-                    }
-                    if case .finished = client.phase {
-                        task.value.setTaskCompleted(success: true)
-                    } else {
-                        task.value.setTaskCompleted(success: false)
-                    }
-                }
-            }
-        }
-    }
-
     /// Asks iOS to run the backup now. Returns false if it can't, and the app runs it in the foreground instead.
+    ///
+    /// Each request gets a fresh identifier (Info.plist allows `prefix.*`), and its handler must be
+    /// registered under that exact identifier before submitting. iOS doesn't match the wildcard
+    /// pattern to a handler: submitting with no handler for the exact ID terminates the app.
     @MainActor
-    static func submit() -> Bool {
+    static func submit(client: BackupClient) -> Bool {
+        let identifier = "\(prefix).\(UUID().uuidString)"
+        let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { bgTask in
+            handle(bgTask, client: client)
+        }
+        guard registered else {
+            log.notice("Couldn't register a handler for \(identifier, privacy: .public)")
+            return false
+        }
+
         let request = BGContinuedProcessingTaskRequest(
-            identifier: "\(prefix).\(UUID().uuidString)",
+            identifier: identifier,
             title: "Backing up photos",
             subtitle: "Connecting to your Mac…"
         )
@@ -120,6 +102,34 @@ enum ContinuedBackup {
         } catch {
             log.notice("iOS refused the continued-processing request: \(String(describing: error), privacy: .public)")
             return false
+        }
+    }
+
+    private static func handle(_ bgTask: BGTask, client: BackupClient) {
+        let task = UncheckedSendable(value: bgTask)
+        MainActor.assumeIsolated {
+            guard let continued = task.value as? BGContinuedProcessingTask else {
+                task.value.setTaskCompleted(success: false)
+                return
+            }
+            log.info("iOS started the continued-processing task")
+            let work = Task { await client.run(automatic: false, systemTask: continued) }
+            continued.expirationHandler = {
+                log.notice("iOS expired the continued-processing task")
+                work.cancel()
+            }
+            Task {
+                // Started too late: the app is already backing up without it.
+                guard await work.value else {
+                    task.value.setTaskCompleted(success: true)
+                    return
+                }
+                if case .finished = client.phase {
+                    task.value.setTaskCompleted(success: true)
+                } else {
+                    task.value.setTaskCompleted(success: false)
+                }
+            }
         }
     }
 }

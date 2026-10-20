@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct PhotoBackupMacApp: App {
     @State private var server: BackupServer
+    @State private var library = MediaLibrary()
 
     init() {
         let server = BackupServer()
@@ -23,6 +24,7 @@ struct PhotoBackupMacApp: App {
         Window("Photo Backup", id: "main") {
             MainView()
                 .environment(server)
+                .environment(library)
                 .frame(minWidth: 820, minHeight: 560)
                 .tint(.blue)
         }

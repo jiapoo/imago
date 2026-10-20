@@ -111,10 +111,14 @@ public struct Sidecar: Codable, Sendable, Equatable {
 
     public var metadata: AssetMetadata
     public var files: [File]
+    /// The phone the asset came from, so it stays known after the files move out of that phone's
+    /// folder. Absent in sidecars written before it existed; those belong to the folder's phone.
+    public var deviceID: String?
 
-    public init(metadata: AssetMetadata, files: [File]) {
+    public init(metadata: AssetMetadata, files: [File], deviceID: String? = nil) {
         self.metadata = metadata
         self.files = files
+        self.deviceID = deviceID
     }
 
     /// Records a file, replacing an older revision of the same kind.

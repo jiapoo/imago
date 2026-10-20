@@ -71,11 +71,27 @@ iPhone app shows **"Your Mac suggests N changes"**, and the user approves or dec
 also go through iOS's own confirmation and land in Recently Deleted. Only items fully backed up on the Mac
 can be deleted. See `docs/PROTOCOL.md` §6.1.
 
+## Browsing and organizing on the Mac
+
+**Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder.
+**Folders** in the sidebar are real folders on the backup drive (`Folders/<name>`), so they stay usable
+without the app. Select items (click, ⌘-click, ⇧-click, ⌘A), then from the bar at the bottom:
+
+- **Move To** a Folder, or drag items onto one in the sidebar. Their sidecars go with them, and the
+  phone isn't asked for them again. **Back to iPhone's Folder** moves them back into the dated layout.
+- **Remove from iPhone** queues a deletion for the phone (only for items fully backed up). It happens
+  once you confirm it on the iPhone.
+- **Trash** moves them to the Trash and stops backing them up from the phone.
+
+Space opens Quick Look, Return or a double-click opens the file. Files put into a Folder in Finder or by
+AirDrop show up too. A phone's file moved there in Finder is recognized by name, size and checksum.
+
 ## Not built yet
 
 - A second destination (external drive or NAS) and a "copies" count
 - Scheduled checksum scrubs and restore drills
 - Requiring two verified copies before the Mac offers to delete from the iPhone
 - Moving existing backups when the location changes (today they stay where they were)
+- Keeping pairings when the library moves to another Mac: `library.json` keeps each phone's folder, but each phone scans the new Mac's QR code once
 - Deduplicating photos that two phones share through iCloud Photos (each phone keeps its own copy)
 - Incremental scans using `PHPhotoLibrary` change tokens (today every backup reads the whole library's metadata)

@@ -43,7 +43,7 @@ Every connection is TCP wrapped in **TLS with a pre-shared key (PSK)**. There ar
 | Cipher suite | `TLS_PSK_WITH_AES_128_GCM_SHA256` (IANA `0x00A8`), the only one offered |
 | PSK identity | UTF-8 bytes of a string: `pair` for pairing, the phone's device ID for backups |
 | PSK | 32 random bytes |
-| Keepalive | TCP keepalive on, 10 s idle (Mac setting; recommended, not required) |
+| Keepalive | TCP keepalive on: first probe after 10 s idle, then every 5 s, give up after 4 (≈30 s). Recommended, not required |
 
 The negotiated version is TLS 1.2 (`0x0303`, checked on a loopback connection). Windows' built-in TLS
 (SChannel) has poor PSK support, so a Windows server should use OpenSSL (`SSL_CTX_set_psk_server_callback`)
@@ -96,6 +96,8 @@ Then both sides close. The server MUST:
    that listener if needed.
 3. If `deviceID` is already paired, replace its key and keep its existing folder (this is how a
    reinstalled app reconnects to its old backups; the phone keeps its device ID in the Keychain).
+   If it isn't paired but the backup location's `library.json` lists it (§7.6), use the folder listed
+   there: the phone backed up into this library from another Mac, or before it was removed.
 4. Make a new pairing code right after a successful pairing, so one code pairs one phone.
 
 **Removing** a phone deletes its key. Its photos stay on disk.
@@ -343,6 +345,8 @@ the app, and moving it between servers should just work. So a second implementat
 
 ```
 <backup location>/
+  .photobackup/library.json              library ID and each phone's folder (§7.6)
+  Folders/<name>/…                       folders the user makes, e.g. Folders/Tennis (§7.7)
   <device folder>/                       one per paired phone
     2026/10/2026-10-20_143012_IMG_4821.HEIC
     2026/10/2026-10-20_143012_IMG_4821.MOV
@@ -353,6 +357,7 @@ the app, and moving it between servers should just work. So a second implementat
     .photobackup/index.json                         private cache
     .photobackup/phone.json                         library snapshot (§7.5)
     .photobackup/changes.json                       changes waiting for the phone, and done ones
+    .photobackup/skip.json                          keys of files the user trashed on the server
     .photobackup/partial/…                          unfinished uploads
 ```
 
@@ -388,6 +393,7 @@ Written pretty-printed with sorted keys and ISO 8601 dates, replaced atomically.
 
 ```json
 {
+  "deviceID" : "6F1C…",
   "files" : [
     {
       "kind" : "photo",
@@ -407,7 +413,9 @@ and date). If the sidecar path holds another asset's sidecar (a different `metad
 A media file and its sidecar may end up with different numbers, which is fine because the sidecar
 lists its files by name.
 
-`name` is relative to the sidecar's folder. Storing a file replaces any earlier entry of the same `kind`
+`deviceID` is the phone the asset came from, so it stays known if the files are moved out of that
+phone's folder. Sidecars written before it existed leave it out; those belong to the phone whose folder
+they are in. `name` is relative to the sidecar's folder. Storing a file replaces any earlier entry of the same `kind`
 (a newer edit replaces the older one), and `metadata` is replaced with the latest.
 
 ### 7.4 Index
@@ -425,6 +433,48 @@ it tells the server what's on the phone now and what of it is safely backed up, 
 suggest clean-ups (duplicates by original SHA-256, similar shots, large videos, screenshots) while the
 phone is away. `changes.json` holds `{"pending": [<LibraryChange>…], "done": [{"change", "report"}…]}`.
 Both are private to the server, like the index.
+
+### 7.6 Library record
+
+`<backup location>/.photobackup/library.json` says which library this is and which phone owns which
+folder. It lives with the photos, so a library that moves to another drive or another Mac still knows
+whose photos are where. Written pretty-printed with sorted keys and ISO 8601 dates, replaced atomically.
+
+```json
+{
+  "createdAt" : "2026-10-20T14:30:12Z",
+  "devices" : [
+    { "deviceID" : "6F1C…", "folder" : "Jia's iPhone", "name" : "Jia's iPhone" }
+  ],
+  "libraryID" : "0B6E…"
+}
+```
+
+- `libraryID` is made when the record is first written and never changes.
+- A server creates the record the first time it uses a location that has none, listing its paired phones.
+- When a phone is paired or first backs up here, add it if it's missing. A folder no other phone in
+  the list has is used as is; otherwise add ` 2`, ` 3`… (compared without case, since macOS and Windows
+  file systems usually ignore it).
+- Removing a phone from a server doesn't remove it from this list, so pairing it again finds its folder.
+- Device keys are **never** written here. A phone pairs again with each server.
+- A server that can't read the record must not overwrite it.
+
+### 7.7 Folders
+
+`Folders/<name>/` holds folders the user makes to organize the library, such as one for tennis
+videos. An asset moved there takes all its files and its sidecar along, flat in the folder, keeping
+their names (numbered on a clash, as in §7.2). Its sidecar's `deviceID` says which phone it came from.
+
+Moved files stay in their phone's index, so the phone isn't asked for them again. The Mac stores their
+paths relative to the device folder, so they start with `../Folders/`. When rebuilding an index from
+sidecars, read the device folder and every sidecar under `Folders/` whose `deviceID` is that phone.
+
+A Folder can also hold files that never came from a phone (AirDrop, Finder). They have no sidecar
+and are shown as they are.
+
+When the user moves a file to the Trash on the server, its keys go into the device's `skip.json`
+(a JSON array of key text forms), and the server leaves them out of `need`, even though the phone still
+has them. Without this, the next backup would bring the file straight back.
 
 ## 8. Versioning and changes
 

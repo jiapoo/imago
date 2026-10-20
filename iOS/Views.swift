@@ -84,6 +84,12 @@ struct StatusHero: View {
             .buttonBorderShape(.capsule)
             .controlSize(.large)
             .disabled(client.phase.isRunning)
+            if case .waitingToRetry = client.phase {
+                Button("Connect Now", systemImage: "arrow.clockwise") { client.retryNow() }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+            }
             if client.phase.isRunning {
                 Label(runningNote, systemImage: "lock.open.display")
                     .font(.caption)

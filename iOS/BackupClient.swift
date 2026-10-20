@@ -64,6 +64,22 @@ final class BackupClient {
     private var systemTask: AnyObject?
     /// True from the moment `run` starts until it returns, whichever way it was started.
     private var isRunInProgress = false
+    /// How far through the current step (scanning the library, or the current file) the backup is, 0...1.
+    /// iOS marks a continued-processing task stalled, and may stop it, if its progress stops moving.
+    private var stepFraction: Double = 0
+    private var stepFractionChanged = Date.distantPast
+    /// Files this session uploads, and how many it has finished, for the system progress.
+    private var sessionFileCount = 0
+    private var sessionFilesDone = 0
+    /// What the system progress last showed, out of `systemUnits`. It only ever goes up: iOS treats
+    /// a task whose progress doesn't move, or jumps back on a reconnect, as stalled.
+    private var reportedUnits: Int64 = 0
+    /// When the system progress last went up.
+    private var lastReport = Date.distantPast
+    private var lastProgressLog = Date.distantPast
+    private static let systemUnits: Int64 = 1_000_000
+    /// The library scan from this run's first attempt. Reconnecting doesn't rescan, which takes a minute on a big library.
+    private var runManifest: [ManifestEntry]?
     private(set) var credential: DeviceCredential?
     private(set) var isPairing = false
     private(set) var photoCount = 0
@@ -101,8 +117,20 @@ final class BackupClient {
     private static let credentialAccount = "device-credential"
     private static let deviceIDAccount = "device-id"
     private static let manifestBatchSize = 500
+    // Deadlines for network waits. Past these the connection is treated as dead and the backup reconnects.
+    // Local work (exporting from Photos, hashing) isn't covered, so a slow iCloud download never trips them.
+    nonisolated private static let connectTimeout: TimeInterval = 30
+    nonisolated private static let sendTimeout: TimeInterval = 60
+    nonisolated private static let replyTimeout: TimeInterval = 120
+    /// After the last chunk the Mac re-hashes the whole file; a large video on a slow drive takes a while.
+    nonisolated private static let verifyTimeout: TimeInterval = 300
     /// Connection drops are retried this many times, waiting 4, 8, 16, 32, then 60 seconds.
     private static let maxRetries = 8
+    /// When the Mac isn't on the network at all (e.g. the phone is away from home), give up after
+    /// this many searches instead of retrying for minutes. The backup resumes when the app next opens.
+    private static let maxSearches = 3
+    /// Set by `retryNow()` to cut the current wait short.
+    private var retryRequested = false
 
     init() {
         if let data = Keychain.load(account: Self.credentialAccount) {
@@ -189,7 +217,7 @@ final class BackupClient {
         guard !phase.isRunning, !isRunInProgress else { return }
         if automatic {
             lastAutomaticRun = .now
-        } else if #available(iOS 26, *), ContinuedBackup.submit() {
+        } else if #available(iOS 26, *), ContinuedBackup.submit(client: self) {
             log.info("Continued-processing request accepted; waiting for iOS to start it")
             phase = .searching
             // iOS can accept the request without starting it right away. Don't sit there: if its
@@ -218,8 +246,21 @@ final class BackupClient {
         isRunInProgress = true
         log.info("Backup started (automatic: \(automatic), system task: \(systemTask != nil))")
         self.systemTask = systemTask
+        runManifest = nil
+        reportedUnits = 0
+        sessionFileCount = 0
+        sessionFilesDone = 0
+        reportToSystem()
+        let heartbeat = systemTask == nil ? nil : Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                self?.keepProgressMoving()
+            }
+        }
         defer {
+            heartbeat?.cancel()
             self.systemTask = nil
+            runManifest = nil
             isRunInProgress = false
         }
 
@@ -235,6 +276,7 @@ final class BackupClient {
         }
 
         var attempt = 0
+        var searches = 0
         while true {
             do {
                 phase = try await runSession()
@@ -242,28 +284,43 @@ final class BackupClient {
                 lastBackup = .now
                 unfinished = nil
                 break
-            } catch is CancellationError {
-                log.notice("Backup cancelled")
+            } catch where error is CancellationError || Task.isCancelled {
+                // Cancelling also ends the connection, so the error can look like a dropped reply.
+                // iOS stopping the task isn't a failure: `unfinished` is kept, and the backup resumes
+                // when the app next opens.
+                log.notice("Backup cancelled (\(String(describing: error), privacy: .public))")
                 phase = .idle
                 break
             } catch {
                 log.error("Backup attempt \(attempt + 1) failed: \(String(describing: error), privacy: .public)")
-                guard Self.isRetryable(error), attempt < Self.maxRetries, !Task.isCancelled else {
+                if case BackupServiceError.serverNotFound = error { searches += 1 } else { searches = 0 }
+                guard Self.isRetryable(error), attempt < Self.maxRetries, searches < Self.maxSearches, !Task.isCancelled else {
                     phase = .failed(error.localizedDescription)
                     break
                 }
                 attempt += 1
                 let delay = min(60, 2 << attempt)
+                // Nothing is moving while we wait, so let the screen lock as usual.
+                UIApplication.shared.isIdleTimerDisabled = false
+                retryRequested = false
                 for remaining in stride(from: delay, to: 0, by: -1) {
                     phase = .waitingToRetry(attempt: attempt, seconds: remaining, reason: Self.describe(error))
                     try? await Task.sleep(for: .seconds(1))
-                    if Task.isCancelled { break }
+                    if Task.isCancelled || retryRequested { break }
                 }
+                retryRequested = false
+                UIApplication.shared.isIdleTimerDisabled = true
                 if Task.isCancelled { phase = .idle; break }
             }
         }
         await refreshCounts()
         return true
+    }
+
+    /// Skips the rest of the wait before the next reconnect attempt.
+    func retryNow() {
+        guard case .waitingToRetry = phase else { return }
+        retryRequested = true
     }
 
     /// Network trouble is worth retrying; a refusal from the Mac or missing permission isn't.
@@ -281,20 +338,72 @@ final class BackupClient {
 
     private static func describe(_ error: Error) -> String {
         if case BackupServiceError.serverNotFound = error { return "Can't find your Mac on this Wi-Fi." }
+        if case PeerConnection.PeerError.lostNetwork = error { return "Wi-Fi connection lost." }
+        if case PeerConnection.PeerError.stalled = error { return "Your Mac stopped responding." }
         return "The connection to your Mac dropped."
     }
 
+    /// Records progress within the current step; reported to iOS at most a few times a second.
+    private func setStepFraction(_ fraction: Double) {
+        let fraction = min(max(fraction, 0), 1)
+        guard fraction > stepFraction else { return }
+        stepFraction = fraction
+        guard Date.now.timeIntervalSince(stepFractionChanged) > 0.5 else { return }
+        stepFractionChanged = .now
+        reportToSystem()
+    }
+
+    private func startStep() {
+        stepFraction = 0
+        stepFractionChanged = .now
+    }
+
+    /// iOS checks the task's progress every so often and stops it if nothing moved. Some waits report
+    /// nothing for a while (a reconnect, an iCloud download that hasn't started, the Mac hashing a
+    /// long video), so creep forward a little whenever there's been no real progress for a few seconds.
+    private func keepProgressMoving() {
+        guard Date.now.timeIntervalSince(lastReport) >= 3 else { return }
+        reportToSystem(creep: true)
+    }
+
+    /// The whole run as one 0...1 estimate: connecting and comparing take the first 5%, the files this
+    /// session sends the rest. Counted over this session's files, not the library, so every file moves it.
+    private var estimatedFraction: Double {
+        switch phase {
+        case .searching, .connecting: 0.01 * stepFraction
+        case .comparing: 0.01 + 0.04 * stepFraction
+        case .uploading:
+            0.05 + 0.95 * (Double(sessionFilesDone) + stepFraction) / Double(max(sessionFileCount, 1))
+        case .finished: 1
+        default: 0
+        }
+    }
+
     /// Mirrors progress into the iOS 26 system progress UI for a continued-processing task.
-    private func reportToSystem() {
+    private func reportToSystem(creep: Bool = false) {
         guard #available(iOS 26, *), let task = systemTask as? BGContinuedProcessingTask else { return }
+        let total = Self.systemUnits
+        var units = max(reportedUnits, Int64(estimatedFraction * Double(total)))
+        if creep && units == reportedUnits {
+            // Move at least a little, slowing as it nears the end so it never gets there first.
+            units = reportedUnits + max(1, (total - reportedUnits) / 400)
+        }
+        if case .finished = phase {} else { units = min(units, total - 1) }
+        if units > reportedUnits { lastReport = .now }
+        reportedUnits = units
+        task.progress.totalUnitCount = total
+        task.progress.completedUnitCount = units
+        if Date.now.timeIntervalSince(lastProgressLog) >= 10 {
+            lastProgressLog = .now
+            log.info("System progress \(units)/\(total) (\(String(describing: self.phase), privacy: .public))")
+        }
+
         switch phase {
         case .searching, .connecting:
             task.updateTitle("Backing up photos", subtitle: "Connecting to \(credential?.serverName ?? "your Mac")…")
         case .comparing:
             task.updateTitle("Backing up photos", subtitle: "Comparing with your Mac…")
         case .uploading(let done, let total, let current):
-            task.progress.totalUnitCount = Int64(max(total, 1))
-            task.progress.completedUnitCount = Int64(done)
             task.updateTitle("Backing up \(done.formatted()) of \(total.formatted())", subtitle: current)
         case .waitingToRetry(_, let seconds, let reason):
             task.updateTitle("Waiting for your Mac", subtitle: "\(reason) Retrying in \(seconds)s.")
@@ -307,6 +416,7 @@ final class BackupClient {
         guard let credential else { throw ClientError.notPaired }
         guard await PhotoLibrary.requestAccess() else { throw ClientError.noPhotosAccess }
 
+        startStep()
         phase = .searching
         log.info("Looking for the Mac on the network")
         let endpoint = try await BackupService.findServer(id: credential.serverID)
@@ -318,7 +428,7 @@ final class BackupClient {
         ))
         defer { peer.cancel() }
         do {
-            try await peer.start()
+            try await peer.withDeadline(Self.connectTimeout, "connecting") { try await peer.start() }
         } catch let error as NWError {
             // A TLS failure means the Mac doesn't know this phone's key. Anything else is network trouble.
             if case .tls = error {
@@ -329,30 +439,44 @@ final class BackupClient {
         var replies = peer.frames.makeAsyncIterator()
 
         guard let binding = peer.keyingMaterial(label: HelloProof.exporterLabel) else { throw ClientError.unexpectedReply }
-        try await peer.send(.control(.hello(
+        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.hello(
             deviceID: credential.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current,
             proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding)
-        )))
-        switch try await replies.next() {
+        ))) }
+        switch try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) {
         case .control(.welcome)?: break
         case .control(.unavailable(let reason))?: throw ClientError.refused(reason)
         default: throw ClientError.unexpectedReply
         }
         let reports = unsentReports
-        if !reports.isEmpty { try await peer.send(.control(.changeReport(reports))) }
+        if !reports.isEmpty { try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.changeReport(reports))) } }
 
+        startStep()
         phase = .comparing
-        let manifest = await Task.detached(priority: .userInitiated) { PhotoLibrary.scan() }.value
+        let manifest: [ManifestEntry]
+        if let runManifest {
+            manifest = runManifest
+        } else {
+            log.info("Scanning the library")
+            manifest = await Task.detached(priority: .userInitiated) {
+                PhotoLibrary.scan { fraction in
+                    Task { @MainActor [weak self] in self?.setStepFraction(fraction * 0.7) }
+                }
+            }.value
+            runManifest = manifest
+            log.info("Scanned \(manifest.count) items")
+        }
         var needs: [ResumePoint] = []
         for start in stride(from: 0, to: manifest.count, by: Self.manifestBatchSize) {
             try Task.checkCancellation()
+            setStepFraction(0.7 + 0.3 * Double(start) / Double(max(manifest.count, 1)))
             let batch = Array(manifest[start..<min(start + Self.manifestBatchSize, manifest.count)])
-            try await peer.send(.control(.manifest(batch)))
-            guard case .control(.need(let batchNeeds))? = try await replies.next() else { throw ClientError.unexpectedReply }
+            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.manifest(batch))) }
+            guard case .control(.need(let batchNeeds))? = try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
             needs += batchNeeds
         }
-        try await peer.send(.control(.manifestEnd(albums: PhotoLibrary.albumTitles())))
-        guard case .control(.changes(let changes))? = try await replies.next() else { throw ClientError.unexpectedReply }
+        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.manifestEnd(albums: PhotoLibrary.albumTitles()))) }
+        guard case .control(.changes(let changes))? = try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
         // The Mac handles frames in order, so it recorded the reports before replying.
         unsentReports.removeAll { reports.contains($0) }
         macChanges = changes.filter { !handledChangeIDs.contains($0.id) }
@@ -371,14 +495,19 @@ final class BackupClient {
 
         var sent = 0
         var failed = 0
+        sessionFileCount = needs.count
+        sessionFilesDone = 0
         for need in needs {
             try Task.checkCancellation()
             guard let (metadata, descriptor) = lookup[need.key] else { continue }
+            startStep()
             phase = .uploading(done: assetsDone, total: manifest.count, current: descriptor.originalFilename)
             var stored = false
             do {
-                try await Self.upload(descriptor, metadata: metadata, from: need.offset, over: peer)
-                switch try await replies.next() {
+                try await Self.upload(descriptor, metadata: metadata, from: need.offset, over: peer) { fraction in
+                    Task { @MainActor [weak self] in self?.setStepFraction(fraction) }
+                }
+                switch try await peer.withDeadline(Self.verifyTimeout, "waiting for your Mac to check the file", { try await replies.next(isolation: #isolation) }) {
                 case .control(.stored)?: sent += 1; stored = true
                 case .control(.failed)?: failed += 1
                 default: throw ClientError.unexpectedReply
@@ -386,6 +515,7 @@ final class BackupClient {
             } catch is PhotoLibrary.ExportError {
                 failed += 1
             }
+            sessionFilesDone += 1
             if stored, let left = filesLeft[need.key.assetID] {
                 if left <= 1 {
                     filesLeft[need.key.assetID] = nil
@@ -397,30 +527,33 @@ final class BackupClient {
             }
         }
 
-        try await peer.send(.control(.goodbye))
+        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.goodbye)) }
         return .finished(sent: sent, failed: failed)
     }
 
     /// Exports one file and streams it from `offset`, so an interrupted video resumes where it stopped.
+    /// `progress` gets 0...1: the iCloud download (if any) is the first half, sending the second.
     private nonisolated static func upload(
-        _ descriptor: ResourceDescriptor, metadata: AssetMetadata, from offset: UInt64, over peer: PeerConnection
+        _ descriptor: ResourceDescriptor, metadata: AssetMetadata, from offset: UInt64, over peer: PeerConnection,
+        progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let url = try await PhotoLibrary.export(descriptor.key)
+        let url = try await PhotoLibrary.export(descriptor.key) { progress($0 * 0.5) }
         defer { try? FileManager.default.removeItem(at: url) }
 
         let size = UInt64(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
         let sha256 = try FileHasher.sha256(of: url)
-        try await peer.send(.control(.beginResource(descriptor, metadata: metadata, size: size)))
+        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.beginResource(descriptor, metadata: metadata, size: size))) }
 
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var position = offset <= size ? offset : 0
         try handle.seek(toOffset: position)
         while let data = try handle.read(upToCount: FrameCodec.chunkSize), !data.isEmpty {
-            try await peer.send(.chunk(key: descriptor.key, offset: position, data: data))
+            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.chunk(key: descriptor.key, offset: position, data: data)) }
             position += UInt64(data.count)
+            progress(0.5 + 0.5 * Double(position) / Double(max(size, 1)))
         }
-        try await peer.send(.control(.endResource(descriptor.key, sha256: sha256)))
+        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.endResource(descriptor.key, sha256: sha256))) }
     }
 
     // MARK: Changes from the Mac

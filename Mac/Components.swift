@@ -1,4 +1,3 @@
-import QuickLookThumbnailing
 import SwiftUI
 
 // Shared building blocks for the Mac screens.
@@ -75,8 +74,13 @@ struct SectionHeader: View {
 
 struct ThumbnailView: View {
     let url: URL
+    /// The file's size, so a replaced file gets a new thumbnail.
+    var bytes: UInt64 = 0
     var cornerRadius: CGFloat = 10
+    /// Shows the file's name while the pointer is over it.
+    var showsName = true
     @State private var image: NSImage?
+    @State private var failed = false
     @State private var hovering = false
 
     var body: some View {
@@ -86,10 +90,12 @@ struct ThumbnailView: View {
             .overlay {
                 if let image {
                     Image(nsImage: image).resizable().scaledToFill().transition(.opacity)
+                } else if failed {
+                    Image(systemName: "photo").font(.title2).foregroundStyle(.tertiary)
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                if hovering {
+                if hovering && showsName {
                     Text(url.lastPathComponent)
                         .font(.caption2.weight(.medium))
                         .lineLimit(1)
@@ -99,15 +105,20 @@ struct ThumbnailView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .scaleEffect(hovering ? 1.03 : 1)
+            .scaleEffect(hovering && showsName ? 1.03 : 1)
             .animation(.snappy(duration: 0.18), value: hovering)
             .onHover { hovering = $0 }
             .task(id: url) {
-                let request = QLThumbnailGenerator.Request(
-                    fileAt: url, size: CGSize(width: 300, height: 300), scale: 2, representationTypes: .thumbnail
-                )
-                let thumbnail = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+                if let cached = Thumbnails.shared.cached(url, bytes: bytes) {
+                    image = cached
+                    return
+                }
+                image = nil
+                failed = false
+                let thumbnail = await Thumbnails.shared.image(for: url, bytes: bytes)
+                guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: 0.2)) { image = thumbnail }
+                failed = thumbnail == nil
             }
     }
 }

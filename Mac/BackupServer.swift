@@ -48,6 +48,11 @@ final class BackupServer {
     private(set) var justPaired: PairedDevice?
     /// Bumped when a phone's library snapshot or change queue changes, so open views reload.
     private(set) var libraryRevision: [String: Int] = [:]
+    /// The location's `library.json`: its ID and which phone owns which folder. Nil while the
+    /// location is unavailable.
+    private(set) var library: LibraryRecord?
+    /// Bumped when files arrive or the location changes, so the library browser reloads.
+    private(set) var catalogRevision = 0
 
     private var keys: [String: Data]
     private var stores: [String: BackupStore] = [:]
@@ -191,16 +196,19 @@ final class BackupServer {
         let device: PairedDevice
         if let index = devices.firstIndex(where: { $0.id == deviceID }) {
             devices[index].name = name
-            device = devices[index]
         } else {
             let folder = DeviceRegistry.folderName(
                 for: name, taken: Set(devices.map(\.folder)), in: location.url
             )
-            device = PairedDevice(id: deviceID, name: name, folder: folder, pairedAt: .now)
-            devices.append(device)
+            devices.append(PairedDevice(id: deviceID, name: name, folder: folder, pairedAt: .now))
+            // Paired with another Mac before, or with this one before it was removed.
+            if let known = library?.device(deviceID) {
+                addLog("Found \(name)'s earlier backups in “\(known.folder)”", symbol: "folder")
+            }
         }
+        reconcileLibrary()
+        device = devices.first { $0.id == deviceID }!
         keys[deviceID] = key
-        DeviceRegistry.saveDevices(devices)
         DeviceRegistry.saveKeys(keys)
         startBackupListener()
         Task { await refreshSummaries() }
@@ -223,7 +231,7 @@ final class BackupServer {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
         devices[index].name = trimmed
-        DeviceRegistry.saveDevices(devices)
+        reconcileLibrary()
     }
 
     // MARK: Backup sessions
@@ -350,6 +358,7 @@ final class BackupServer {
         }
         updateSleepAssertion()
         await refreshSummaries()
+        catalogRevision += 1
     }
 
     /// Keeps the Mac from idle-sleeping mid-transfer. It can't wake a sleeping Mac; for overnight
@@ -411,9 +420,14 @@ final class BackupServer {
     func store(for device: PairedDevice) -> BackupStore? {
         guard location.isAvailable else { return nil }
         if let store = stores[device.id] { return store }
-        let store = BackupStore(root: location.url.appending(path: device.folder, directoryHint: .isDirectory))
+        let store = BackupStore(root: location.url.appending(path: device.folder, directoryHint: .isDirectory), deviceID: device.id)
         stores[device.id] = store
         return store
+    }
+
+    /// Where the library's own folders live, e.g. "Tennis", next to the phones' folders.
+    var foldersURL: URL {
+        location.url.appending(path: MediaLibrary.foldersName, directoryHint: .isDirectory)
     }
 
     func folderURL(for device: PairedDevice) -> URL {
@@ -483,8 +497,46 @@ final class BackupServer {
             stores.removeAll()
         }
         location = info
+        catalogRevision += 1
+        reconcileLibrary()
         refreshDrives()
         Task { await refreshSummaries() }
+    }
+
+    /// Reads the location's `library.json`, creating it for a folder that has none, and makes each
+    /// paired phone use the folder it lists, so a library brought from another Mac, or moved to a
+    /// new drive, keeps every phone's backups where they are. Phones it doesn't list yet are added.
+    private func reconcileLibrary() {
+        defer { DeviceRegistry.saveDevices(devices) }
+        guard location.isAvailable else {
+            library = nil
+            return
+        }
+        let existing: LibraryRecord?
+        do {
+            existing = try LibraryRecord.load(from: location.url)
+        } catch {
+            // Never overwrite a record we can't read; keep using the folders this Mac knows.
+            addLog("Couldn't read “\(LibraryRecord.relativePath)”: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            library = nil
+            return
+        }
+        var record = existing ?? LibraryRecord()
+        for index in devices.indices {
+            let folder = record.folder(for: devices[index].id, name: devices[index].name, preferred: devices[index].folder)
+            if folder != devices[index].folder {
+                stores[devices[index].id] = nil
+                devices[index].folder = folder
+            }
+        }
+        if record != existing {
+            do {
+                try record.save(to: location.url)
+            } catch {
+                addLog("Couldn't save this library's details: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            }
+        }
+        library = record
     }
 
     private func refreshDrives() {
@@ -506,6 +558,12 @@ final class BackupServer {
     }
 
     private func resolveLocationURL() -> URL {
+        #if DEBUG
+        // Test hook: `-BackupLocation <folder>` uses that folder, e.g. a sample library.
+        if let path = UserDefaults.standard.string(forKey: "BackupLocation") {
+            return URL(filePath: path, directoryHint: .isDirectory)
+        }
+        #endif
         if let bookmark = UserDefaults.standard.data(forKey: Self.bookmarkKey) {
             var isStale = false
             if let url = try? URL(resolvingBookmarkData: bookmark, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale) {
