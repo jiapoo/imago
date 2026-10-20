@@ -1,0 +1,75 @@
+name: PhotoBackup
+options:
+  bundleIdPrefix: com.example.photobackup
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+packages:
+  PhotoBackupKit:
+    path: Packages/PhotoBackupKit
+targets:
+  PhotoBackupMac:
+    type: application
+    scheme: {}
+    platform: macOS
+    sources: [Mac]
+    dependencies:
+      - package: PhotoBackupKit
+    info:
+      path: Mac/Info.plist
+      properties:
+        CFBundleDisplayName: Photo Backup
+        LSApplicationCategoryType: public.app-category.photography
+        NSLocalNetworkUsageDescription: Photo Backup receives photos from your iPhone over your local network.
+        NSBonjourServices: [_photobackup._tcp]
+    entitlements:
+      path: Mac/PhotoBackupMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.server: true
+        com.apple.security.network.client: true
+        com.apple.security.assets.pictures.read-write: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.mac
+        PRODUCT_NAME: Photo Backup
+        ENABLE_HARDENED_RUNTIME: YES
+  PhotoBackupiOS:
+    type: application
+    scheme: {}
+    platform: iOS
+    sources: [iOS]
+    dependencies:
+      - package: PhotoBackupKit
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Photo Backup
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: Photo Backup copies your photos and videos to your Mac.
+        NSCameraUsageDescription: The camera scans the pairing code shown on your Mac.
+        NSLocalNetworkUsageDescription: Photo Backup finds your Mac on your local network to send photos to it.
+        NSBonjourServices: [_photobackup._tcp]
+        UIBackgroundModes: [processing]
+        BGTaskSchedulerPermittedIdentifiers: [com.example.photobackup.ios.processing, com.example.photobackup.ios.continued.*]
+    # The iPhone's real name ("Jia's iPhone") needs Apple's user-assigned-device-name entitlement,
+    # which you request from Apple for your team. Until it's approved, iOS reports "iPhone" and
+    # the pairing screen asks for a name. Once approved, uncomment:
+    # entitlements:
+    #   path: iOS/PhotoBackupiOS.entitlements
+    #   properties:
+    #     com.apple.developer.device-information.user-assigned-device-name: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.ios
+        PRODUCT_NAME: Photo Backup
+        TARGETED_DEVICE_FAMILY: "1"
