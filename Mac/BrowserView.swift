@@ -3,8 +3,8 @@ import PhotoBackupKit
 import QuickLook
 import SwiftUI
 
-/// The library, or one Folder: a grid of days. Click to select (⌘ and ⇧ to add), double-click to
-/// open, Space for Quick Look, Delete for the Trash. Drag items onto a Folder in the sidebar.
+/// The library, or one Folder: a grid of days. Click to select (⌘ and ⇧ to add), double-click or ⌘O
+/// to open, Space for Quick Look, Delete for the Trash. Drag items onto a Folder in the sidebar.
 struct BrowserView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
@@ -121,7 +121,7 @@ struct BrowserView: View {
     }
 }
 
-/// Space, Return, Escape, ⌘A and Delete for the grid.
+/// Space, ⌘O, Escape, ⌘A and Delete for the grid.
 private struct KeyboardModifier: ViewModifier {
     var focused: FocusState<Bool>.Binding
     var clear: () -> Void
@@ -139,14 +139,19 @@ private struct KeyboardModifier: ViewModifier {
             .focusEffectDisabled()
             .onAppear { focused.wrappedValue = true }
             .onKeyPress(.space) { preview(); return .handled }
-            .onKeyPress(.return) { open(); return .handled }
+            .onKeyPress(characters: ["o", "\u{F701}"]) { press in   // ⌘O and ⌘↓, as in Finder
+                guard press.modifiers.contains(.command) else { return .ignored }
+                open()
+                return .handled
+            }
             .onKeyPress(.escape) { clear(); return .handled }
             .onKeyPress(characters: ["a"]) { press in
                 guard press.modifiers.contains(.command) else { return .ignored }
                 selectAll()
                 return .handled
             }
-            .onDeleteCommand(perform: trash)
+            // The Delete key arrives as DEL (0x7F) on the Mac, forward delete as 0xF728.
+            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { _ in trash(); return .handled }
     }
 }
 
@@ -308,7 +313,8 @@ extension BrowserView {
     private func click(_ item: MediaItem, in items: [MediaItem]) {
         focused = true
         let event = NSApp.currentEvent
-        if event?.clickCount == 2 {
+        // Two quick clicks on different items are two clicks, not a double-click.
+        if event?.clickCount == 2, anchor == item.id {
             NSWorkspace.shared.open(item.url)
             return
         }
@@ -436,8 +442,8 @@ private struct MediaTile: View {
             .overlay {
                 if selected {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.18))
-                        .strokeBorder(Color.accentColor, lineWidth: 3)
+                        .fill(.tint.opacity(0.18))
+                        .strokeBorder(.tint, lineWidth: 3)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -445,7 +451,7 @@ private struct MediaTile: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3)
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Color.accentColor)
+                        .foregroundStyle(.white, .tint)
                         .shadow(color: .black.opacity(0.25), radius: 2)
                         .padding(6)
                         .transition(.scale.combined(with: .opacity))

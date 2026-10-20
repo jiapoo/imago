@@ -386,7 +386,9 @@ actor BackupStore {
             }
         }
 
-        let base = directory + "/" + (layout.sidecarPath(for: record.metadata) as NSString).lastPathComponent
+        // Keep the sidecar's own name; it may be numbered past another asset's.
+        let name = old?.lastPathComponent ?? (layout.sidecarPath(for: record.metadata) as NSString).lastPathComponent
+        let base = directory + "/" + name
         var path = base
         var n = 2
         while url(of: path) != old?.standardizedFileURL, fileManager.fileExists(atPath: url(of: path).path),

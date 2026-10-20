@@ -83,7 +83,8 @@ without the app. Select items (click, ⌘-click, ⇧-click, ⌘A), then from the
   once you confirm it on the iPhone.
 - **Trash** moves them to the Trash and stops backing them up from the phone.
 
-Space opens Quick Look, Return or a double-click opens the file. Files put into a Folder in Finder or by
+Space opens Quick Look, ⌘O or a double-click opens the file in its default app (Preview, QuickTime…),
+and Delete moves it to the Trash. Files put into a Folder in Finder or by
 AirDrop show up too. A phone's file moved there in Finder is recognized by name, size and checksum.
 
 ## Not built yet

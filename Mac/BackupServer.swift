@@ -77,7 +77,13 @@ final class BackupServer {
         }
         serverName = Host.current().localizedName ?? "Mac"
         devices = DeviceRegistry.loadDevices()
+        #if DEBUG
+        // A sample library (`-BackupLocation`) is for trying the app, not backups: an unsigned
+        // test build reading the real pairing keys would make macOS ask for the Keychain password.
+        keys = UserDefaults.standard.string(forKey: "BackupLocation") == nil ? DeviceRegistry.loadKeys() : [:]
+        #else
         keys = DeviceRegistry.loadKeys()
+        #endif
         location = LocationInfo(url: Self.defaultLocation)
 
         refreshLocation()
