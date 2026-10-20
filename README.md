@@ -81,6 +81,8 @@ without the app. Select items (click, ⌘-click, ⇧-click, ⌘A), then from the
   phone isn't asked for them again. **Back to iPhone's Folder** moves them back into the dated layout.
 - **Remove from iPhone** queues a deletion for the phone (only for items fully backed up). It happens
   once you confirm it on the iPhone.
+  A Folder with items still on an iPhone says so at the top, with a button to remove them all there:
+  move today's tennis videos into Folders/Tennis, then remove them from the iPhone in one step.
 - **Trash** moves them to the Trash and stops backing them up from the phone.
 
 Space opens Quick Look, ⌘O or a double-click opens the file in its default app (Preview, QuickTime…),

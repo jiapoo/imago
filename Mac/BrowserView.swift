@@ -16,7 +16,8 @@ struct BrowserView: View {
     @State private var anchor: MediaItem.ID?
     @State private var quickLook: URL?
     @State private var confirmingTrash = false
-    @State private var confirmingRemoval = false
+    /// Items to ask their iPhone to remove, while the confirmation is up.
+    @State private var removing: [MediaItem]?
     @State private var naming: FolderNaming?
     @FocusState private var focused: Bool
 
@@ -41,6 +42,7 @@ struct BrowserView: View {
 
     private func grid(_ items: [MediaItem]) -> some View {
         ScrollView {
+            if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: tileSize, maximum: tileSize * 1.5), spacing: 4)],
                 spacing: 4, pinnedViews: [.sectionHeaders]
@@ -83,11 +85,49 @@ struct BrowserView: View {
                 canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
                 move: { folder in Task { await library.move(selected, to: folder, server: server) } },
                 newFolder: { naming = .newFolder(moving: selected) },
-                removeFromPhone: { confirmingRemoval = true },
+                removeFromPhone: { removing = selected },
                 trash: { confirmingTrash = true },
                 clear: { library.selection = [] }
             )
             .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    /// In a Folder: how many of its items are still on an iPhone, with a button to remove them there.
+    @ViewBuilder
+    private var phoneBanner: some View {
+        let inFolder = library.items(in: scope)
+        let removable = library.removable(inFolder)
+        let pending = inFolder.count { library.pendingRemoval.contains($0.id) }
+        let phones = Set(removable.compactMap(\.deviceID)).count > 1 ? "iPhones" : "iPhone"
+        if !removable.isEmpty {
+            HStack(spacing: 14) {
+                Image(systemName: "iphone")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                    .frame(width: 36, height: 36)
+                    .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(removable.count == 1 ? "1 item here is still on your \(phones)" : "\(removable.count.formatted()) items here are still on your \(phones)")
+                        .font(.headline)
+                    Text("Remove them there to free \(removable.reduce(0) { $0 + $1.bytes }.bytes). They stay on this Mac.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Remove from \(phones)…") { removing = removable }
+                    .controlSize(.large)
+            }
+            .padding(14)
+            .background(.tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.top, 14)
+        } else if pending > 0 {
+            Label(pending == 1 ? "1 item here will be removed from your iPhone at its next backup, once you confirm it there."
+                               : "\(pending.formatted()) items here will be removed from your iPhone at its next backup, once you confirm it there.",
+                  systemImage: "clock")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 14)
         }
     }
 
@@ -115,8 +155,8 @@ struct BrowserView: View {
     private var dialogs: DialogsModifier {
         DialogsModifier(
             selected: selected, library: library, server: server,
-            confirmingTrash: $confirmingTrash, confirmingRemoval: $confirmingRemoval,
-            naming: $naming, trashTitle: trashTitle, removalTitle: removalTitle
+            confirmingTrash: $confirmingTrash, removing: $removing,
+            naming: $naming, trashTitle: trashTitle
         )
     }
 }
@@ -160,10 +200,9 @@ private struct DialogsModifier: ViewModifier {
     let library: MediaLibrary
     let server: BackupServer
     @Binding var confirmingTrash: Bool
-    @Binding var confirmingRemoval: Bool
+    @Binding var removing: [MediaItem]?
     @Binding var naming: FolderNaming?
     let trashTitle: String
-    let removalTitle: String
 
     func body(content: Content) -> some View {
         content
@@ -177,9 +216,9 @@ private struct DialogsModifier: ViewModifier {
                      ? "They're removed from this backup. Ones still on your iPhone won't be backed up again; remove them there too if you don't want them."
                      : "They're removed from this backup. You can put them back from the Trash.")
             }
-            .confirmationDialog(removalTitle, isPresented: $confirmingRemoval) {
+            .confirmationDialog(removalTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
                 Button("Ask iPhone to Remove") {
-                    let items = selected
+                    let items = removing ?? []
                     Task { await library.removeFromPhone(items, server: server) }
                 }
             } message: {
@@ -191,6 +230,14 @@ private struct DialogsModifier: ViewModifier {
             } message: {
                 Text(library.error ?? "")
             }
+    }
+
+    private var removalTitle: String {
+        let items = removing ?? []
+        let count = library.removable(items).count
+        let skipped = items.count - count
+        let base = count == 1 ? "Ask iPhone to remove 1 item?" : "Ask iPhone to remove \(count) items?"
+        return skipped > 0 ? base + " \(skipped) not on the iPhone or not fully backed up are left out." : base
     }
 }
 
@@ -284,10 +331,7 @@ extension BrowserView {
             }
         }
         if !library.removable(targets).isEmpty {
-            Button("Remove from iPhone…") {
-                library.selection = Set(targets.map(\.id))
-                confirmingRemoval = true
-            }
+            Button("Remove from iPhone…") { removing = targets }
         }
         Divider()
         Button("Move to Trash…", role: .destructive) {
@@ -298,13 +342,6 @@ extension BrowserView {
 
     private var trashTitle: String {
         selected.count == 1 ? "Move “\(selected[0].name)” to the Trash?" : "Move \(selected.count) items to the Trash?"
-    }
-
-    private var removalTitle: String {
-        let count = library.removable(selected).count
-        let skipped = selected.count - count
-        let base = count == 1 ? "Ask iPhone to remove 1 item?" : "Ask iPhone to remove \(count) items?"
-        return skipped > 0 ? base + " \(skipped) not on the iPhone or not fully backed up are left out." : base
     }
 
     // MARK: Selection
