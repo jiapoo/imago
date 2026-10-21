@@ -96,7 +96,9 @@ actor BackupStore {
     /// The phone this folder belongs to, written into every sidecar.
     nonisolated let deviceID: String
     private let layout = LibraryLayout()
-    private var index: Index
+    /// Read on first use, on the actor, not in `init`: the server makes stores on the main actor,
+    /// and a slow or failing drive would freeze the app there.
+    private lazy var index: Index = (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
     private var inFlight: [ResourceKey: InFlight] = [:]
     private var unsavedChanges = 0
     private let fileManager = FileManager.default
@@ -106,18 +108,20 @@ actor BackupStore {
     private nonisolated var indexURL: URL { stateDirectory.appending(path: "index.json") }
     private nonisolated var skipURL: URL { stateDirectory.appending(path: "skip.json") }
     /// Files moved to the Trash on the Mac, by key. The phone isn't asked for them again.
-    private var skipped: Set<String>
+    private lazy var skipped: Set<String> = (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: skipURL))) ?? []
+
+    private var hasStateDirectory = false
 
     init(root: URL, deviceID: String) {
         self.root = root
         self.deviceID = deviceID
-        try? FileManager.default.createDirectory(
-            at: root.appending(path: ".photobackup/partial", directoryHint: .isDirectory),
-            withIntermediateDirectories: true
-        )
-        let indexURL = root.appending(path: ".photobackup/index.json")
-        index = (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
-        skipped = (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: root.appending(path: ".photobackup/skip.json")))) ?? []
+    }
+
+    /// Makes `.photobackup` and its partial folder before anything is written there.
+    func prepareStateDirectory() throws {
+        guard !hasStateDirectory else { return }
+        try fileManager.createDirectory(at: partialDirectory, withIntermediateDirectories: true)
+        hasStateDirectory = true
     }
 
     // MARK: Receiving
@@ -135,6 +139,7 @@ actor BackupStore {
     func begin(_ descriptor: ResourceDescriptor, metadata: AssetMetadata, size: UInt64) throws {
         if let previous = inFlight.removeValue(forKey: descriptor.key) { try? previous.handle.close() }
         let url = partialURL(for: descriptor.key)
+        try prepareStateDirectory()
         if !fileManager.fileExists(atPath: url.path) {
             fileManager.createFile(atPath: url.path, contents: nil)
         }
@@ -312,6 +317,7 @@ actor BackupStore {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
         defer {
             try? saveIndex()
+            try? prepareStateDirectory()
             try? JSONEncoder().encode(skipped).write(to: skipURL, options: .atomic)
         }
         for (assetID, keys) in byAsset {
@@ -533,6 +539,7 @@ actor BackupStore {
     }
 
     private func saveIndex() throws {
+        try prepareStateDirectory()
         try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
         unsavedChanges = 0
     }

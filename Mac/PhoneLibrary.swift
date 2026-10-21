@@ -38,6 +38,7 @@ extension BackupStore {
     func saveSnapshot(_ snapshot: PhoneSnapshot) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
+        try prepareStateDirectory()
         try encoder.encode(snapshot).write(to: snapshotURL, options: .atomic)
     }
 
@@ -103,6 +104,7 @@ extension BackupStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
+        try prepareStateDirectory()
         try encoder.encode(queue).write(to: changesURL, options: .atomic)
     }
 }
