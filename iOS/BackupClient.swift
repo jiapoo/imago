@@ -64,6 +64,10 @@ final class BackupClient {
     private var systemTask: AnyObject?
     /// True from the moment `run` starts until it returns, whichever way it was started.
     private var isRunInProgress = false
+    /// The task doing the current run, so a new start can stop a run that can't keep going.
+    private var activeRun: Task<Void, Never>?
+    /// True while a user-started backup waits for iOS to start its continued-processing task.
+    private var isStarting = false
     /// How far through the current step (scanning the library, or the current file) the backup is, 0...1.
     /// iOS marks a continued-processing task stalled, and may stop it, if its progress stops moving.
     private var stepFraction: Double = 0
@@ -214,11 +218,23 @@ final class BackupClient {
     /// keeps going after the user leaves the app, with progress in the system UI.
     /// - Parameter automatic: true when iOS started it in the background overnight.
     func backUpNow(automatic: Bool = false) async {
-        guard !phase.isRunning, !isRunInProgress else { return }
+        guard !isStarting else { return }
+        if isRunInProgress {
+            // A run in the app, without a continued-processing task, freezes once iOS suspends the app,
+            // and can sit there for hours waiting to retry. Stop it and start again under the task this
+            // start brings: the overnight processing time, or a new continued-processing task.
+            guard systemTask == nil, let previous = activeRun else { return }
+            log.notice("Restarting the backup running in the app (automatic: \(automatic))")
+            previous.cancel()
+            await previous.value
+            guard !isRunInProgress else { return }
+        }
         if automatic {
             lastAutomaticRun = .now
         } else if #available(iOS 26, *), ContinuedBackup.submit(client: self) {
             log.info("Continued-processing request accepted; waiting for iOS to start it")
+            isStarting = true
+            defer { isStarting = false }
             phase = .searching
             // iOS can accept the request without starting it right away. Don't sit there: if its
             // handler hasn't begun within a few seconds, back up in the app instead.
@@ -230,8 +246,9 @@ final class BackupClient {
     }
 
     /// Resumes a backup that stopped part-way, e.g. when iOS suspended the app. Called when the app opens.
+    /// A run that is still going in the app is restarted, so it gets a continued-processing task.
     func resumeIfUnfinished() {
-        guard unfinished != nil, credential != nil, !phase.isRunning else { return }
+        guard unfinished != nil, credential != nil, systemTask == nil else { return }
         Task { await backUpNow() }
     }
 
@@ -244,6 +261,13 @@ final class BackupClient {
             return false
         }
         isRunInProgress = true
+        let body = Task { await performRun(automatic: automatic, systemTask: systemTask) }
+        activeRun = body
+        await withTaskCancellationHandler { await body.value } onCancel: { body.cancel() }
+        return true
+    }
+
+    private func performRun(automatic: Bool, systemTask: AnyObject?) async {
         log.info("Backup started (automatic: \(automatic), system task: \(systemTask != nil))")
         self.systemTask = systemTask
         runManifest = nil
@@ -261,6 +285,7 @@ final class BackupClient {
             heartbeat?.cancel()
             self.systemTask = nil
             runManifest = nil
+            activeRun = nil
             isRunInProgress = false
         }
 
@@ -278,6 +303,7 @@ final class BackupClient {
         var attempt = 0
         var searches = 0
         while true {
+            sessionFilesDone = 0
             do {
                 phase = try await runSession()
                 log.info("Backup finished")
@@ -293,6 +319,17 @@ final class BackupClient {
                 break
             } catch {
                 log.error("Backup attempt \(attempt + 1) failed: \(String(describing: error), privacy: .public)")
+                // Without a continued-processing task iOS suspends the app soon after it leaves the screen,
+                // and a suspended app's connections are torn down (ECONNABORTED when it wakes). Retrying
+                // then just fails again and uses up the retries, so stop here; `unfinished` is kept and
+                // the backup resumes when the app next opens.
+                if !automatic, self.systemTask == nil, UIApplication.shared.applicationState != .active, Self.isRetryable(error) {
+                    log.notice("Pausing: the app is in the background without a continued-processing task")
+                    phase = .idle
+                    break
+                }
+                // A session that sent files before dropping was working; only count drops in a row.
+                if sessionFilesDone > 0 { attempt = 0 }
                 if case BackupServiceError.serverNotFound = error { searches += 1 } else { searches = 0 }
                 guard Self.isRetryable(error), attempt < Self.maxRetries, searches < Self.maxSearches, !Task.isCancelled else {
                     phase = .failed(error.localizedDescription)
@@ -314,7 +351,6 @@ final class BackupClient {
             }
         }
         await refreshCounts()
-        return true
     }
 
     /// Skips the rest of the wait before the next reconnect attempt.
