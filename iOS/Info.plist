@@ -10,7 +10,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Photo Backup</string>
+	<string>Imago</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -32,9 +32,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>The camera scans the pairing code shown on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Photo Backup finds your Mac on your local network to send photos to it.</string>
+	<string>Imago finds your Mac on your local network to send photos to it.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Photo Backup copies your photos and videos to your Mac.</string>
+	<string>Imago copies your photos and videos to your Mac.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>processing</string>

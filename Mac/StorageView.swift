@@ -89,7 +89,7 @@ private struct DestinationCard: View {
     }
 }
 
-/// Photo Backup's share of the disk, everything else, and free space.
+/// Imago's share of the disk, everything else, and free space.
 private struct UsageBar: View {
     let backup: Int64
     let other: Int64
@@ -112,7 +112,7 @@ private struct UsageBar: View {
             .clipShape(Capsule())
 
             HStack(spacing: 18) {
-                legend(.blue, "Photo Backup", backup)
+                legend(.blue, "Imago", backup)
                 legend(.gray.opacity(0.6), "Other", other)
                 legend(Color.secondary.opacity(0.25), "Free", max(0, total - backup - other))
                 Spacer()
@@ -254,7 +254,7 @@ private struct FoldersCard: View {
                     }
                 }
             }
-            Text("Changing the location starts new backups there. Existing backups stay where they are; move them in Finder if you like, and Photo Backup picks them up from the new place.")
+            Text("Changing the location starts new backups there. Existing backups stay where they are; move them in Finder if you like, and Imago picks them up from the new place.")
                 .font(.caption).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

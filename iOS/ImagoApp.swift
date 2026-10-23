@@ -2,7 +2,7 @@ import BackgroundTasks
 import SwiftUI
 
 @main
-struct PhotoBackupApp: App {
+struct ImagoApp: App {
     @State private var client: BackupClient
     @Environment(\.scenePhase) private var scenePhase
 

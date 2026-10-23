@@ -1,6 +1,6 @@
 import Foundation
 import Photos
-import PhotoBackupKit
+import ImagoKit
 
 /// Reads the Photos library into a manifest (metadata only) and exports single files on demand.
 enum PhotoLibrary {

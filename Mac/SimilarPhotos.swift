@@ -1,6 +1,6 @@
 import Foundation
 import ImageIO
-import PhotoBackupKit
+import ImagoKit
 import Vision
 
 /// Finds near-identical photos (the same scene shot several times) with Vision, using the backed-up

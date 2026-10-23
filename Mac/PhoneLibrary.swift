@@ -1,5 +1,5 @@
 import Foundation
-import PhotoBackupKit
+import ImagoKit
 
 /// What was on the phone at its last backup: every asset with its files, and every album.
 /// Saved at the end of each manifest, so the Mac can suggest changes while the phone is away.

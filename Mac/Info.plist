@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Photo Backup</string>
+	<string>Imago</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -27,6 +27,6 @@
 		<string>_photobackup._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Photo Backup receives photos from your iPhone over your local network.</string>
+	<string>Imago receives photos from your iPhone over your local network.</string>
 </dict>
 </plist>

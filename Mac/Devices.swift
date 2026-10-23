@@ -1,5 +1,5 @@
 import Foundation
-import PhotoBackupKit
+import ImagoKit
 
 /// A paired iPhone. Its key lives in the Keychain; this record is not secret.
 struct PairedDevice: Codable, Identifiable, Hashable {

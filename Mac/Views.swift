@@ -445,7 +445,7 @@ struct DeviceView: View {
     private func statusText(summary: BackupStore.Summary?, session: BackupServer.Session?) -> String {
         if let session { return session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)" }
         if summary?.isPartial == true, let received = summary?.lastReceived {
-            return "Backup not finished · last file \(received.shortRelative). It continues when Photo Backup is open on the iPhone."
+            return "Backup not finished · last file \(received.shortRelative). It continues when Imago is open on the iPhone."
         }
         if let last = summary?.lastBackup { return "Last backup \(last.shortRelative)" }
         return "Waiting for the first backup"
@@ -490,7 +490,7 @@ struct AddPhoneSheet: View {
                     .shadow(color: .black.opacity(0.12), radius: 16, y: 6)
 
                     VStack(alignment: .leading, spacing: 18) {
-                        Step(number: 1, text: "Open Photo Backup on your iPhone")
+                        Step(number: 1, text: "Open Imago on your iPhone")
                         Step(number: 2, text: "Tap **Pair with Mac**")
                         Step(number: 3, text: "Point the camera at this code")
                         Label("Keep both on the same Wi-Fi. This code works once, and only while this window is open.", systemImage: "lock.fill")
@@ -588,7 +588,7 @@ struct MenuBarPanel: View {
 
             Divider()
             HStack {
-                Button("Open Photo Backup") {
+                Button("Open Imago") {
                     openWindow(id: "main")
                     NSApp.activate()
                 }
@@ -600,7 +600,7 @@ struct MenuBarPanel: View {
                     Image(systemName: "power")
                 }
                 .buttonStyle(.borderless)
-                .help("Quit Photo Backup")
+                .help("Quit Imago")
             }
         }
         .padding(16)
@@ -631,7 +631,7 @@ private struct OvernightSettings: View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Overnight backups", systemImage: "moon.stars.fill")
                 .font(.title2.bold())
-            Text("iPhones back up on their own while charging on Wi-Fi, usually at night. While one is backing up, Photo Backup keeps this Mac from going to sleep.")
+            Text("iPhones back up on their own while charging on Wi-Fi, usually at night. While one is backing up, Imago keeps this Mac from going to sleep.")
             Text("To let a sleeping Mac accept backups, turn on **Wake for network access** in System Settings › Energy.")
             Button("Open Energy Settings") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.Energy-Settings.extension") {

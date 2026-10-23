@@ -1,4 +1,4 @@
-# Photo Backup
+# Imago
 
 A local-first iPhone → Mac photo backup: a menu bar Mac app plus an iPhone companion app.
 Photos move over your Wi-Fi with encryption and never pass through a cloud service.
@@ -7,24 +7,24 @@ Photos move over your Wi-Fi with encryption and never pass through a cloud servi
 
 | Path | What |
 |---|---|
-| `Packages/PhotoBackupKit` | Shared code: wire protocol, framing, TLS-PSK networking, pairing, library layout, hashing. Has tests. |
+| `Packages/ImagoKit` | Shared code: wire protocol, framing, TLS-PSK networking, pairing, library layout, hashing. Has tests. |
 | `Mac/` | Mac app: Bonjour listener, `BackupStore` (verified writes, sidecars, index), status, pairing QR, library grid, menu bar. |
 | `iOS/` | iPhone app: PhotoKit scan and export, upload client, QR pairing, background processing task. |
-| `project.yml` | XcodeGen spec. Generates `PhotoBackup.xcodeproj` (git-ignored). |
+| `project.yml` | XcodeGen spec. Generates `Imago.xcodeproj` (git-ignored). |
 | `docs/PROTOCOL.md` | Wire protocol and on-disk layout, enough to write a server on another platform (e.g. Windows). |
 
 ## Build
 
 ```bash
-xcodegen generate && open PhotoBackup.xcodeproj
+xcodegen generate && open Imago.xcodeproj
 ```
 
-Set your signing team on both targets, then run `PhotoBackupMac` and `PhotoBackupiOS`.
+Set your signing team on both targets, then run `ImagoMac` and `ImagoiOS`.
 The iOS Simulator has no camera, so on the Mac use **Add iPhone → Copy Link** and paste it into the app.
 Debug builds also accept `-PairOnLaunch`, which opens pairing mode and prints the link to stdout.
 
 ```bash
-swift test --package-path Packages/PhotoBackupKit
+swift test --package-path Packages/ImagoKit
 ```
 
 ## Pairing

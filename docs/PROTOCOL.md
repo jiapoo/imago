@@ -1,11 +1,11 @@
-# Photo Backup protocol, version 4
+# Imago protocol, version 4
 
-This is everything a server needs to accept backups from the Photo Backup iPhone app:
+This is everything a server needs to accept backups from the Imago iPhone app:
 discovery, encryption, pairing, the messages, and how files are laid out on disk.
 The Mac app is one implementation. A Windows or Linux server that follows this document
 works with the same iPhone app, unchanged.
 
-The source of truth is `Packages/PhotoBackupKit`. If this document and the code disagree,
+The source of truth is `Packages/ImagoKit`. If this document and the code disagree,
 the code wins and this document has a bug. The examples below are real output from that code.
 
 Terms: the **phone** is the client and the **server** is the Mac (or any other implementation).
@@ -265,7 +265,7 @@ The phone waits for each reply before sending more: one `need` per `manifest`, o
 per file. Only one file is ever in flight. The server MUST behave as follows.
 
 **`hello`**
-- Reply `unavailable` and close if `protocolVersion` isn't 4. The Mac says "Update Photo Backup on this
+- Reply `unavailable` and close if `protocolVersion` isn't 4. The Mac says "Update Imago on this
   iPhone and on your Mac so both are on the same version." A phone older than version 3 sends no `proof`
   and also gets this reply.
 - Reply `unavailable` ("Pair this iPhone with your Mac again.") and close if `deviceID` isn't paired, or

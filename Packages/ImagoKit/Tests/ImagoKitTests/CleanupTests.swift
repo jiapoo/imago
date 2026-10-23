@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PhotoBackupKit
+@testable import ImagoKit
 
 private func asset(
     _ id: String, at seconds: TimeInterval? = 0, sha: String? = nil, bytes: UInt64 = 1_000, video: Bool = false,

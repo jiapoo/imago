@@ -1,4 +1,4 @@
-name: PhotoBackup
+name: Imago
 options:
   bundleIdPrefix: com.example.photobackup
   deploymentTarget:
@@ -11,25 +11,25 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
 packages:
-  PhotoBackupKit:
-    path: Packages/PhotoBackupKit
+  ImagoKit:
+    path: Packages/ImagoKit
 targets:
-  PhotoBackupMac:
+  ImagoMac:
     type: application
     scheme: {}
     platform: macOS
     sources: [Mac]
     dependencies:
-      - package: PhotoBackupKit
+      - package: ImagoKit
     info:
       path: Mac/Info.plist
       properties:
-        CFBundleDisplayName: Photo Backup
+        CFBundleDisplayName: Imago
         LSApplicationCategoryType: public.app-category.photography
-        NSLocalNetworkUsageDescription: Photo Backup receives photos from your iPhone over your local network.
+        NSLocalNetworkUsageDescription: Imago receives photos from your iPhone over your local network.
         NSBonjourServices: [_photobackup._tcp]
     entitlements:
-      path: Mac/PhotoBackupMac.entitlements
+      path: Mac/ImagoMac.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.network.server: true
@@ -40,24 +40,24 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.mac
-        PRODUCT_NAME: Photo Backup
+        PRODUCT_NAME: Imago
         ENABLE_HARDENED_RUNTIME: YES
-  PhotoBackupiOS:
+  ImagoiOS:
     type: application
     scheme: {}
     platform: iOS
     sources: [iOS]
     dependencies:
-      - package: PhotoBackupKit
+      - package: ImagoKit
     info:
       path: iOS/Info.plist
       properties:
-        CFBundleDisplayName: Photo Backup
+        CFBundleDisplayName: Imago
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        NSPhotoLibraryUsageDescription: Photo Backup copies your photos and videos to your Mac.
+        NSPhotoLibraryUsageDescription: Imago copies your photos and videos to your Mac.
         NSCameraUsageDescription: The camera scans the pairing code shown on your Mac.
-        NSLocalNetworkUsageDescription: Photo Backup finds your Mac on your local network to send photos to it.
+        NSLocalNetworkUsageDescription: Imago finds your Mac on your local network to send photos to it.
         NSBonjourServices: [_photobackup._tcp]
         UIBackgroundModes: [processing]
         BGTaskSchedulerPermittedIdentifiers: [com.example.photobackup.ios.processing, com.example.photobackup.ios.continued.*]
@@ -65,11 +65,11 @@ targets:
     # which you request from Apple for your team. Until it's approved, iOS reports "iPhone" and
     # the pairing screen asks for a name. Once approved, uncomment:
     # entitlements:
-    #   path: iOS/PhotoBackupiOS.entitlements
+    #   path: iOS/ImagoiOS.entitlements
     #   properties:
     #     com.apple.developer.device-information.user-assigned-device-name: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.ios
-        PRODUCT_NAME: Photo Backup
+        PRODUCT_NAME: Imago
         TARGETED_DEVICE_FAMILY: "1"

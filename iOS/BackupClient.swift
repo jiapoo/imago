@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 import Photos
-import PhotoBackupKit
+import ImagoKit
 import UIKit
 import BackgroundTasks
 import Network
@@ -45,7 +45,7 @@ final class BackupClient {
         var errorDescription: String? {
             switch self {
             case .notPaired: "Pair with your Mac first."
-            case .noPhotosAccess: "Photo Backup needs access to your photos. Turn it on in Settings › Privacy › Photos."
+            case .noPhotosAccess: "Imago needs access to your photos. Turn it on in Settings › Privacy › Photos."
             case .unexpectedReply: "Your Mac sent something unexpected. Make sure both apps are up to date."
             case .refused(let reason): reason
             case .pairingRejected: "Your Mac didn't accept the code. Open Add iPhone on the Mac and scan again."

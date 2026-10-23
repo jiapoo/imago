@@ -1,4 +1,4 @@
-import PhotoBackupKit
+import ImagoKit
 import SwiftUI
 import VisionKit
 
@@ -33,7 +33,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Photo Backup")
+            .navigationTitle("Imago")
             .sheet(isPresented: $showingPairing) { PairingSheet() }
             .task { await client.refreshCounts() }
             .refreshable { await client.refreshCounts() }
@@ -110,7 +110,7 @@ struct StatusHero: View {
         if #available(iOS 26, *) {
             return "You can leave the app; progress shows at the top of the screen. If anything stops it, it picks up where it left off."
         }
-        return "Keep Photo Backup open; your iPhone won't lock while it backs up. If anything stops it, it picks up where it left off."
+        return "Keep Imago open; your iPhone won't lock while it backs up. If anything stops it, it picks up where it left off."
     }
 
     private struct HeroState {
@@ -235,7 +235,7 @@ struct WelcomeCard: View {
             .buttonBorderShape(.capsule)
             .controlSize(.large)
 
-            Text("On your Mac, open Photo Backup and click **Add iPhone**.")
+            Text("On your Mac, open Imago and click **Add iPhone**.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -309,7 +309,7 @@ struct OvernightCard: View {
                 }
             }
             .tint(.indigo)
-            Text("While your iPhone is charging and on Wi-Fi, usually at night. iOS chooses the exact time. Don't swipe Photo Backup away in the app switcher, or iOS won't run it.")
+            Text("While your iPhone is charging and on Wi-Fi, usually at night. iOS chooses the exact time. Don't swipe Imago away in the app switcher, or iOS won't run it.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if client.overnightBackup {

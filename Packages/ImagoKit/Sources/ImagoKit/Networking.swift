@@ -101,7 +101,7 @@ public enum BackupServiceError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .serverNotFound: "Couldn't find your Mac. Make sure Photo Backup is running and both devices are on the same Wi-Fi."
+        case .serverNotFound: "Couldn't find your Mac. Make sure Imago is running and both devices are on the same Wi-Fi."
         }
     }
 }

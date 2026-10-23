@@ -2,7 +2,7 @@ import Foundation
 import Network
 import os
 import Testing
-@testable import PhotoBackupKit
+@testable import ImagoKit
 
 /// Real TLS-PSK connection over localhost: frames go both ways, and a wrong secret is refused.
 @Suite struct LoopbackTests {

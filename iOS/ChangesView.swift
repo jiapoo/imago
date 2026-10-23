@@ -1,5 +1,5 @@
 import Photos
-import PhotoBackupKit
+import ImagoKit
 import SwiftUI
 
 /// Shown when the Mac has asked for changes to this iPhone's library.

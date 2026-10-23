@@ -1,5 +1,5 @@
 import Foundation
-import PhotoBackupKit
+import ImagoKit
 
 /// Owns the backup folder: partial uploads, verified moves into the dated layout, sidecars,
 /// and a fast index. The index is a cache; `rebuildIndex()` recreates it from the sidecars.

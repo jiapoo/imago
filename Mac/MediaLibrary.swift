@@ -1,5 +1,5 @@
 import AppKit
-import PhotoBackupKit
+import ImagoKit
 import SwiftUI
 import UniformTypeIdentifiers
 

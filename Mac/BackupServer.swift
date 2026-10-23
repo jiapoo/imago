@@ -3,7 +3,7 @@ import Foundation
 import IOKit.pwr_mgt
 import Network
 import Observation
-import PhotoBackupKit
+import ImagoKit
 import SwiftUI
 
 /// Advertises the Mac on the local network, pairs iPhones, and runs one backup session per
@@ -260,7 +260,7 @@ final class BackupServer {
                 case .control(.hello(let deviceID, let deviceName, let version, let proof)):
                     guard version == ProtocolVersion.current else {
                         try await peer.send(.control(.unavailable(
-                            reason: "Update Photo Backup on this iPhone and on your Mac so both are on the same version."
+                            reason: "Update Imago on this iPhone and on your Mac so both are on the same version."
                         )))
                         peer.cancel()
                         break
@@ -464,7 +464,7 @@ final class BackupServer {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Use This Folder"
-        panel.message = "Choose where Photo Backup keeps your photos. External and network drives work too."
+        panel.message = "Choose where Imago keeps your photos. External and network drives work too."
         panel.directoryURL = start ?? (location.isAvailable ? location.url : nil)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -557,7 +557,7 @@ final class BackupServer {
         }
     }
 
-    /// Bytes used by everything on the backup volume other than Photo Backup's own files.
+    /// Bytes used by everything on the backup volume other than Imago's own files.
     var otherBytesOnVolume: Int64? {
         guard let total = location.totalBytes, let free = location.availableBytes else { return nil }
         return max(0, total - free - Int64(totalBytes))
@@ -636,16 +636,16 @@ extension BackupServer {
         }
         if let partial = devices.first(where: { summaries[$0.id]?.isPartial == true && summaries[$0.id]?.lastBackup == nil }) {
             return Health(symbol: "pause.circle.fill", tint: .orange, title: "First backup not finished",
-                          subtitle: "\(totalAssets.formatted()) photos and videos so far. Open Photo Backup on \(partial.name) to finish; it continues where it stopped.")
+                          subtitle: "\(totalAssets.formatted()) photos and videos so far. Open Imago on \(partial.name) to finish; it continues where it stopped.")
         }
         guard let last = lastBackup else {
             return Health(symbol: "clock", tint: .secondary, title: "Waiting for the first backup",
-                          subtitle: "Open Photo Backup on your iPhone and tap Back Up Now.")
+                          subtitle: "Open Imago on your iPhone and tap Back Up Now.")
         }
         let days = Int(Date.now.timeIntervalSince(last) / 86_400)
         if days >= 3 {
             return Health(symbol: "exclamationmark.shield.fill", tint: .yellow, title: "No backup in \(days) days",
-                          subtitle: "Open Photo Backup on your iPhone, or leave it charging on Wi-Fi tonight.")
+                          subtitle: "Open Imago on your iPhone, or leave it charging on Wi-Fi tonight.")
         }
         return Health(symbol: "checkmark.shield.fill", tint: .green, title: "Your photos are protected",
                       subtitle: "\(totalAssets.formatted()) photos and videos, last backed up \(last.formatted(.relative(presentation: .named))).")

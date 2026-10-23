@@ -1,4 +1,4 @@
-import PhotoBackupKit
+import ImagoKit
 import SwiftUI
 
 /// The phone's library as of its last backup, with clean-up suggestions. Changes made here are
@@ -595,7 +595,7 @@ private struct QueueView: View {
             } header: {
                 Text("Waiting for \(device.name)")
             } footer: {
-                Text("These go to the iPhone at its next backup. Open Photo Backup on the iPhone to review and approve them; nothing changes until you do.")
+                Text("These go to the iPhone at its next backup. Open Imago on the iPhone to review and approve them; nothing changes until you do.")
             }
 
             if !model.queue.done.isEmpty {

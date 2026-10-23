@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import PhotoBackupKit
+@testable import ImagoKit
 
 private let key = ResourceKey(assetID: "ABC-123/L0/001", kind: .photo, revision: "original")
 
