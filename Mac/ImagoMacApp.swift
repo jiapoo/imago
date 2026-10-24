@@ -4,6 +4,7 @@ import SwiftUI
 struct ImagoMacApp: App {
     @State private var server: BackupServer
     @State private var library = MediaLibrary()
+    @State private var viewer = MediaViewerHost()
 
     init() {
         let server = BackupServer()
@@ -25,21 +26,22 @@ struct ImagoMacApp: App {
             MainView()
                 .environment(server)
                 .environment(library)
+                .environment(viewer)
                 .frame(minWidth: 820, minHeight: 560)
-                .tint(.blue)
+                .tint(.imago)
         }
         .windowToolbarStyle(.unified)
 
         Settings {
             SettingsView()
                 .environment(server)
-                .tint(.blue)
+                .tint(.imago)
         }
 
         MenuBarExtra {
             MenuBarPanel()
                 .environment(server)
-                .tint(.blue)
+                .tint(.imago)
         } label: {
             Image(systemName: server.health.symbol)
         }

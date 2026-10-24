@@ -17,10 +17,14 @@ actor Thumbnails {
     static let pixelSize = 480
 
     private nonisolated(unsafe) let memory = NSCache<NSString, NSImage>()
-    private let directory: URL
+    private nonisolated let directory: URL
     private let maxConcurrent = 3
     private var running = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
+    /// Set while the viewer is open: making thumbnails waits (ones already made still show), leaving
+    /// the backup drive to the photo or video being viewed. On a spinning drive, the grid under the
+    /// viewer reading originals three at a time held a video's start up for half a minute.
+    private var backgroundHeld = false
 
     init() {
         memory.countLimit = 2000
@@ -34,6 +38,16 @@ actor Thumbnails {
         memory.object(forKey: Self.key(url, bytes: bytes) as NSString)
     }
 
+    /// Already made, from memory or this Mac's own disk; never the backup drive. A small JPEG read
+    /// from the internal disk is quick enough to do while opening a photo.
+    nonisolated func stored(_ url: URL, bytes: UInt64) -> NSImage? {
+        let key = Self.key(url, bytes: bytes)
+        if let image = memory.object(forKey: key as NSString) { return image }
+        guard let image = NSImage(contentsOf: directory.appending(path: key + ".jpg")) else { return nil }
+        memory.setObject(image, forKey: key as NSString)
+        return image
+    }
+
     func image(for url: URL, bytes: UInt64) async -> NSImage? {
         let key = Self.key(url, bytes: bytes)
         if let image = memory.object(forKey: key as NSString) { return image }
@@ -43,6 +57,9 @@ actor Thumbnails {
             return image
         }
 
+        // Reading the drive waits while the viewer has it.
+        await waitForBackgroundTurn()
+        guard !Task.isCancelled else { return nil }
         await acquire()
         defer { release() }
         // Scrolled away while it waited: leave the drive to the tiles still on screen.
@@ -52,6 +69,17 @@ actor Thumbnails {
         memory.setObject(image, forKey: key as NSString)
         Task.detached(priority: .utility) { Self.write(cgImage, to: file) }
         return image
+    }
+
+    func holdBackgroundWork(_ held: Bool) {
+        backgroundHeld = held
+    }
+
+    /// Returns once work that can wait may go ahead.
+    func waitForBackgroundTurn() async {
+        while backgroundHeld, !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(1))
+        }
     }
 
     // MARK: Limiting reads
@@ -78,7 +106,7 @@ actor Thumbnails {
     /// Path and size identify a file well enough: moving it into a Folder makes a new thumbnail,
     /// which is cheap next to reading every file's date.
     private static func key(_ url: URL, bytes: UInt64) -> String {
-        let digest = SHA256.hash(data: Data("\(url.standardizedFileURL.path)|\(bytes)".utf8))
+        let digest = SHA256.hash(data: Data("\(url.lexicallyStandardized.path)|\(bytes)".utf8))
         return digest.prefix(16).map { String(format: "%02x", $0) }.joined()
     }
 

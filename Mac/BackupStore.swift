@@ -234,6 +234,21 @@ actor BackupStore {
         index.resources
     }
 
+    /// The file each asset shows in the grids, with the asset's total size (what the grids key their
+    /// thumbnails by), for assets with a file stored since `date`. Newest first.
+    func displayFiles(storedSince date: Date, limit: Int) -> [(url: URL, bytes: UInt64)] {
+        resourcesByAsset().compactMap { assetID, keys -> (url: URL, bytes: UInt64, storedAt: Date)? in
+            let files = keys.compactMap { key in index.resources[key].map { (kind: Self.kind(of: key, assetID: assetID), stored: $0) } }
+            guard let newest = files.map(\.stored.storedAt).max(), newest >= date,
+                  let display = files.first(where: { $0.kind == .photo || $0.kind == .video })
+                    ?? files.first(where: { $0.kind == .fullSizePhoto || $0.kind == .fullSizeVideo }) else { return nil }
+            return (url(of: display.stored.relativePath), files.reduce(0) { $0 + $1.stored.size }, newest)
+        }
+        .sorted { $0.storedAt > $1.storedAt }
+        .prefix(limit)
+        .map { ($0.url, $0.bytes) }
+    }
+
     func recentFiles(limit: Int) -> [URL] {
         index.resources.values
             .filter { !$0.relativePath.hasSuffix(".plist") }
@@ -397,14 +412,14 @@ actor BackupStore {
         let base = directory + "/" + name
         var path = base
         var n = 2
-        while url(of: path) != old?.standardizedFileURL, fileManager.fileExists(atPath: url(of: path).path),
+        while url(of: path) != old?.lexicallyStandardized, fileManager.fileExists(atPath: url(of: path).path),
               Self.readSidecar(at: url(of: path))?.metadata.assetID != assetID {
             path = LibraryLayout.numbered(base, n)
             n += 1
         }
         let destination = url(of: path)
         try Self.write(sidecar, to: destination)
-        if let old, old.standardizedFileURL != destination { try? fileManager.removeItem(at: old) }
+        if let old, old.lexicallyStandardized != destination { try? fileManager.removeItem(at: old) }
         record.sidecar = path
         index.assets[assetID] = record
     }
@@ -469,13 +484,13 @@ actor BackupStore {
     /// A path in the index as a URL. Paths may start with "../" for files moved out of this phone's
     /// folder into another part of the library.
     nonisolated func url(of relativePath: String) -> URL {
-        root.appending(path: relativePath).standardizedFileURL
+        root.appending(path: relativePath).lexicallyStandardized
     }
 
     /// `url` as a path relative to `root`, using "../" for places outside it.
     private nonisolated func relativePath(of url: URL) -> String {
-        let base = root.standardizedFileURL.pathComponents
-        let target = url.standardizedFileURL.pathComponents
+        let base = root.lexicallyStandardized.pathComponents
+        let target = url.lexicallyStandardized.pathComponents
         var common = 0
         while common < min(base.count, target.count), base[common] == target[common] { common += 1 }
         return (Array(repeating: "..", count: base.count - common) + target[common...]).joined(separator: "/")

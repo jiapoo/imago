@@ -1,5 +1,4 @@
 import ImagoKit
-import QuickLook
 import SwiftUI
 
 enum PhoneSection: Hashable {
@@ -15,15 +14,20 @@ enum PhoneSection: Hashable {
 /// shows straight away and is queued for the phone, where the user confirms it.
 struct PhoneBrowserView: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaViewerHost.self) private var viewer
     let device: PairedDevice
     @State private var model: PhoneLibraryModel
     @State private var section: PhoneSection = .library
     @State private var zoom: LibraryZoom = .all
     @AppStorage("phoneTileSize") private var tileSize = 150.0
+    /// Select mode, as in Photos on the iPhone: a click adds an item to the selection or takes it out.
+    @State private var selecting = false
+    /// Bumped by Select All; the grid on screen selects everything it shows.
+    @State private var selectAllRequest = 0
 
     init(device: PairedDevice) {
         self.device = device
-        _model = State(initialValue: PhoneLibraryModel(device: device))
+        _model = State(initialValue: PhoneLibraryModel.model(for: device))
     }
 
     var body: some View {
@@ -45,6 +49,7 @@ struct PhoneBrowserView: View {
                     content
                         .id(section)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .environment(\.phoneSelectMode, selecting ? .on(selectAll: selectAllRequest) : .off)
                 }
             }
         }
@@ -55,7 +60,12 @@ struct PhoneBrowserView: View {
             server.loadPreviews(for: device)
             await model.load(from: server)
         }
-        .onDisappear { model.cancelSimilar() }
+        .onChange(of: section) { selecting = false }
+        .onAppear { server.keepDriveAwake(true) }
+        .onDisappear {
+            model.cancelSimilar()
+            server.keepDriveAwake(false)
+        }
     }
 
     private var subtitle: String {
@@ -65,9 +75,10 @@ struct PhoneBrowserView: View {
             + (waiting > 0 ? " · \(waiting) \(waiting == 1 ? "change" : "changes") waiting" : "")
     }
 
+    /// Hidden while the viewer is open: the toolbar is the viewer's then.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if model.state == .ready {
+        if model.state == .ready, !viewer.isOpen {
             ToolbarItemGroup(placement: .principal) {
                 if section == .library {
                     Picker("Show", selection: $zoom) {
@@ -80,6 +91,17 @@ struct PhoneBrowserView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 ConnectionPill(device: device, isLive: server.liveDevices.contains(device.id))
                 TileSizeSlider(size: $tileSize)
+                if section.hasGrid {
+                    if selecting {
+                        Button("Select All") { selectAllRequest += 1 }
+                            .help("Select everything here (⌘A)")
+                        Button("Cancel") { selecting = false }
+                            .help("Leave select mode and deselect")
+                    } else {
+                        Button("Select") { selecting = true }
+                            .help("Select several items with single clicks")
+                    }
+                }
             }
         }
     }
@@ -189,6 +211,29 @@ private struct ConnectionPill: View {
             .help(isLive ? "Imago is open on \(device.name). Changes go to it right away."
                          : "Changes go to \(device.name) when you open Imago on it, or at its next backup.")
     }
+}
+
+extension PhoneSection {
+    /// Shows a grid of items that can be selected (Select applies).
+    var hasGrid: Bool {
+        switch self {
+        case .similar, .queue: false
+        default: true
+        }
+    }
+}
+
+/// Whether the Photos page is in select mode, handed to whichever grid is on screen.
+enum PhoneSelectMode: Equatable {
+    case off
+    /// `selectAll` changes each time Select All is pressed.
+    case on(selectAll: Int)
+
+    var isOn: Bool { self != .off }
+}
+
+extension EnvironmentValues {
+    @Entry var phoneSelectMode: PhoneSelectMode = .off
 }
 
 struct SectionRow: View {
@@ -303,7 +348,7 @@ private struct PeriodGrid: View {
     private func card(_ period: Period) -> some View {
         Group {
             if let asset = keyAsset(period), let url = model.files[asset.id] {
-                ThumbnailView(url: url, cornerRadius: 12, showsName: false)
+                ThumbnailView(url: url, bytes: model.thumbnailBytes[asset.id] ?? 0, cornerRadius: 12, showsName: false)
             } else {
                 RoundedRectangle(cornerRadius: 12).fill(.quaternary).aspectRatio(1, contentMode: .fit)
             }
@@ -335,6 +380,8 @@ private struct PeriodGrid: View {
 /// A grid of the phone's assets, by day or in the order given, with Photos-style selection and actions.
 struct PhoneGrid: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaViewerHost.self) private var viewer
+    @Environment(\.phoneSelectMode) private var selectMode
     let model: PhoneLibraryModel
     let device: PairedDevice
     let assets: [PhoneAsset]
@@ -349,12 +396,17 @@ struct PhoneGrid: View {
 
     @AppStorage("phoneTileSize") private var tileSize = 150.0
     @State private var selection = GridSelection()
-    @State private var quickLook: URL?
     @State private var confirmingDelete = false
     @State private var namingAlbum = false
+    /// `assets` by day, worked out when the library changes rather than on every click.
+    @State private var days: [Day<PhoneAsset>] = []
+    /// Where the anchor's thumbnail is, for the viewer to grow out of.
+    @State private var anchorFrame: CGRect?
     @FocusState private var focused: Bool
 
-    private var selected: [PhoneAsset] { assets.filter { selection.selected.contains($0.id) } }
+    private var selected: [PhoneAsset] {
+        selection.selected.isEmpty ? [] : assets.filter { selection.selected.contains($0.id) }
+    }
     private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device) }
 
     var body: some View {
@@ -372,7 +424,7 @@ struct PhoneGrid: View {
                     spacing: 4, pinnedViews: byDay ? [.sectionHeaders] : []
                 ) {
                     if byDay {
-                        ForEach(Day.group(assets)) { day in
+                        ForEach(days) { day in
                             Section {
                                 ForEach(day.items) { tile($0) }
                             } header: {
@@ -396,6 +448,7 @@ struct PhoneGrid: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color(nsColor: .textBackgroundColor))
+        .modifier(PinchToResize(size: $tileSize))
         .overlay {
             if assets.isEmpty {
                 ContentUnavailableView(empty.title, systemImage: empty.symbol, description: empty.detail.map { Text($0) })
@@ -407,23 +460,35 @@ struct PhoneGrid: View {
             focused: $focused,
             clear: { selection.selected = [] },
             selectAll: { selection.selected = Set(assets.map(\.id)) },
-            preview: preview,
+            preview: { openViewer(on: assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first) },
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
             extra: [".": { if !selected.isEmpty { actions.toggleFavorite(selected) } }]
         ))
-        .quickLookPreview($quickLook, in: assets.compactMap { model.files[$0.id] })
+        // Back from the viewer: the keys work on the grid again.
+        .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
+        .onChange(of: selectMode) { old, new in
+            // Select All pressed (the request changed while in select mode), or select mode left.
+            if case .on(let request) = new, case .on(let before) = old, request != before {
+                selection.selected = Set(assets.map(\.id))
+            }
+            if new == .off { selection.selected = [] }
+        }
+        .onAppear { if byDay { days = Day.group(assets) } }
+        .onChange(of: model.revision) { if byDay { days = Day.group(assets) } }
         .modifier(PhoneDialogs(actions: actions, selected: selected, confirmingDelete: $confirmingDelete,
                                namingAlbum: $namingAlbum, done: { selection.selected = [] }))
     }
 
     private func tile(_ asset: PhoneAsset) -> some View {
         let file = model.files[asset.id]
-        return PhoneTile(asset: asset, url: file ?? server.previews[device.id]?[asset.id], selected: selection.selected.contains(asset.id),
+        return PhoneTile(asset: asset, url: file ?? server.previews[device.id]?[asset.id], thumbnailBytes: model.thumbnailBytes[asset.id] ?? 0,
+                         selected: selection.selected.contains(asset.id),
                          waiting: model.waiting.contains(asset.id), dimmed: isDeleting)
             .onTapGesture { click(asset) }
             .contextMenu { menu(for: asset) }
             .onAppear { if file == nil { server.requestPreview(asset.id, on: device) } }
+            .reportsViewerSourceFrame(asset.id == selection.anchor, to: $anchorFrame)
     }
 
     @ViewBuilder
@@ -440,9 +505,9 @@ struct PhoneGrid: View {
     @ViewBuilder
     private func menu(for asset: PhoneAsset) -> some View {
         let targets = selection.selected.contains(asset.id) ? selected : [asset]
-        if let url = model.files[asset.id] {
-            Button("Quick Look") { quickLook = url }
-            Button("Open Backed-Up Copy") { targets.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } }
+        if model.files[asset.id] != nil {
+            Button("Open") { openViewer(on: asset) }
+            Button("Open in Default App") { targets.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.compactMap { model.files[$0.id] }) }
             Divider()
         }
@@ -469,21 +534,72 @@ struct PhoneGrid: View {
         }
     }
 
-    /// Click selects, ⌘-click toggles, ⇧-click selects a range; a double-click shows it in Quick Look.
+    /// Click selects, ⌘-click toggles, ⇧-click selects a range; a double-click opens it in the viewer.
     private func click(_ asset: PhoneAsset) {
         focused = true
-        if selection.click(asset.id, in: assets.map(\.id)) == .doubleClicked, let url = model.files[asset.id] {
-            quickLook = url
+        // Select mode: a click adds or removes, as in Photos on the iPhone; nothing opens.
+        if selectMode.isOn {
+            selection.selected.formSymmetricDifference([asset.id])
+            selection.anchor = asset.id
+            return
+        }
+        if selection.click(asset.id, in: assets.map(\.id)) == .doubleClicked {
+            openViewer(on: asset)
         }
     }
 
-    private func preview() {
-        if quickLook != nil {
-            quickLook = nil
-        } else {
-            let first = assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first
-            quickLook = first.flatMap { model.files[$0.id] }
+    /// Opens the viewer on `asset`, stepping through the grid's items that have something to show:
+    /// the backed-up file, or the phone's preview until there is one.
+    private func openViewer(on asset: PhoneAsset?) {
+        guard let asset else { return }
+        let previews = server.previews[device.id] ?? [:]
+        var urls: [URL] = []
+        var ids: [String] = []
+        var bytes: [URL: UInt64] = [:]
+        var start: Int?
+        for item in assets {
+            guard let url = model.files[item.id] ?? previews[item.id] else { continue }
+            if item.id == asset.id { start = urls.count }
+            urls.append(url)
+            ids.append(item.id)
+            bytes[url] = model.thumbnailBytes[item.id] ?? 0
         }
+        guard let start else { return }
+        // Looked up when shown, so a favorite made in the viewer shows there at once.
+        let model = model, actions = actions
+        viewer.open(.init(
+            urls: urls, index: start, thumbnailBytes: bytes,
+            date: { model.asset(ids[$0])?.metadata.creationDate },
+            name: { model.asset(ids[$0])?.metadata.originalFilename ?? "" },
+            info: { model.asset(ids[$0]).map(Self.info) ?? [] },
+            isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
+            toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },
+            sourceFrame: asset.id == selection.anchor ? anchorFrame : nil
+        ))
+    }
+
+    /// What the viewer's Info panel shows about an asset.
+    private static func info(_ asset: PhoneAsset) -> [MediaViewerHost.InfoRow] {
+        let metadata = asset.metadata
+        var rows = [MediaViewerHost.InfoRow(label: "Name", value: metadata.originalFilename)]
+        if let date = metadata.creationDate {
+            rows.append(.init(label: "Taken", value: date.formatted(date: .complete, time: .standard)))
+        }
+        let kinds = PhoneMediaType.allCases.filter { $0 != .videos && $0.contains(asset) }.map(\.title)
+        rows.append(.init(label: "Kind", value: ([asset.isVideo ? "Video" : "Photo"] + kinds).joined(separator: " · ")))
+        rows.append(.init(label: "Dimensions", value: "\(metadata.pixelWidth) × \(metadata.pixelHeight)"))
+        if asset.isVideo {
+            rows.append(.init(label: "Length", value: Duration.seconds(metadata.duration).formatted(.time(pattern: .minuteSecond))))
+        }
+        if asset.bytes > 0 { rows.append(.init(label: "Size", value: asset.bytes.bytes)) }
+        rows.append(.init(label: "On this Mac", value: asset.isBackedUp ? "Backed up" : "Not fully backed up yet"))
+        if !metadata.albums.isEmpty {
+            rows.append(.init(label: "Albums", value: metadata.albums.joined(separator: ", ")))
+        }
+        if let location = metadata.location {
+            rows.append(.init(label: "Location", value: String(format: "%.5f, %.5f", location.latitude, location.longitude)))
+        }
+        return rows
     }
 }
 
@@ -493,6 +609,8 @@ struct PhoneGrid: View {
 struct PhoneTile: View {
     let asset: PhoneAsset
     let url: URL?
+    /// What the thumbnail is keyed by, shared with the Library page.
+    var thumbnailBytes: UInt64 = 0
     let selected: Bool
     var waiting = false
     var dimmed = false
@@ -501,7 +619,7 @@ struct PhoneTile: View {
     var body: some View {
         Group {
             if let url {
-                ThumbnailView(url: url, bytes: asset.bytes, cornerRadius: 6, showsName: false)
+                ThumbnailView(url: url, bytes: thumbnailBytes, cornerRadius: 6, showsName: false)
             } else {
                 RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.quaternary).aspectRatio(1, contentMode: .fit)
                     .overlay { Image(systemName: asset.isVideo ? "video" : "photo").font(.title2).foregroundStyle(.tertiary) }

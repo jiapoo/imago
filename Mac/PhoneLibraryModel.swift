@@ -4,8 +4,21 @@ import SwiftUI
 /// The phone's library as of its last backup, shown as it will be once the changes waiting for the
 /// phone are done. Changes made here are queued for the phone; nothing happens on it until the user
 /// confirms there.
+///
+/// One model per phone lives for the whole session, so going back to a phone's Photos is instant.
+/// The first open shows a copy kept on this Mac's own disk, then refreshes from the backup drive,
+/// which can take many seconds when the drive is asleep.
 @MainActor @Observable
 final class PhoneLibraryModel {
+    private static var models: [String: PhoneLibraryModel] = [:]
+
+    static func model(for device: PairedDevice) -> PhoneLibraryModel {
+        if let model = models[device.id] { return model }
+        let model = PhoneLibraryModel(device: device)
+        models[device.id] = model
+        return model
+    }
+
     enum State: Equatable {
         case loading
         /// The backup drive isn't connected.
@@ -21,6 +34,8 @@ final class PhoneLibraryModel {
     private(set) var queue = ChangeQueue()
     /// The backed-up original of each asset (the rendered edit if that's all there is), for thumbnails.
     private(set) var files: [String: URL] = [:]
+    /// What each asset's thumbnail is keyed by (see `PhoneLibrary.thumbnailBytes`).
+    private(set) var thumbnailBytes: [String: UInt64] = [:]
 
     /// As on the phone at its last backup, oldest first. Changes are asked for against these.
     private(set) var base: [PhoneAsset] = []
@@ -40,14 +55,20 @@ final class PhoneLibraryModel {
     private(set) var similar: [Cleanup.Group]?
     private(set) var similarProgress: Double?
     private(set) var largeVideos: [PhoneAsset] = []
+    /// Bumped whenever what's shown changes, so grids regroup only then.
+    private(set) var revision = 0
 
     private var baseByID: [String: PhoneAsset] = [:]
+    /// As shown (waiting changes made), by ID, waiting deletions included.
+    private var shownByID: [String: PhoneAsset] = [:]
     private var phoneAlbums: [String] = []
+    /// What was last read from the drive, to save as the local copy.
+    private var library: PhoneLibrary?
     /// Which snapshot `base` was read from, so a change to the queue alone doesn't read it again.
     private var loadedSnapshot: String?
     private var similarTask: Task<Void, Never>?
 
-    init(device: PairedDevice) {
+    private init(device: PairedDevice) {
         self.device = device
     }
 
@@ -63,6 +84,11 @@ final class PhoneLibraryModel {
         assets.filter(type.contains)
     }
 
+    /// The asset as shown, with waiting changes made.
+    func asset(_ id: String) -> PhoneAsset? {
+        shownByID[id]
+    }
+
     /// The assets as they were on the phone, for asking it to change them.
     func baseAssets(_ ids: some Sequence<String>) -> [PhoneAsset] {
         ids.compactMap { baseByID[$0] }
@@ -72,20 +98,43 @@ final class PhoneLibraryModel {
 
     func load(from server: BackupServer) async {
         guard let store = server.store(for: device) else { state = .unavailable; return }
+        let location = server.location.url.path
+        if state != .ready, let copy = await LocalCopy.read(device.id), copy.location == location {
+            show(copy.library)
+            queue = copy.queue
+            rebuild()
+            state = .ready
+        }
+
+        var changed = false
         let snapshotKey = "\(server.catalogRevision)|\(await store.snapshotModified()?.timeIntervalSince1970 ?? 0)"
         if snapshotKey != loadedSnapshot {
             guard let library = await store.phoneLibrary() else { state = .noSnapshot; return }
             loadedSnapshot = snapshotKey
-            if library.takenAt != takenAt { similar = nil }
-            takenAt = library.takenAt
-            files = library.files
-            base = library.assets
-            baseByID = Dictionary(base.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            phoneAlbums = library.albums
+            show(library)
+            changed = true
         }
-        queue = await store.changeQueue()
-        rebuild()
+        let fresh = await store.changeQueue()
+        if fresh != queue {
+            queue = fresh
+            changed = true
+        }
+        if changed {
+            rebuild()
+            if let library { LocalCopy.write(.init(location: location, library: library, queue: queue), for: device.id) }
+        }
         state = .ready
+    }
+
+    private func show(_ library: PhoneLibrary) {
+        if library.takenAt != takenAt { similar = nil }
+        self.library = library
+        takenAt = library.takenAt
+        files = library.files
+        thumbnailBytes = library.thumbnailBytes
+        base = library.assets
+        baseByID = Dictionary(base.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        phoneAlbums = library.albums
     }
 
     /// Lays the waiting changes over the snapshot and works out everything shown from that.
@@ -93,6 +142,7 @@ final class PhoneLibraryModel {
         let pending = queue.pending
         let deletingIDs = PendingChanges.deleting(pending)
         let effective = PendingChanges.apply(pending, to: base)
+        shownByID = Dictionary(effective.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let newestFirst = effective.reversed()
         assets = newestFirst.filter { !deletingIDs.contains($0.id) }
         deleting = newestFirst.filter { deletingIDs.contains($0.id) }
@@ -118,6 +168,7 @@ final class PhoneLibraryModel {
                 return left.count > 1 ? Cleanup.Group(assets: left, keep: left.contains(group.keep) ? group.keep : Cleanup.bestToKeep(left)) : nil
             }
         }
+        revision += 1
     }
 
     // MARK: Similar shots
@@ -138,5 +189,41 @@ final class PhoneLibraryModel {
     func cancelSimilar() {
         similarTask?.cancel()
         similarProgress = nil
+    }
+}
+
+/// The phone's library and queue as last read from the backup drive, kept in this Mac's Caches folder.
+/// Only for showing quickly: it's replaced by what's on the drive as soon as that's read.
+private enum LocalCopy {
+    struct Contents: Codable {
+        /// The backup location it came from; a copy from another location isn't used.
+        var location: String
+        var library: PhoneLibrary
+        var queue: ChangeQueue
+    }
+
+    private static func url(for deviceID: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "PhoneLibraries/\(deviceID).json")
+    }
+
+    static func read(_ deviceID: String) async -> Contents? {
+        let url = url(for: deviceID)
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(Contents.self, from: data)
+        }.value
+    }
+
+    static func write(_ contents: Contents, for deviceID: String) {
+        let url = url(for: deviceID)
+        Task.detached(priority: .utility) {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? encoder.encode(contents).write(to: url, options: .atomic)
+        }
     }
 }

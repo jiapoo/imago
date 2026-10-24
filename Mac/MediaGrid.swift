@@ -191,7 +191,8 @@ struct FloatingBar<Actions: View>: View {
     }
 }
 
-/// The checkmark and tint on a selected tile.
+/// A selected tile's ring in the accent color, as in Photos: no checkmark, no tint over the photo.
+/// A thin light line inside keeps it clear against dark photos.
 struct SelectedOverlay: ViewModifier {
     let selected: Bool
     var cornerRadius: CGFloat = 6
@@ -201,22 +202,37 @@ struct SelectedOverlay: ViewModifier {
             .overlay {
                 if selected {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.tint.opacity(0.18))
-                        .strokeBorder(.tint, lineWidth: 3)
+                        .strokeBorder(.tint, lineWidth: 3.5)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: max(cornerRadius - 3.5, 0), style: .continuous)
+                                .strokeBorder(.white.opacity(0.85), lineWidth: 1)
+                                .padding(3.5)
+                        )
+                        .transition(.opacity)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .tint)
-                        .shadow(color: .black.opacity(0.25), radius: 2)
-                        .padding(6)
-                        .transition(.scale.combined(with: .opacity))
+            .animation(.snappy(duration: 0.12), value: selected)
+    }
+}
+
+/// Pinch on the trackpad to make thumbnails bigger or smaller, as in Photos.
+struct PinchToResize: ViewModifier {
+    @Binding var size: Double
+    var range: ClosedRange<Double> = 90...300
+    @State private var start: Double?
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            MagnifyGesture()
+                .onChanged { value in
+                    let base = start ?? size
+                    if start == nil { start = size }
+                    let new = min(max(base * value.magnification, range.lowerBound), range.upperBound)
+                    // Whole points only: every change lays the grid out again.
+                    if abs(new - size) >= 1 { size = new.rounded() }
                 }
-            }
-            .animation(.snappy(duration: 0.15), value: selected)
+                .onEnded { _ in start = nil }
+        )
     }
 }
 

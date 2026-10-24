@@ -13,6 +13,8 @@ settings:
 packages:
   ImagoKit:
     path: Packages/ImagoKit
+  ImagoMedia:
+    path: Packages/ImagoMedia
 targets:
   ImagoMac:
     type: application
@@ -21,6 +23,7 @@ targets:
     sources: [Mac]
     dependencies:
       - package: ImagoKit
+      - package: ImagoMedia
     info:
       path: Mac/Info.plist
       properties:
@@ -41,6 +44,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.mac
         PRODUCT_NAME: Imago
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_HARDENED_RUNTIME: YES
   ImagoiOS:
     type: application

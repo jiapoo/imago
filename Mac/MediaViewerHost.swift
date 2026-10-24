@@ -1,0 +1,309 @@
+import AppKit
+import AreteMedia
+import SwiftUI
+
+/// The in-app viewer (AreteMedia's `MediaViewer`, embedded). A photo or video opened from any grid
+/// shows over the window's content, like the Photos app: it grows out of its thumbnail, the toolbar
+/// turns into the viewer's (back, when it was taken, info, share, favorite), and the background
+/// follows the appearance. It opens at once on the grid's thumbnail and sharpens when the full
+/// photo is decoded. Closing shrinks it back into its thumbnail.
+@MainActor @Observable
+final class MediaViewerHost {
+    /// The coordinate space grids report a thumbnail's frame in: the window's content area, which
+    /// the viewer covers.
+    static let space = "mediaViewer"
+
+    struct InfoRow: Identifiable {
+        var label: String
+        var value: String
+        var id: String { label }
+    }
+
+    /// The files to step through, and what the toolbar and info panel show about each.
+    struct Request: Identifiable {
+        let id = UUID()
+        var urls: [URL]
+        var index: Int
+        /// What each file's grid thumbnail is keyed by, to show it while the full photo loads.
+        var thumbnailBytes: [URL: UInt64]
+        /// When it was taken: the toolbar's title, as in Photos.
+        var date: (Int) -> Date?
+        /// Shown instead when there's no date.
+        var name: (Int) -> String
+        var info: (Int) -> [InfoRow]
+        /// Whether it's a favorite on the iPhone; nil where favorites don't apply.
+        var isFavorite: ((Int) -> Bool)? = nil
+        var toggleFavorite: ((Int) -> Void)? = nil
+        /// Where the opened item's thumbnail is, in `space`: the viewer grows out of it and shrinks
+        /// back into it. Nil to fade instead.
+        var sourceFrame: CGRect? = nil
+    }
+
+    private(set) var request: Request?
+    /// The item on screen.
+    var index = 0
+    var showingInfo = false
+    /// Closing: the viewer is shrinking back into its thumbnail.
+    private(set) var isClosing = false
+
+    var isOpen: Bool { request != nil }
+
+    /// Opens `request.urls[request.index]`; ← and → move through the rest.
+    func open(_ request: Request) {
+        guard request.urls.indices.contains(request.index) else { return }
+        isClosing = false
+        self.request = request
+        index = request.index
+        // A video plays from the backup drive: thumbnails made after backups can wait.
+        Task { await Thumbnails.shared.holdBackgroundWork(true) }
+    }
+
+    /// Starts closing; the overlay animates, then calls `finishClosing()`.
+    func close() {
+        guard request != nil else { return }
+        isClosing = true
+    }
+
+    func finishClosing() {
+        request = nil
+        isClosing = false
+        Task { await Thumbnails.shared.holdBackgroundWork(false) }
+    }
+
+    /// The thumbnail to show for a file while it opens or closes.
+    func thumbnail(_ url: URL) -> CGImage? {
+        Thumbnails.shared.stored(url, bytes: request?.thumbnailBytes[url] ?? 0)?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+}
+
+extension View {
+    /// Shows the viewer over this view while one is open, with its toolbar. Grids inside report the
+    /// opened thumbnail's frame in `MediaViewerHost.space`, which this sets up.
+    func mediaViewerOverlay() -> some View {
+        modifier(MediaViewerOverlay())
+    }
+
+    /// Reports this view's frame in the viewer's space while `active` (e.g. the item a double-click
+    /// would open), so the viewer can grow out of it.
+    func reportsViewerSourceFrame(_ active: Bool, to frame: Binding<CGRect?>) -> some View {
+        modifier(SourceFrameReporter(active: active, frame: frame))
+    }
+}
+
+private struct SourceFrameReporter: ViewModifier {
+    let active: Bool
+    @Binding var frame: CGRect?
+
+    func body(content: Content) -> some View {
+        if active {
+            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(MediaViewerHost.space)) } action: { frame = $0 }
+        } else {
+            content
+        }
+    }
+}
+
+private struct MediaViewerOverlay: ViewModifier {
+    @Environment(MediaViewerHost.self) private var host
+
+    /// The thumbnail flying between its tile and the viewer.
+    struct Flight {
+        var image: CGImage
+        var frame: CGRect
+        var cornerRadius: CGFloat
+    }
+
+    @State private var flight: Flight?
+    /// The real viewer is showing (it's hidden during the flight).
+    @State private var showingViewer = false
+    @State private var backdrop: Double = 0
+
+    private static let grow = Animation.spring(duration: 0.34, bounce: 0.1)
+    private static let shrink = Animation.spring(duration: 0.28, bounce: 0)
+
+    func body(content: Content) -> some View {
+        content
+            .coordinateSpace(.named(MediaViewerHost.space))
+            .overlay {
+                if let request = host.request {
+                    GeometryReader { geo in
+                        ZStack(alignment: .topLeading) {
+                            Color.mediaBackground.opacity(backdrop)
+                            // There from the start, so a video starts loading during the flight;
+                            // seen once the thumbnail lands where the viewer shows it.
+                            viewer(request)
+                                .opacity(showingViewer ? 1 : 0)
+                                .allowsHitTesting(showingViewer)
+                            if let flight {
+                                Image(decorative: flight.image, scale: 1)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: flight.frame.width, height: flight.frame.height)
+                                    .clipShape(RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous))
+                                    .offset(x: flight.frame.minX, y: flight.frame.minY)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                        .onAppear { open(request, in: geo.size) }
+                        .onChange(of: request.id) { open(request, in: geo.size) }
+                        .onChange(of: host.isClosing) { _, closing in if closing { close(request, in: geo.size) } }
+                    }
+                }
+            }
+            .toolbar {
+                if let request = host.request, !host.isClosing {
+                    ViewerToolbar(request: request, host: host)
+                }
+            }
+    }
+
+    private func viewer(_ request: MediaViewerHost.Request) -> some View {
+        HStack(spacing: 0) {
+            MediaViewer(
+                urls: request.urls, startAt: request.index, accent: .imago,
+                placeholder: { host.thumbnail($0) },
+                embedded: true,
+                onIndexChange: { host.index = $0 },
+                slowStartMessage: "Waking up the backup drive…",
+                onClose: { host.close() }
+            )
+            .id(request.id)
+            if host.showingInfo {
+                Divider()
+                InfoPanel(rows: request.info(host.index))
+                    .frame(width: 280)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: host.showingInfo)
+    }
+
+    /// Grows the thumbnail from its tile to where the viewer shows it, then hands over to the viewer,
+    /// which starts on the same image in the same place.
+    private func open(_ request: MediaViewerHost.Request, in size: CGSize) {
+        let url = request.urls[request.index]
+        guard let source = request.sourceFrame, let image = host.thumbnail(url) else {
+            flight = nil
+            showingViewer = true
+            withAnimation(.easeOut(duration: 0.15)) { backdrop = 1 }
+            return
+        }
+        showingViewer = false
+        backdrop = 0
+        flight = Flight(image: image, frame: source, cornerRadius: 6)
+        let target = fitted(image, in: CGRect(origin: .zero, size: size))
+        withAnimation(Self.grow) {
+            flight?.frame = target
+            flight?.cornerRadius = 0
+            backdrop = 1
+        } completion: {
+            showingViewer = true
+            flight = nil
+        }
+    }
+
+    /// Shrinks the item on screen back into its tile when it's the one that was opened (the grid
+    /// hasn't moved under the viewer); fades otherwise.
+    private func close(_ request: MediaViewerHost.Request, in size: CGSize) {
+        let url = request.urls.indices.contains(host.index) ? request.urls[host.index] : nil
+        let width = size.width - (host.showingInfo ? 281 : 0)
+        guard host.index == request.index, let source = request.sourceFrame,
+              let url, let image = host.thumbnail(url) else {
+            withAnimation(.easeOut(duration: 0.15)) {
+                showingViewer = false
+                backdrop = 0
+            } completion: { host.finishClosing() }
+            return
+        }
+        flight = Flight(image: image, frame: fitted(image, in: CGRect(x: 0, y: 0, width: width, height: size.height)), cornerRadius: 0)
+        showingViewer = false
+        withAnimation(Self.shrink) {
+            flight?.frame = source
+            flight?.cornerRadius = 6
+            backdrop = 0
+        } completion: {
+            flight = nil
+            host.finishClosing()
+        }
+    }
+
+    /// Where an image of this shape sits when fitted into `box`, as the viewer shows it.
+    private func fitted(_ image: CGImage, in box: CGRect) -> CGRect {
+        guard image.width > 0, image.height > 0, box.width > 0, box.height > 0 else { return box }
+        let scale = min(box.width / CGFloat(image.width), box.height / CGFloat(image.height))
+        let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        return CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height)
+    }
+}
+
+/// The toolbar while the viewer is open, laid out like Photos'.
+private struct ViewerToolbar: ToolbarContent {
+    let request: MediaViewerHost.Request
+    @Bindable var host: MediaViewerHost
+
+    var body: some ToolbarContent {
+        let index = host.index
+        ToolbarItem(placement: .navigation) {
+            Button { host.close() } label: {
+                Label("Back", systemImage: "chevron.left")
+            }
+            .help("Back to the grid (Esc)")
+        }
+        ToolbarItem(placement: .principal) {
+            VStack(spacing: 0) {
+                Text(request.date(index)?.formatted(date: .long, time: .standard) ?? request.name(index))
+                    .font(.headline)
+                    .lineLimit(1)
+                if request.urls.count > 1 {
+                    Text("\(index + 1) of \(request.urls.count.formatted())")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { host.showingInfo.toggle() } label: {
+                Label("Info", systemImage: host.showingInfo ? "info.circle.fill" : "info.circle")
+            }
+            .help("Show details")
+            if request.urls.indices.contains(index) {
+                ShareLink(item: request.urls[index]) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .help("Share")
+            }
+            if let isFavorite = request.isFavorite, let toggle = request.toggleFavorite {
+                let favorite = isFavorite(index)
+                Button { toggle(index) } label: {
+                    Label(favorite ? "Unfavorite" : "Favorite", systemImage: favorite ? "heart.fill" : "heart")
+                        .foregroundStyle(favorite ? Color.imago : Color.primary)
+                }
+                .help(favorite ? "Unfavorite on the iPhone" : "Favorite on the iPhone")
+            }
+        }
+    }
+}
+
+/// Details of the item on screen, beside it, like Photos' Info.
+private struct InfoPanel: View {
+    let rows: [MediaViewerHost.InfoRow]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Info").font(.title3.bold())
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.label).font(.caption).foregroundStyle(.secondary)
+                        Text(row.value).font(.callout).textSelection(.enabled)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}

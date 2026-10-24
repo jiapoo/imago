@@ -1,4 +1,5 @@
 import CoreImage.CIFilterBuiltins
+import ImagoKit
 import SwiftUI
 
 enum SidebarItem: Hashable {
@@ -13,6 +14,7 @@ enum SidebarItem: Hashable {
 struct MainView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
+    @Environment(MediaViewerHost.self) private var viewer
     @State private var selection: SidebarItem? = .overview
     @State private var showingAddPhone = false
     @State private var naming: FolderNaming?
@@ -73,7 +75,8 @@ struct MainView: View {
                     StorageView()
                 case .device(let id):
                     if let device = server.devices.first(where: { $0.id == id }) {
-                        DeviceView(device: device)
+                        DeviceView(device: device) { selection = .manage(device.id) }
+                            .id(id)
                     } else {
                         OverviewView(showingAddPhone: $showingAddPhone, selection: $selection)
                     }
@@ -87,11 +90,14 @@ struct MainView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
+            .mediaViewerOverlay()
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showingAddPhone = true } label: { Label("Add iPhone", systemImage: "plus") }
-                    .help("Pair another iPhone")
+            if !viewer.isOpen {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { showingAddPhone = true } label: { Label("Add iPhone", systemImage: "plus") }
+                        .help("Pair another iPhone")
+                }
             }
         }
         .sheet(isPresented: $showingAddPhone) { AddPhoneSheet() }
@@ -132,8 +138,8 @@ struct FolderRow: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .dropDestination(for: URL.self) { urls, _ in
-            let dropped = Set(urls.map(\.standardizedFileURL))
-            let items = library.items.filter { dropped.contains($0.url.standardizedFileURL) }
+            let dropped = Set(urls.map(\.lexicallyStandardized))
+            let items = library.items.filter { dropped.contains($0.url.lexicallyStandardized) }
             guard !items.isEmpty else { return false }
             // Dragging one selected item moves the whole selection.
             let moving = items.contains { library.selection.contains($0.id) }
@@ -358,10 +364,18 @@ struct ActivityCard: View {
 struct DeviceView: View {
     @Environment(BackupServer.self) private var server
     let device: PairedDevice
-    @State private var recent: [URL] = []
+    /// Opens this iPhone's Photos page.
+    var openPhotos: () -> Void = {}
+    @State private var model: PhoneLibraryModel
     @State private var confirmingRemove = false
     @State private var renaming = false
     @State private var newName = ""
+
+    init(device: PairedDevice, openPhotos: @escaping () -> Void = {}) {
+        self.device = device
+        self.openPhotos = openPhotos
+        _model = State(initialValue: PhoneLibraryModel.model(for: device))
+    }
 
     var body: some View {
         let summary = server.summaries[device.id]
@@ -369,35 +383,40 @@ struct DeviceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 20) {
-                    HealthBadge(symbol: session == nil ? "iphone" : "arrow.triangle.2.circlepath", tint: .blue, size: 64, spinning: session != nil)
+                    HealthBadge(symbol: session == nil ? "iphone" : "arrow.triangle.2.circlepath", tint: .imago, size: 64, spinning: session != nil)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(device.name).font(.system(size: 28, weight: .bold, design: .rounded))
                         Text(statusText(summary: summary, session: session)).foregroundStyle(.secondary)
+                        if server.liveDevices.contains(device.id) {
+                            Label("Imago is open on this iPhone: changes reach it right away", systemImage: "iphone.radiowaves.left.and.right")
+                                .font(.callout).foregroundStyle(.green)
+                        }
                     }
                     Spacer()
+                    Button("Open Photos", action: openPhotos)
+                        .controlSize(.large)
                 }
                 .card(padding: 24)
 
                 HStack(spacing: 16) {
-                    StatTile(title: "Photos & videos", value: (summary?.assetCount ?? 0).formatted(), symbol: "photo.stack.fill", tint: .blue)
-                    StatTile(title: "Files", value: (summary?.fileCount ?? 0).formatted(), symbol: "doc.on.doc.fill", tint: .teal)
-                    StatTile(title: "Space used", value: (summary?.totalBytes ?? 0).bytes, symbol: "chart.pie.fill", tint: .purple)
+                    StatTile(title: "On the iPhone", value: model.state == .ready ? model.base.count.formatted() : "–",
+                             symbol: "iphone", tint: .imago)
+                    StatTile(title: "Backed up", value: model.state == .ready ? backedUpText : (summary?.assetCount ?? 0).formatted(),
+                             symbol: "checkmark.shield.fill", tint: .green)
+                    StatTile(title: "Space on this Mac", value: (summary?.totalBytes ?? 0).bytes, symbol: "internaldrive.fill", tint: .purple)
                 }
 
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionHeader(title: "Recently backed up", symbol: "sparkles")
-                    if recent.isEmpty {
-                        Text("Photos appear here after the first backup.").font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 6), spacing: 10) {
-                            ForEach(recent, id: \.self) { url in
-                                ThumbnailView(url: url)
-                                    .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
-                            }
-                        }
-                    }
+                if model.state == .ready {
+                    libraryCard
+                    spaceCard
+                    if !model.queue.pending.isEmpty || !model.queue.done.isEmpty { changesCard }
+                } else {
+                    Text(model.state == .unavailable
+                         ? "Connect the backup drive to see what's on \(device.name)."
+                         : "After \(device.name)'s next backup, what's on it shows here.")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .card()
                 }
-                .card()
 
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Folder", symbol: "folder")
@@ -425,9 +444,7 @@ struct DeviceView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle(device.name)
-        .task(id: "\(device.id)-\(summary?.fileCount ?? 0)") {
-            recent = await server.recentFiles(for: device, limit: 12)
-        }
+        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])") { await model.load(from: server) }
         .confirmationDialog("Remove “\(device.name)”?", isPresented: $confirmingRemove) {
             Button("Remove iPhone", role: .destructive) { server.remove(device) }
         } message: {
@@ -442,6 +459,99 @@ struct DeviceView: View {
         }
     }
 
+    private var backedUpText: String {
+        let total = model.base.count
+        guard total > 0 else { return "0" }
+        let percent = Double(model.backedUpCount) / Double(total)
+        return percent >= 0.9995 ? "All" : percent.formatted(.percent.precision(.fractionLength(0...1)))
+    }
+
+    /// What's on the iPhone, from its last backup.
+    private var libraryCard: some View {
+        let assets = model.base
+        let videos = assets.count(where: \.isVideo)
+        let dates = assets.compactMap(\.metadata.creationDate)
+        let notBackedUp = assets.count - model.backedUpCount
+        let types = PhoneMediaType.allCases.filter { $0 != .videos && model.mediaTypeCounts[$0, default: 0] > 0 }
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "iPhone library", symbol: "photo.on.rectangle.angled")
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: Double(model.backedUpCount), total: Double(max(assets.count, 1)))
+                    .tint(notBackedUp == 0 ? .green : .imago)
+                Text(notBackedUp == 0
+                     ? "Everything on \(device.name) is backed up on this Mac."
+                     : "\(notBackedUp.formatted()) not backed up yet. They're copied at the next backup.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 8) {
+                InfoGridRow("Photos", (assets.count - videos).formatted())
+                InfoGridRow("Videos", videos.formatted())
+                if let oldest = dates.min(), let newest = dates.max() {
+                    InfoGridRow("Taken", "\(oldest.formatted(date: .abbreviated, time: .omitted)) – \(newest.formatted(date: .abbreviated, time: .omitted))")
+                }
+                InfoGridRow("Favorites", model.favorites.count.formatted())
+                InfoGridRow("Albums", model.albums.count.formatted())
+                if !types.isEmpty {
+                    InfoGridRow("Also", types.map { "\(model.mediaTypeCounts[$0, default: 0].formatted()) \($0.title)" }.joined(separator: " · "))
+                }
+                if let takenAt = model.takenAt {
+                    InfoGridRow("As of", "Its last backup, \(takenAt.shortRelative)")
+                }
+            }
+            .font(.callout)
+        }
+        .card()
+    }
+
+    /// How much could be freed on the iPhone, and where.
+    private var spaceCard: some View {
+        let backedUp = model.assets.filter(\.isBackedUp)
+        let screenshots = model.assets(of: .screenshots) + model.assets(of: .screenRecordings)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                SectionHeader(title: "Free up space on the iPhone", symbol: "externaldrive.badge.minus")
+                Spacer()
+                Button("Open Photos", action: openPhotos).buttonStyle(.link)
+            }
+            Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 8) {
+                InfoGridRow("Backed up, so safe to remove", "\(backedUp.reduce(0) { $0 + $1.bytes }.bytes) in \(backedUp.count.formatted()) items")
+                InfoGridRow("Duplicates", model.duplicates.isEmpty ? "None" :
+                            "\(model.duplicates.reduce(0) { $0 + $1.reclaimableBytes }.bytes) in \(model.duplicates.count.formatted()) sets")
+                InfoGridRow("Large videos", model.largeVideos.isEmpty ? "None" :
+                            "\(model.largeVideos.reduce(0) { $0 + $1.bytes }.bytes) in \(model.largeVideos.count.formatted())")
+                InfoGridRow("Screenshots", screenshots.isEmpty ? "None" :
+                            "\(screenshots.reduce(0) { $0 + $1.bytes }.bytes) in \(screenshots.count.formatted())")
+                if !model.deleting.isEmpty {
+                    InfoGridRow("Waiting to be deleted", "\(model.deleting.reduce(0) { $0 + $1.bytes }.bytes) in \(model.deleting.count.formatted())")
+                }
+            }
+            .font(.callout)
+        }
+        .card()
+    }
+
+    /// Changes waiting for the iPhone, and the last few it handled.
+    private var changesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Changes for the iPhone", symbol: "iphone.and.arrow.forward")
+            if !model.queue.pending.isEmpty {
+                Text(model.queue.pending.count == 1 ? "1 change waiting" : "\(model.queue.pending.count) changes waiting")
+                    .font(.callout.weight(.medium))
+            }
+            ForEach(model.queue.done.prefix(4)) { done in
+                HStack(spacing: 10) {
+                    Image(systemName: done.report.outcome == .applied ? "checkmark.circle.fill" : "xmark.circle")
+                        .foregroundStyle(done.report.outcome == .applied ? .green : .secondary)
+                    Text(done.change.summary)
+                    Spacer()
+                    Text(done.report.date.shortRelative).foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            }
+        }
+        .card()
+    }
+
     private func statusText(summary: BackupStore.Summary?, session: BackupServer.Session?) -> String {
         if let session { return session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)" }
         if summary?.isPartial == true, let received = summary?.lastReceived {
@@ -449,6 +559,24 @@ struct DeviceView: View {
         }
         if let last = summary?.lastBackup { return "Last backup \(last.shortRelative)" }
         return "Waiting for the first backup"
+    }
+}
+
+/// A label and its value in a card's two-column list.
+private struct InfoGridRow: View {
+    let label: String
+    let value: String
+
+    init(_ label: String, _ value: String) {
+        self.label = label
+        self.value = value
+    }
+
+    var body: some View {
+        GridRow {
+            Text(label).foregroundStyle(.secondary)
+            Text(value)
+        }
     }
 }
 

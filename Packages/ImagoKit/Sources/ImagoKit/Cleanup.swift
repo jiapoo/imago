@@ -1,7 +1,7 @@
 import Foundation
 
 /// One photo or video that is on the phone right now, joined with what the Mac has of it.
-public struct PhoneAsset: Sendable, Hashable, Identifiable {
+public struct PhoneAsset: Codable, Sendable, Hashable, Identifiable {
     public var metadata: AssetMetadata
     /// SHA-256 of the original photo or video file, if the Mac has it.
     public var originalSHA256: String?

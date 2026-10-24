@@ -1,20 +1,22 @@
 import AppKit
 import ImagoKit
-import QuickLook
 import SwiftUI
 
-/// The library, or one Folder: a grid of days. Click to select (⌘ and ⇧ to add), double-click or ⌘O
-/// to open, Space for Quick Look, Delete for the Trash. Drag items onto a Folder in the sidebar.
+/// The library, or one Folder: a grid of days. Click to select (⌘ and ⇧ to add), double-click or Space
+/// to open in the viewer, ⌘O for the default app, pinch to resize, Delete for the Trash. Drag items
+/// onto a Folder in the sidebar.
 struct BrowserView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
+    @Environment(MediaViewerHost.self) private var viewer
     let scope: MediaLibrary.Scope
 
     @State private var kind: MediaLibrary.Kind = .all
     @State private var deviceID: String?
     @AppStorage("browserTileSize") private var tileSize = 150.0
     @State private var anchor: MediaItem.ID?
-    @State private var quickLook: URL?
+    /// Where the anchor's thumbnail is, for the viewer to grow out of.
+    @State private var anchorFrame: CGRect?
     @State private var confirmingTrash = false
     /// Items to ask their iPhone to remove, while the confirmation is up.
     @State private var removing: [MediaItem]?
@@ -31,13 +33,16 @@ struct BrowserView: View {
             .overlay(alignment: .bottom) { selectionBar }
             .animation(.snappy(duration: 0.25), value: selected.isEmpty)
             .modifier(keyHandling(items))
-            .quickLookPreview($quickLook, in: items.map(\.url))
+            .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
             .modifier(dialogs)
             .navigationTitle(title)
             .navigationSubtitle(subtitle(items))
             .toolbar { toolbar }
             .task(id: server.catalogRevision) { await library.load(from: server) }
             .onChange(of: scope) { library.selection = []; anchor = nil }
+            // Photos and videos open from the backup drive: keep it spinning while the grid is up.
+            .onAppear { server.keepDriveAwake(true) }
+            .onDisappear { server.keepDriveAwake(false) }
     }
 
     private func grid(_ items: [MediaItem]) -> some View {
@@ -60,6 +65,7 @@ struct BrowserView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color(nsColor: .textBackgroundColor))
+        .modifier(PinchToResize(size: $tileSize))
     }
 
     private func tile(_ item: MediaItem, in items: [MediaItem]) -> some View {
@@ -72,6 +78,7 @@ struct BrowserView: View {
         .onTapGesture { click(item, in: items) }
         .contextMenu { menu(for: item) }
         .draggable(item.url)
+        .reportsViewerSourceFrame(item.id == anchor, to: $anchorFrame)
     }
 
     @ViewBuilder
@@ -146,7 +153,7 @@ struct BrowserView: View {
             focused: $focused,
             clear: { library.selection = [] },
             selectAll: { library.selection = Set(items.map(\.id)) },
-            preview: previewSelection,
+            preview: { openViewer(on: (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)) },
             open: { selected.forEach { NSWorkspace.shared.open($0.url) } },
             delete: { if !selected.isEmpty { confirmingTrash = true } }
         )
@@ -217,33 +224,36 @@ extension BrowserView {
         }
     }
 
+    /// Hidden while the viewer is open: the toolbar is the viewer's then.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .principal) {
-            Picker("Show", selection: $kind) {
-                Label("All", systemImage: "square.grid.2x2").tag(MediaLibrary.Kind.all)
-                Label("Photos", systemImage: "photo").tag(MediaLibrary.Kind.photos)
-                Label("Videos", systemImage: "video").tag(MediaLibrary.Kind.videos)
-            }
-            .pickerStyle(.segmented)
-            .labelStyle(.titleOnly)
-            .help("Show photos, videos or both")
+        if !viewer.isOpen {
+            ToolbarItemGroup(placement: .principal) {
+                Picker("Show", selection: $kind) {
+                    Label("All", systemImage: "square.grid.2x2").tag(MediaLibrary.Kind.all)
+                    Label("Photos", systemImage: "photo").tag(MediaLibrary.Kind.photos)
+                    Label("Videos", systemImage: "video").tag(MediaLibrary.Kind.videos)
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.titleOnly)
+                .help("Show photos, videos or both")
 
-            if scope == .all, server.devices.count > 1 {
-                Picker("iPhone", selection: $deviceID) {
-                    Text("All iPhones").tag(String?.none)
-                    ForEach(server.devices) { Text($0.name).tag(Optional($0.id)) }
+                if scope == .all, server.devices.count > 1 {
+                    Picker("iPhone", selection: $deviceID) {
+                        Text("All iPhones").tag(String?.none)
+                        ForEach(server.devices) { Text($0.name).tag(Optional($0.id)) }
+                    }
+                    .fixedSize()
                 }
-                .fixedSize()
             }
-        }
-        ToolbarItemGroup(placement: .primaryAction) {
-            TileSizeSlider(size: $tileSize)
-            if case .folder(let name) = scope {
-                Button { server.revealInFinder(server.foldersURL.appending(path: name)) } label: {
-                    Label("Show in Finder", systemImage: "folder")
+            ToolbarItemGroup(placement: .primaryAction) {
+                TileSizeSlider(size: $tileSize)
+                if case .folder(let name) = scope {
+                    Button { server.revealInFinder(server.foldersURL.appending(path: name)) } label: {
+                        Label("Show in Finder", systemImage: "folder")
+                    }
+                    .help("Show this folder in Finder")
                 }
-                .help("Show this folder in Finder")
             }
         }
     }
@@ -277,8 +287,8 @@ extension BrowserView {
     @ViewBuilder
     private func menu(for item: MediaItem) -> some View {
         let targets = library.selection.contains(item.id) ? selected : [item]
-        Button("Open") { targets.forEach { NSWorkspace.shared.open($0.url) } }
-        Button("Quick Look") { quickLook = item.url }
+        Button("Open") { openViewer(on: item) }
+        Button("Open in Default App") { targets.forEach { NSWorkspace.shared.open($0.url) } }
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
         Divider()
         Menu("Move To") {
@@ -307,24 +317,44 @@ extension BrowserView {
 
     // MARK: Selection
 
-    /// Click selects; ⌘-click toggles; ⇧-click selects a range; a double-click opens.
+    /// Click selects; ⌘-click toggles; ⇧-click selects a range; a double-click opens it in the viewer.
     private func click(_ item: MediaItem, in items: [MediaItem]) {
         focused = true
         var selection = GridSelection(selected: library.selection, anchor: anchor)
         if selection.click(item.id, in: items.map(\.id)) == .doubleClicked {
-            NSWorkspace.shared.open(item.url)
+            openViewer(on: item)
             return
         }
         library.selection = selection.selected
         anchor = selection.anchor
     }
 
-    private func previewSelection() {
-        if quickLook != nil {
-            quickLook = nil
-        } else {
-            quickLook = (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)?.url
-        }
+    /// Opens the viewer on `item`, stepping through this grid.
+    private func openViewer(on item: MediaItem?) {
+        guard let item else { return }
+        let items = items
+        guard let start = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let devices = Dictionary(server.devices.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        viewer.open(.init(
+            urls: items.map(\.url), index: start,
+            thumbnailBytes: Dictionary(items.map { ($0.url, $0.bytes) }, uniquingKeysWith: { a, _ in a }),
+            date: { items[$0].date },
+            name: { items[$0].name },
+            info: { index in
+                let item = items[index]
+                var rows = [MediaViewerHost.InfoRow(label: "Name", value: item.name)]
+                if let date = item.date { rows.append(.init(label: "Taken", value: date.formatted(date: .complete, time: .standard))) }
+                if item.isVideo, item.duration > 0 {
+                    rows.append(.init(label: "Length", value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
+                }
+                rows.append(.init(label: "Size", value: item.bytes.bytes))
+                if let folder = item.folder { rows.append(.init(label: "Folder", value: folder)) }
+                if let name = item.deviceID.flatMap({ devices[$0] }) { rows.append(.init(label: "From", value: name)) }
+                rows.append(.init(label: "File", value: item.url.path))
+                return rows
+            },
+            sourceFrame: item.id == anchor ? anchorFrame : nil
+        ))
     }
 }
 

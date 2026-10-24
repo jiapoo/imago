@@ -10,8 +10,8 @@ struct PhoneSnapshot: Codable {
 }
 
 /// Changes waiting for the phone, and what happened to earlier ones.
-struct ChangeQueue: Codable {
-    struct Done: Codable, Identifiable {
+struct ChangeQueue: Codable, Equatable {
+    struct Done: Codable, Equatable, Identifiable {
         var change: LibraryChange
         var report: ChangeReport
         var id: UUID { change.id }
@@ -22,12 +22,15 @@ struct ChangeQueue: Codable {
 }
 
 /// The phone's library as the Mac sees it, joined with the backup.
-struct PhoneLibrary {
+struct PhoneLibrary: Codable {
     var takenAt: Date
     var assets: [PhoneAsset]
     var albums: [String]
     /// The backed-up original of each asset (the rendered edit if that's all there is), for thumbnails.
     var files: [String: URL]
+    /// Each asset's stored files added up, every revision included: what the grids key thumbnails by,
+    /// so the Library page, this page and thumbnails made during backups share them.
+    var thumbnailBytes: [String: UInt64]
 }
 
 // Kept in the device's `.photobackup` folder, next to the index, so it moves with the backups.
@@ -48,6 +51,8 @@ extension BackupStore {
         decoder.dateDecodingStrategy = .iso8601
         guard let snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return nil }
         let stored = storedResources()
+        var thumbnailBytes: [String: UInt64] = [:]
+        for resource in stored.values { thumbnailBytes[resource.assetID, default: 0] += resource.size }
 
         var files: [String: URL] = [:]
         let assets = snapshot.entries.map { entry in
@@ -63,7 +68,7 @@ extension BackupStore {
                 isBackedUp: !keys.isEmpty && present.count == keys.count
             )
         }
-        return PhoneLibrary(takenAt: snapshot.takenAt, assets: assets, albums: snapshot.albums, files: files)
+        return PhoneLibrary(takenAt: snapshot.takenAt, assets: assets, albums: snapshot.albums, files: files, thumbnailBytes: thumbnailBytes)
     }
 
     /// When the snapshot was last written, to tell whether it needs reading again.

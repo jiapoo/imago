@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // Shared building blocks for the Mac screens.
@@ -120,6 +121,35 @@ struct ThumbnailView: View {
                 withAnimation(.easeOut(duration: 0.2)) { image = thumbnail }
                 failed = thumbnail == nil
             }
+    }
+}
+
+extension Color {
+    /// Imago's red, from the app icon (#DD1B3F). Also the app's accent color (Assets › AccentColor).
+    static let imago = Color(red: 0xDD / 255, green: 0x1B / 255, blue: 0x3F / 255)
+}
+
+extension Color {
+    /// Behind a photo or video in the viewer: white in light mode, black in dark, as in Photos.
+    static let mediaBackground = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white
+    })
+}
+
+extension URL {
+    /// This file URL with "." and ".." worked out from the path alone. `standardizedFileURL` first asks
+    /// the disk whether the file is there, which on a slow or sleeping backup drive can take seconds,
+    /// far too long to do for every photo in a library.
+    var lexicallyStandardized: URL {
+        var parts: [Substring] = []
+        for part in path(percentEncoded: false).split(separator: "/") {
+            switch part {
+            case ".": continue
+            case "..": if !parts.isEmpty { parts.removeLast() }
+            default: parts.append(part)
+            }
+        }
+        return URL(filePath: "/" + parts.joined(separator: "/"), directoryHint: hasDirectoryPath ? .isDirectory : .notDirectory)
     }
 }
 

@@ -59,6 +59,9 @@ final class BackupServer {
     private(set) var previews: [String: [String: URL]] = [:]
 
     private var livePeers: [String: (session: UUID, peer: PeerConnection)] = [:]
+    private let driveKeepAwake = DriveKeepAwake()
+    private var appActivationObservers: [NSObjectProtocol] = []
+    private var isAppActive = false
     private var requestedPreviews: [String: Set<String>] = [:]
     private var previewQueue: [String: [String]] = [:]
 
@@ -113,6 +116,27 @@ final class BackupServer {
 
     func start() {
         startBackupListener()
+        watchAppActivation()
+    }
+
+    /// While Imago is the active app the backup drive is kept spinning, so it's awake (a spinning
+    /// drive takes 10–25 seconds to wake) by the time a photo or video is opened.
+    private func watchAppActivation() {
+        let center = NotificationCenter.default
+        appActivationObservers = [
+            center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setAppActive(true) }
+            },
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.setAppActive(false) }
+            },
+        ]
+    }
+
+    private func setAppActive(_ active: Bool) {
+        guard active != isAppActive else { return }
+        isAppActive = active
+        keepDriveAwake(active)
     }
 
     private func startBackupListener() {
@@ -262,6 +286,7 @@ final class BackupServer {
         var manifest: [ManifestEntry] = []
         /// A live session rather than a backup (version 5).
         var isLive = false
+        let started = Date()
         updateSleepAssertion()
         do {
             try await peer.start()
@@ -394,6 +419,7 @@ final class BackupServer {
         await store?.flush()
         if let session = sessions.removeValue(forKey: id), let device, session.received > 0 {
             addLog("\(device.name): backed up \(session.received) files", symbol: "checkmark.circle")
+            if let store { warmThumbnails(store, since: started) }
         }
         updateSleepAssertion()
         guard !isLive else { return }
@@ -467,6 +493,18 @@ final class BackupServer {
             try? await store.cancelChange(change.id)
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
+        }
+    }
+
+    /// Makes grid thumbnails for what a backup brought in, while those files are fresh, so browsing
+    /// later doesn't read thousands of originals off a slow or sleeping drive. One at a time, at
+    /// background priority: tiles on screen go first.
+    private func warmThumbnails(_ store: BackupStore, since date: Date) {
+        Task.detached(priority: .background) {
+            for file in await store.displayFiles(storedSince: date, limit: 5000) {
+                await Thumbnails.shared.waitForBackgroundTurn()
+                _ = await Thumbnails.shared.image(for: file.url, bytes: file.bytes)
+            }
         }
     }
 
@@ -560,6 +598,16 @@ final class BackupServer {
             else if let old = summaries[device.id] { fresh[device.id] = old }
         }
         summaries = fresh
+    }
+
+    /// Keeps the backup drive spinning while a photo page is open (see `DriveKeepAwake`). Balanced: each
+    /// `true` needs a `false`.
+    func keepDriveAwake(_ on: Bool) {
+        if on {
+            driveKeepAwake.begin { [weak self] in await self?.recentFiles(for: nil, limit: 40) ?? [] }
+        } else {
+            driveKeepAwake.end()
+        }
     }
 
     func recentFiles(for device: PairedDevice?, limit: Int) async -> [URL] {

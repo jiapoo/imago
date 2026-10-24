@@ -6,6 +6,7 @@ import SwiftUI
 /// Sets of near-identical items, one per row, the suggested keeper first.
 struct GroupsView: View {
     @Environment(BackupServer.self) private var server
+    @Environment(\.phoneSelectMode) private var selectMode
     let model: PhoneLibraryModel
     let device: PairedDevice
     let groups: [Cleanup.Group]
@@ -42,7 +43,8 @@ struct GroupsView: View {
                                 ScrollView(.horizontal) {
                                     HStack(spacing: 10) {
                                         ForEach([group.keep] + group.extras) { asset in
-                                            PhoneTile(asset: asset, url: model.files[asset.id], selected: selection.contains(asset.id),
+                                            PhoneTile(asset: asset, url: model.files[asset.id], thumbnailBytes: model.thumbnailBytes[asset.id] ?? 0,
+                                                      selected: selection.contains(asset.id),
                                                       waiting: model.waiting.contains(asset.id), badge: asset.id == group.keep.id ? "KEEP" : nil)
                                                 .frame(width: 130)
                                                 .onTapGesture { selection.formSymmetricDifference([asset.id]) }
@@ -69,6 +71,12 @@ struct GroupsView: View {
         .animation(.snappy(duration: 0.25), value: selection.isEmpty)
         .modifier(PhoneDialogs(actions: actions, selected: selected, confirmingDelete: $confirmingDelete,
                                namingAlbum: $namingAlbum, done: { selection = [] }))
+        .onChange(of: selectMode) { old, new in
+            if case .on(let request) = new, case .on(let before) = old, request != before {
+                selection = Set(groups.flatMap(\.assets).map(\.id))
+            }
+            if new == .off { selection = [] }
+        }
     }
 }
 

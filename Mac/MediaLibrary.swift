@@ -169,7 +169,7 @@ final class MediaLibrary {
             for item in items where item.deviceID == nil {
                 try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
                 let target = Self.unusedURL(destination.appending(path: item.url.lastPathComponent))
-                if target.deletingLastPathComponent().standardizedFileURL != item.url.deletingLastPathComponent().standardizedFileURL {
+                if target.deletingLastPathComponent().lexicallyStandardized != item.url.deletingLastPathComponent().lexicallyStandardized {
                     try FileManager.default.moveItem(at: item.url, to: target)
                 }
             }
@@ -246,8 +246,8 @@ final class MediaLibrary {
     }
 
     nonisolated private static func folder(of url: URL, in foldersURL: URL) -> String? {
-        let base = foldersURL.standardizedFileURL.pathComponents
-        let parts = url.standardizedFileURL.pathComponents
+        let base = foldersURL.lexicallyStandardized.pathComponents
+        let parts = url.lexicallyStandardized.pathComponents
         guard parts.count > base.count + 1, Array(parts.prefix(base.count)) == base else { return nil }
         return parts[base.count]
     }
@@ -272,7 +272,7 @@ final class MediaLibrary {
             guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
                   let type = values.contentType else { return false }
             return type.conforms(to: .image) || type.conforms(to: .movie)
-        }.map(\.standardizedFileURL)
+        }.map(\.lexicallyStandardized)
     }
 
     private static func fileItem(_ url: URL, in foldersURL: URL) -> MediaItem {
