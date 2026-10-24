@@ -382,7 +382,8 @@ the app, and moving it between servers should just work. So a second implementat
 ```
 <backup location>/
   .photobackup/library.json              library ID and each phone's folder (§7.6)
-  Folders/<name>/…                       folders the user makes, e.g. Folders/Tennis (§7.7)
+  <folder>/…                             folders the user makes, e.g. Tennis/Serve (§7.7)
+  Recently Deleted/…                     items deleted on the server, and .imago-trash.json (§7.7)
   <device folder>/                       one per paired phone
     2026/10/2026-10-20_143012_IMG_4821.HEIC
     2026/10/2026-10-20_143012_IMG_4821.MOV
@@ -497,18 +498,37 @@ whose photos are where. Written pretty-printed with sorted keys and ISO 8601 dat
 
 ### 7.7 Folders
 
-`Folders/<name>/` holds folders the user makes to organize the library, such as one for tennis
-videos. An asset moved there takes all its files and its sidecar along, flat in the folder, keeping
+The user's own folders sit at the top of the backup location, next to the device folders, such as
+one for tennis videos, nested to any depth. A top-level folder is the user's unless it's a device
+folder (any listed in `library.json`, removed phones included) or Recently Deleted. Earlier versions
+kept them in `Folders/`; the Mac moves them up a level and removes `Folders` once empty. An asset moved there takes all its files and its sidecar along, flat in the folder, keeping
 their names (numbered on a clash, as in §7.2). Its sidecar's `deviceID` says which phone it came from.
 
 Moved files stay in their phone's index, so the phone isn't asked for them again. The Mac stores their
-paths relative to the device folder, so they start with `../Folders/`. When rebuilding an index from
-sidecars, read the device folder and every sidecar under `Folders/` whose `deviceID` is that phone.
+paths relative to the device folder, so they start with `../` (e.g. `../Tennis/IMG_4821.MOV`). When rebuilding an index from
+sidecars, read the device folder and every sidecar elsewhere in the backup location (Folders,
+Recently Deleted) whose `deviceID` is that phone.
+
+**Recently Deleted** is a folder in the backup location (`Recently Deleted/` unless the user chose
+another one inside it, outside Folders and the device folders). Deleting moves an asset there exactly
+like moving it into a Folder: its files and sidecar go along and its index paths follow, so the phone
+isn't asked for it again. `Recently Deleted/.imago-trash.json` records, for each item, when it was
+deleted and where it came from, so it can be put back:
+
+```json
+{"entries": {"<deviceID>/<assetID>": {"deletedAt": "2026-10-24T09:00:00Z", "from": {"folder": {"_0": "Tennis"}}},
+             "file:holiday.mov":    {"deletedAt": "2026-10-24T09:01:00Z", "from": {"phoneFolder": {}}}}}
+```
+
+Keys are `deviceID/assetID` for a phone's asset and `file:<name>` for other files. `from` is
+`{"phoneFolder":{}}` (the device's dated folders) or `{"folder":{"_0":"<path in Folders>"}}`.
+Items are deleted for good after a number of days the user chooses (30 by default); deleting for good
+removes the files and sidecar and adds the keys to `skip.json` (below).
 
 A Folder can also hold files that never came from a phone (AirDrop, Finder). They have no sidecar
 and are shown as they are.
 
-When the user moves a file to the Trash on the server, its keys go into the device's `skip.json`
+When the user deletes a file for good on the server, its keys go into the device's `skip.json`
 (a JSON array of key text forms), and the server leaves them out of `need`, even though the phone still
 has them. Without this, the next backup would bring the file straight back.
 

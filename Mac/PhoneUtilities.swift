@@ -6,6 +6,8 @@ import SwiftUI
 /// Sets of near-identical items, one per row, the suggested keeper first.
 struct GroupsView: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
     @Environment(\.phoneSelectMode) private var selectMode
     let model: PhoneLibraryModel
     let device: PairedDevice
@@ -16,7 +18,7 @@ struct GroupsView: View {
     @State private var confirmingDelete = false
     @State private var namingAlbum = false
 
-    private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device) }
+    private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device, library: library, history: history) }
     private var selected: [PhoneAsset] { groups.flatMap(\.assets).filter { selection.contains($0.id) } }
 
     var body: some View {

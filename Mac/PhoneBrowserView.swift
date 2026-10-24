@@ -61,6 +61,12 @@ struct PhoneBrowserView: View {
             await model.load(from: server)
         }
         .onChange(of: section) { selecting = false }
+        .onAppear {
+            if let requested = model.requestedSection {
+                section = requested
+                model.requestedSection = nil
+            }
+        }
         .onAppear { server.keepDriveAwake(true) }
         .onDisappear {
             model.cancelSimilar()
@@ -380,6 +386,8 @@ private struct PeriodGrid: View {
 /// A grid of the phone's assets, by day or in the order given, with Photos-style selection and actions.
 struct PhoneGrid: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
     @Environment(MediaViewerHost.self) private var viewer
     @Environment(\.phoneSelectMode) private var selectMode
     let model: PhoneLibraryModel
@@ -407,7 +415,7 @@ struct PhoneGrid: View {
     private var selected: [PhoneAsset] {
         selection.selected.isEmpty ? [] : assets.filter { selection.selected.contains($0.id) }
     }
-    private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device) }
+    private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device, library: library, history: history) }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -489,6 +497,15 @@ struct PhoneGrid: View {
             .contextMenu { menu(for: asset) }
             .onAppear { if file == nil { server.requestPreview(asset.id, on: device) } }
             .reportsViewerSourceFrame(asset.id == selection.anchor, to: $anchorFrame)
+            .onDrag { dragProvider(for: asset) }
+    }
+
+    /// Drags the backed-up file, or the whole selection's when it's part of it, into a folder.
+    private func dragProvider(for asset: PhoneAsset) -> NSItemProvider {
+        let dragged = selection.selected.contains(asset.id) ? selected : [asset]
+        DragSession.urls = dragged.compactMap { model.files[$0.id] }
+        guard let url = model.files[asset.id] else { return NSItemProvider() }
+        return NSItemProvider(object: url as NSURL)
     }
 
     @ViewBuilder
@@ -686,11 +703,47 @@ struct PhoneActions {
     let server: BackupServer
     let model: PhoneLibraryModel
     let device: PairedDevice
+    let library: MediaLibrary
+    let history: FileHistory
 
     /// Asks for the change against the assets as they were on the phone, so undoing a waiting change
-    /// takes it back instead of queuing its opposite.
+    /// takes it back instead of queuing its opposite. Recorded for undo: the opposite change, which
+    /// takes this one back while it's still waiting.
     func request(_ action: LibraryChange.Action, _ assets: [PhoneAsset]) {
-        server.request(action, for: model.baseAssets(assets.map(\.id)), on: device)
+        history.record(step(action, ids: assets.map(\.id)))
+    }
+
+    private func step(_ action: LibraryChange.Action, ids: [String]) -> FileHistory.Step? {
+        let opposite: LibraryChange.Action
+        switch action {
+        case .setFavorite(let on): opposite = .setFavorite(!on)
+        case .addToAlbum(let title): opposite = .removeFromAlbum(title)
+        case .removeFromAlbum(let title): opposite = .addToAlbum(title)
+        case .delete: return nil   // see `delete`
+        }
+        server.request(action, for: model.baseAssets(ids), on: device)
+        return FileHistory.Step(name: LibraryChange(action: action, assetIDs: ids).summary) { [self] in
+            step(opposite, ids: ids)
+        }
+    }
+
+    /// Asks the phone to delete them, once each is checked against its backed-up copy. Undo withdraws it.
+    func delete(_ assets: [PhoneAsset]) {
+        let items = libraryItems(assets)
+        Task { history.record(await library.removeFromPhone(items, server: server)) }
+    }
+
+    /// The library's items for these assets: their backed-up files.
+    func libraryItems(_ assets: [PhoneAsset]) -> [MediaItem] {
+        let ids = Set(assets.map { "\(device.id)/\($0.id)" })
+        return library.items.filter { ids.contains($0.id) }
+    }
+
+    /// Copies their backed-up files into a folder on the drive, or moves them there and removes them
+    /// from the iPhone: the toolbar's Copy | Move (see `MediaLibrary.transfer`).
+    func transfer(_ assets: [PhoneAsset], toFolder path: String) {
+        let items = libraryItems(assets)
+        Task { await library.transfer(items, toFolder: path, server: server, history: history) }
     }
 
     /// Favorites them all, or unfavorites them if they all are already.
@@ -704,7 +757,21 @@ struct PhoneActions {
     }
 
     func keep(_ assets: [PhoneAsset]) {
-        server.keep(Set(assets.map(\.id)), on: device)
+        let ids = Set(assets.map(\.id))
+        server.keep(ids, on: device)
+        history.record(FileHistory.Step(name: "Keep on iPhone") { [self] in
+            server.request(.delete, for: model.baseAssets(ids), on: device)
+            return FileHistory.Step(name: "Keep on iPhone") { [self] in
+                server.keep(ids, on: device)
+                return nil
+            }
+        })
+    }
+
+    /// Every folder on the drive, by path.
+    var folders: [String] {
+        func flatten(_ folders: [MediaLibrary.Folder]) -> [String] { folders.flatMap { [$0.path] + flatten($0.children ?? []) } }
+        return flatten(library.folders)
     }
 
     /// Imago is open on the phone, so changes reach it now.
@@ -712,6 +779,7 @@ struct PhoneActions {
 }
 
 struct PhoneSelectionBar: View {
+    @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
     let actions: PhoneActions
     let selected: [PhoneAsset]
     var album: String? = nil
@@ -750,6 +818,22 @@ struct PhoneSelectionBar: View {
                 }
                 .menuStyle(.button)
                 .fixedSize()
+                Menu {
+                    ForEach(actions.folders, id: \.self) { path in
+                        Button(path) { actions.transfer(selected, toFolder: path) }
+                    }
+                    if actions.folders.isEmpty {
+                        Text("Make a folder in the Files panel first")
+                    }
+                } label: {
+                    Label(transferMode == TransferMode.move.rawValue ? "Move To" : "Copy To", systemImage: "folder")
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .disabled(deletable.isEmpty)
+                .help(transferMode == TransferMode.move.rawValue
+                      ? "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)"
+                      : "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)")
                 if let album {
                     Button { actions.request(.removeFromAlbum(album), selected) } label: {
                         Label("Remove from Album", systemImage: "rectangle.stack.badge.minus")
@@ -783,7 +867,7 @@ struct PhoneDialogs: ViewModifier {
                 isPresented: $confirmingDelete, titleVisibility: .visible
             ) {
                 Button("Delete from iPhone", role: .destructive) {
-                    actions.request(.delete, deletable)
+                    actions.delete(deletable)
                     done()
                 }
             } message: {
@@ -805,7 +889,7 @@ struct PhoneDialogs: ViewModifier {
 
     private func deleteMessage(skipped: Int) -> String {
         let when = actions.isLive ? "now" : "when you next open Imago on it, or at its next backup"
-        var text = "They're backed up on this Mac and stay here. \(actions.device.name) asks you to confirm \(when); "
+        var text = "They're backed up on this Mac and stay here; each is checked against that copy first. \(actions.device.name) asks you to confirm \(when); "
             + "then they go to Recently Deleted on the iPhone for 30 days. If iCloud Photos is on, they're removed from your other devices too."
         if skipped > 0 { text += " \(skipped) selected \(skipped == 1 ? "item isn't" : "items aren't") fully backed up yet and will be left alone." }
         return text

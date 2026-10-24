@@ -14,6 +14,7 @@ struct StorageView: View {
                 DestinationCard()
                 DrivesCard()
                 FoldersCard()
+                RecentlyDeletedCard()
             }
             .padding(28)
             .frame(maxWidth: 880)
@@ -218,6 +219,56 @@ private struct DriveTile: View {
 }
 
 /// Each iPhone's folder under the current location.
+/// Where Recently Deleted is, and how long it keeps items.
+private struct RecentlyDeletedCard: View {
+    @Environment(BackupServer.self) private var server
+    @State private var problem: String?
+
+    var body: some View {
+        @Bindable var server = server
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "Recently Deleted", symbol: "trash")
+            HStack {
+                Text(server.location.displayPath + "/" + server.trashFolder)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("Choose…", action: choose)
+                    .disabled(!server.location.isAvailable)
+                Button("Show in Finder") { server.revealInFinder(server.trashURL) }
+                    .disabled(!server.location.isAvailable)
+            }
+            Picker("Keep deleted items for", selection: $server.trashDays) {
+                Text("7 days").tag(7)
+                Text("30 days").tag(30)
+                Text("60 days").tag(60)
+                Text("Until emptied").tag(0)
+            }
+            .fixedSize()
+            Text("Deleted photos and videos go to this folder on the backup drive, with a note of where they were, so Put Back returns them. It's inside the backup location, so deleting and putting back are instant.")
+                .font(.caption).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .card()
+        .alert("Can't use that folder", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(problem ?? "")
+        }
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = server.location.url
+        panel.message = "Choose a folder inside “\(server.location.displayPath)” for Recently Deleted."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        problem = server.setTrashFolder(url)
+    }
+}
+
 private struct FoldersCard: View {
     @Environment(BackupServer.self) private var server
 

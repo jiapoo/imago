@@ -582,9 +582,53 @@ final class BackupServer {
         return store
     }
 
-    /// Where the library's own folders live, e.g. "Tennis", next to the phones' folders.
+    /// Where the user's own folders live, e.g. "Tennis": the top of the backup location, next to the
+    /// phones' folders and Recently Deleted.
     var foldersURL: URL {
-        location.url.appending(path: MediaLibrary.foldersName, directoryHint: .isDirectory)
+        location.url
+    }
+
+    /// Top-level names that aren't the user's folders: every phone's folder, including phones removed
+    /// since (the library record keeps them, and their backups stay), and Recently Deleted.
+    var reservedFolderNames: Set<String> {
+        Set(devices.map(\.folder) + (library?.devices.map(\.folder) ?? [])
+            + [trashFolder.split(separator: "/").first.map(String.init) ?? trashFolder])
+    }
+
+    /// Recently Deleted: a folder in the library (path relative to it), "Recently Deleted" unless
+    /// chosen in Settings. Inside the library, so deleting and putting back are quick renames, and
+    /// iPhone items keep their sidecars.
+    private(set) var trashFolder: String = UserDefaults.standard.string(forKey: "trashFolder") ?? "Recently Deleted"
+    /// Days items stay in Recently Deleted; 0 keeps them until emptied.
+    var trashDays: Int = UserDefaults.standard.object(forKey: "trashDays") as? Int ?? 30 {
+        didSet { UserDefaults.standard.set(trashDays, forKey: "trashDays") }
+    }
+
+    var trashURL: URL {
+        location.url.appending(path: trashFolder, directoryHint: .isDirectory)
+    }
+
+    /// Uses `url` for Recently Deleted. It must be inside the library and outside Folders and the
+    /// iPhones' folders. Returns why not, if it can't be used.
+    func setTrashFolder(_ url: URL) -> String? {
+        let root = location.url.lexicallyStandardized.pathComponents
+        let parts = url.lexicallyStandardized.pathComponents
+        guard parts.count > root.count, Array(parts.prefix(root.count)) == root else {
+            return "Choose a folder inside the backup location, “\(location.displayPath)”, so deleting and putting back are instant."
+        }
+        let inside = Array(parts.dropFirst(root.count))
+        if inside.count != 1 || devices.contains(where: { $0.folder == inside.first }) {
+            return "Choose a folder at the top of the backup location, not inside another folder or an iPhone's folder."
+        }
+        // Items already there would need their iPhone records moved too: empty it first.
+        let left = (try? FileManager.default.contentsOfDirectory(at: trashURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        if !left.isEmpty, url.lexicallyStandardized != trashURL.lexicallyStandardized {
+            return "Empty Recently Deleted first, or put its items back. Then choose the new folder."
+        }
+        trashFolder = inside.joined(separator: "/")
+        UserDefaults.standard.set(trashFolder, forKey: "trashFolder")
+        catalogRevision += 1
+        return nil
     }
 
     func folderURL(for device: PairedDevice) -> URL {

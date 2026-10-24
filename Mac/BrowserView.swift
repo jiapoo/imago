@@ -2,29 +2,40 @@ import AppKit
 import ImagoKit
 import SwiftUI
 
-/// The library, or one Folder: a grid of days. Click to select (⌘ and ⇧ to add), double-click or Space
-/// to open in the viewer, ⌘O for the default app, pinch to resize, Delete for the Trash. Drag items
-/// onto a Folder in the sidebar.
+/// The library, one folder, Recently Deleted or Large Files: a grid. Click to select (⌘ and ⇧ to
+/// add), double-click or Space to open in the viewer, ⌘O for the default app, pinch to resize,
+/// Delete to move to Recently Deleted (⌘Z puts it back). Drag items onto a folder in the sidebar or
+/// the Files panel.
 struct BrowserView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
     @Environment(MediaViewerHost.self) private var viewer
+    @Environment(FileHistory.self) private var history
     let scope: MediaLibrary.Scope
 
     @State private var kind: MediaLibrary.Kind = .all
     @State private var deviceID: String?
+    /// Large Files: only items still on an iPhone.
+    @State private var onlyOnPhone = false
     @AppStorage("browserTileSize") private var tileSize = 150.0
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
     @State private var anchorFrame: CGRect?
-    @State private var confirmingTrash = false
+    /// Recently Deleted: items to delete for good, while the confirmation is up.
+    @State private var deletingNow: [TrashedItem]?
     /// Items to ask their iPhone to remove, while the confirmation is up.
     @State private var removing: [MediaItem]?
     @State private var naming: FolderNaming?
     @FocusState private var focused: Bool
 
-    private var items: [MediaItem] { library.items(in: scope, deviceID: deviceID, kind: kind) }
-    private var selected: [MediaItem] { items.filter { library.selection.contains($0.id) } }
+    private var items: [MediaItem] {
+        let items = library.items(in: scope, deviceID: deviceID, kind: kind)
+        return scope == .large && onlyOnPhone ? items.filter { library.phoneAsset($0) != nil } : items
+    }
+    private var selected: [MediaItem] {
+        library.selection.isEmpty ? [] : items.filter { library.selection.contains($0.id) }
+    }
+    private var isTrash: Bool { scope == .trash }
 
     var body: some View {
         let items = items
@@ -48,19 +59,26 @@ struct BrowserView: View {
     private func grid(_ items: [MediaItem]) -> some View {
         ScrollView {
             if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
+            if isTrash, !items.isEmpty { trashBanner.padding(.horizontal, 16) }
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: tileSize, maximum: tileSize * 1.5), spacing: 4)],
-                spacing: 4, pinnedViews: [.sectionHeaders]
+                spacing: 4, pinnedViews: scope == .large ? [] : [.sectionHeaders]
             ) {
-                ForEach(Day.group(items)) { day in
-                    Section {
-                        ForEach(day.items) { item in tile(item, in: items) }
-                    } header: {
-                        DayHeader(day: day) { library.selection.formUnion(day.items.map(\.id)) }
+                if scope == .large {
+                    // Biggest first, not by day.
+                    ForEach(items) { item in tile(item, in: items) }
+                } else {
+                    ForEach(Day.group(items)) { day in
+                        Section {
+                            ForEach(day.items) { item in tile(item, in: items) }
+                        } header: {
+                            DayHeader(day: day) { library.selection.formUnion(day.items.map(\.id)) }
+                        }
                     }
                 }
             }
             .padding(.horizontal, 16)
+            .padding(.top, scope == .large ? 12 : 0)
             .padding(.bottom, 96)
         }
         .scrollContentBackground(.hidden)
@@ -73,30 +91,61 @@ struct BrowserView: View {
             item: item,
             selected: library.selection.contains(item.id),
             onPhone: library.phoneAsset(item) != nil,
-            pendingRemoval: library.pendingRemoval.contains(item.id)
+            pendingRemoval: library.pendingRemoval.contains(item.id),
+            badge: badge(for: item)
         )
         .onTapGesture { click(item, in: items) }
         .contextMenu { menu(for: item) }
-        .draggable(item.url)
+        .onDrag { dragProvider(for: item) }
         .reportsViewerSourceFrame(item.id == anchor, to: $anchorFrame)
+    }
+
+    /// Recently Deleted: days left. Large Files: the size.
+    private func badge(for item: MediaItem) -> String? {
+        switch scope {
+        case .trash:
+            guard let days = library.trashed(item)?.daysLeft(keeping: server.trashDays) else { return nil }
+            return days == 1 ? "1 day" : "\(days) days"
+        case .large:
+            return item.bytes.bytes
+        default:
+            return nil
+        }
+    }
+
+    /// Drags the item, or the whole selection when it's part of it.
+    private func dragProvider(for item: MediaItem) -> NSItemProvider {
+        let urls = library.selection.contains(item.id) ? selected.map(\.url) : [item.url]
+        DragSession.urls = urls
+        return NSItemProvider(object: item.url as NSURL)
     }
 
     @ViewBuilder
     private var selectionBar: some View {
         if !selected.isEmpty {
             let selected = selected
-            SelectionBar(
-                items: selected,
-                removable: library.removable(selected).count,
-                folders: otherFolders,
-                canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
-                move: { folder in Task { await library.move(selected, to: folder, server: server) } },
-                newFolder: { naming = .newFolder(moving: selected) },
-                removeFromPhone: { removing = selected },
-                trash: { confirmingTrash = true },
-                clear: { library.selection = [] }
-            )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            if isTrash {
+                TrashSelectionBar(
+                    items: selected,
+                    putBack: { putBack(selected) },
+                    deleteNow: { deletingNow = selected.compactMap(library.trashed) },
+                    clear: { library.selection = [] }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                SelectionBar(
+                    items: selected,
+                    removable: library.removable(selected).count,
+                    folders: otherFolders,
+                    canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
+                    move: { folder in moveSelected(selected, to: folder) },
+                    newFolder: { naming = .newFolder(moving: selected) },
+                    removeFromPhone: { removing = selected },
+                    trash: { trash(selected) },
+                    clear: { library.selection = [] }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
@@ -117,7 +166,7 @@ struct BrowserView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(removable.count == 1 ? "1 item here is still on your \(phones)" : "\(removable.count.formatted()) items here are still on your \(phones)")
                         .font(.headline)
-                    Text("Remove them there to free \(removable.reduce(0) { $0 + $1.bytes }.bytes). They stay on this Mac.")
+                    Text("Remove them there to free \(removable.reduce(0) { $0 + $1.bytes }.bytes). They stay on this drive.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -128,8 +177,8 @@ struct BrowserView: View {
             .background(.tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.top, 14)
         } else if pending > 0 {
-            Label(pending == 1 ? "1 item here will be removed from your iPhone at its next backup, once you confirm it there."
-                               : "\(pending.formatted()) items here will be removed from your iPhone at its next backup, once you confirm it there.",
+            Label(pending == 1 ? "1 item here will be removed from your iPhone once you confirm it there."
+                               : "\(pending.formatted()) items here will be removed from your iPhone once you confirm it there.",
                   systemImage: "clock")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -138,8 +187,24 @@ struct BrowserView: View {
         }
     }
 
+    /// Recently Deleted: how long items stay.
+    private var trashBanner: some View {
+        Label(server.trashDays > 0
+              ? "Items are deleted for good \(server.trashDays) days after they're deleted. Put Back returns them where they were."
+              : "Items stay until you empty Recently Deleted. Put Back returns them where they were.",
+              systemImage: "trash")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 14)
+    }
+
     private var otherFolders: [String] {
-        library.folders.map(\.name).filter { MediaLibrary.Scope.folder($0) != scope }
+        flatten(library.folders).map(\.path).filter { MediaLibrary.Scope.folder($0) != scope }
+    }
+
+    private func flatten(_ folders: [MediaLibrary.Folder]) -> [MediaLibrary.Folder] {
+        folders.flatMap { [$0] + flatten($0.children ?? []) }
     }
 
     private func subtitle(_ items: [MediaItem]) -> String {
@@ -155,16 +220,40 @@ struct BrowserView: View {
             selectAll: { library.selection = Set(items.map(\.id)) },
             preview: { openViewer(on: (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)) },
             open: { selected.forEach { NSWorkspace.shared.open($0.url) } },
-            delete: { if !selected.isEmpty { confirmingTrash = true } }
+            delete: {
+                guard !selected.isEmpty else { return }
+                if isTrash { deletingNow = selected.compactMap(library.trashed) } else { trash(selected) }
+            }
         )
     }
 
     private var dialogs: DialogsModifier {
-        DialogsModifier(
-            selected: selected, library: library, server: server,
-            confirmingTrash: $confirmingTrash, removing: $removing,
-            naming: $naming, trashTitle: trashTitle
-        )
+        DialogsModifier(selected: selected, library: library, server: server, history: history,
+                        deletingNow: $deletingNow, removing: $removing, naming: $naming)
+    }
+
+    // MARK: Actions
+
+    private func trash(_ items: [MediaItem]) {
+        library.selection = []
+        Task { history.record(await library.trash(items, server: server)) }
+    }
+
+    private func putBack(_ items: [MediaItem]) {
+        library.selection = []
+        let trashed = items.compactMap(library.trashed)
+        Task { history.record(await library.putBack(trashed, server: server)) }
+    }
+
+    /// Into a folder, or back to the iPhone's folder for nil.
+    private func moveSelected(_ items: [MediaItem], to folder: String?) {
+        Task {
+            if let folder {
+                await library.transfer(items, toFolder: folder, server: server, history: history)
+            } else {
+                history.record(await library.move(items, to: .phoneFolder, server: server))
+            }
+        }
     }
 }
 
@@ -172,30 +261,29 @@ private struct DialogsModifier: ViewModifier {
     let selected: [MediaItem]
     let library: MediaLibrary
     let server: BackupServer
-    @Binding var confirmingTrash: Bool
+    let history: FileHistory
+    @Binding var deletingNow: [TrashedItem]?
     @Binding var removing: [MediaItem]?
     @Binding var naming: FolderNaming?
-    let trashTitle: String
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog(trashTitle, isPresented: $confirmingTrash) {
-                Button("Move to Trash", role: .destructive) {
-                    let items = selected
-                    Task { await library.trash(items, server: server) }
+            .confirmationDialog(deleteNowTitle, isPresented: Binding(get: { deletingNow != nil }, set: { if !$0 { deletingNow = nil } })) {
+                Button("Delete", role: .destructive) {
+                    let items = deletingNow ?? []
+                    library.selection = []
+                    Task { await library.deleteNow(items, server: server) }
                 }
             } message: {
-                Text(selected.contains { library.phoneAsset($0) != nil }
-                     ? "They're removed from this backup. Ones still on your iPhone won't be backed up again; remove them there too if you don't want them."
-                     : "They're removed from this backup. You can put them back from the Trash.")
+                Text("They're deleted from the backup drive for good. This can't be undone.")
             }
             .confirmationDialog(removalTitle, isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
                 Button("Ask iPhone to Remove") {
                     let items = removing ?? []
-                    Task { await library.removeFromPhone(items, server: server) }
+                    Task { history.record(await library.removeFromPhone(items, server: server)) }
                 }
             } message: {
-                Text("Your iPhone shows the request at its next backup and asks you to confirm. Removed items go to Recently Deleted there, and stay here on your Mac.")
+                Text("Each is checked against the copy here first. Your iPhone asks you to confirm; removed items go to Recently Deleted there, and stay on this drive.")
             }
             .folderNameAlert($naming, library: library, server: server)
             .alert("Couldn't finish", isPresented: Binding(get: { library.error != nil }, set: { if !$0 { library.error = nil } })) {
@@ -203,6 +291,11 @@ private struct DialogsModifier: ViewModifier {
             } message: {
                 Text(library.error ?? "")
             }
+    }
+
+    private var deleteNowTitle: String {
+        let count = deletingNow?.count ?? 0
+        return count == 1 ? "Delete this item for good?" : "Delete \(count) items for good?"
     }
 
     private var removalTitle: String {
@@ -220,7 +313,9 @@ extension BrowserView {
     private var title: String {
         switch scope {
         case .all: "Library"
-        case .folder(let name): name
+        case .folder(let path): (path as NSString).lastPathComponent
+        case .trash: "Recently Deleted"
+        case .large: "Large Files"
         }
     }
 
@@ -238,21 +333,31 @@ extension BrowserView {
                 .labelStyle(.titleOnly)
                 .help("Show photos, videos or both")
 
-                if scope == .all, server.devices.count > 1 {
+                if scope == .all || scope == .large, server.devices.count > 1 {
                     Picker("iPhone", selection: $deviceID) {
                         Text("All iPhones").tag(String?.none)
                         ForEach(server.devices) { Text($0.name).tag(Optional($0.id)) }
                     }
                     .fixedSize()
                 }
+                if scope == .large {
+                    Toggle("On iPhone", isOn: $onlyOnPhone)
+                        .toggleStyle(.button)
+                        .help("Only items still on an iPhone: the ones that free space there")
+                }
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 TileSizeSlider(size: $tileSize)
-                if case .folder(let name) = scope {
-                    Button { server.revealInFinder(server.foldersURL.appending(path: name)) } label: {
+                if case .folder(let path) = scope {
+                    Button { server.revealInFinder(server.foldersURL.appending(path: path)) } label: {
                         Label("Show in Finder", systemImage: "folder")
                     }
                     .help("Show this folder in Finder")
+                }
+                if isTrash {
+                    Button("Empty…") { deletingNow = library.trash }
+                        .disabled(library.trash.isEmpty)
+                        .help("Delete everything in Recently Deleted for good")
                 }
             }
         }
@@ -273,11 +378,17 @@ extension BrowserView {
             case .all:
                 ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle.angled",
                                        description: Text("Photos and videos appear here as your iPhones back up."))
-            case .folder(let name):
+            case .folder(let path):
                 ContentUnavailableView(
-                    "“\(name)” is empty", systemImage: "folder",
-                    description: Text("Select photos or videos in Library and choose Move To, or drag them onto this folder in the sidebar.")
+                    "“\((path as NSString).lastPathComponent)” is empty", systemImage: "folder",
+                    description: Text("Select photos or videos and choose Move To, or drag them onto this folder in the sidebar or the Files panel.")
                 )
+            case .trash:
+                ContentUnavailableView("Recently Deleted is empty", systemImage: "trash",
+                                       description: Text("Deleted photos and videos wait here, so you can put them back."))
+            case .large:
+                ContentUnavailableView("No large files", systemImage: "externaldrive",
+                                       description: Text("Photos and videos over \(MediaLibrary.largeFileBytes.bytes) show here, biggest first."))
             }
         case .ready:
             EmptyView()
@@ -291,28 +402,26 @@ extension BrowserView {
         Button("Open in Default App") { targets.forEach { NSWorkspace.shared.open($0.url) } }
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
         Divider()
-        Menu("Move To") {
-            ForEach(library.folders.map(\.name).filter { .folder($0) != scope }, id: \.self) { folder in
-                Button(folder) { Task { await library.move(targets, to: folder, server: server) } }
+        if isTrash {
+            Button("Put Back") { putBack(targets) }
+            Button("Delete Now…", role: .destructive) { deletingNow = targets.compactMap(library.trashed) }
+        } else {
+            Menu(TransferMode.current == .move ? "Move To" : "Copy To") {
+                ForEach(otherFolders, id: \.self) { folder in
+                    Button(folder) { moveSelected(targets, to: folder) }
+                }
+                Button("New Folder…") { naming = .newFolder(moving: targets) }
+                if targets.contains(where: { $0.folder != nil && $0.deviceID != nil }) {
+                    Divider()
+                    Button("Back to iPhone's Folder") { moveSelected(targets, to: nil) }
+                }
             }
-            Button("New Folder…") { naming = .newFolder(moving: targets) }
-            if targets.contains(where: { $0.folder != nil && $0.deviceID != nil }) {
-                Divider()
-                Button("Back to iPhone's Folder") { Task { await library.move(targets, to: nil, server: server) } }
+            if !library.removable(targets).isEmpty {
+                Button("Remove from iPhone…") { removing = targets }
             }
+            Divider()
+            Button("Delete", role: .destructive) { trash(targets) }
         }
-        if !library.removable(targets).isEmpty {
-            Button("Remove from iPhone…") { removing = targets }
-        }
-        Divider()
-        Button("Move to Trash…", role: .destructive) {
-            library.selection = Set(targets.map(\.id))
-            confirmingTrash = true
-        }
-    }
-
-    private var trashTitle: String {
-        selected.count == 1 ? "Move “\(selected[0].name)” to the Trash?" : "Move \(selected.count) items to the Trash?"
     }
 
     // MARK: Selection
@@ -348,7 +457,7 @@ extension BrowserView {
                     rows.append(.init(label: "Length", value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
                 }
                 rows.append(.init(label: "Size", value: item.bytes.bytes))
-                if let folder = item.folder { rows.append(.init(label: "Folder", value: folder)) }
+                if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
                 if let name = item.deviceID.flatMap({ devices[$0] }) { rows.append(.init(label: "From", value: name)) }
                 rows.append(.init(label: "File", value: item.url.path))
                 return rows
@@ -365,9 +474,21 @@ private struct MediaTile: View {
     let selected: Bool
     let onPhone: Bool
     let pendingRemoval: Bool
+    /// Top left: days left in Recently Deleted, or the size in Large Files.
+    var badge: String? = nil
 
     var body: some View {
         ThumbnailView(url: item.url, bytes: item.bytes, cornerRadius: 6, showsName: false)
+            .overlay(alignment: .topLeading) {
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold).monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(6)
+                }
+            }
             .overlay(alignment: .bottom) {
                 if item.isVideo || onPhone {
                     HStack(spacing: 5) {
@@ -399,9 +520,10 @@ private struct MediaTile: View {
     }
 }
 
-// MARK: - Selection bar
+// MARK: - Selection bars
 
 private struct SelectionBar: View {
+    @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
     let items: [MediaItem]
     let removable: Int
     let folders: [String]
@@ -425,21 +547,45 @@ private struct SelectionBar: View {
                     Button("Back to iPhone's Folder") { move(nil) }
                 }
             } label: {
-                Label("Move To", systemImage: "folder")
+                Label(transferMode == TransferMode.move.rawValue ? "Move To" : "Copy To", systemImage: "folder")
             }
             .menuStyle(.button)
             .fixedSize()
+            .help(transferMode == TransferMode.move.rawValue
+                  ? "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)"
+                  : "Copy into a folder (Copy | Move in the toolbar)")
 
             if removable > 0 {
                 Button(action: removeFromPhone) {
                     Label("Remove from iPhone", systemImage: "iphone.slash")
                 }
-                .help("Free space on the iPhone. These stay on this Mac.")
+                .help("Free space on the iPhone. These stay on this drive.")
             }
 
             Button(role: .destructive, action: trash) {
-                Label("Trash", systemImage: "trash")
+                Label("Delete", systemImage: "trash")
             }
+            .help("Move to Recently Deleted (⌫). ⌘Z puts it back.")
+        }
+    }
+}
+
+private struct TrashSelectionBar: View {
+    let items: [MediaItem]
+    var putBack: () -> Void
+    var deleteNow: () -> Void
+    var clear: () -> Void
+
+    var body: some View {
+        FloatingBar(count: items.count, detail: items.reduce(0) { $0 + $1.bytes }.bytes, clear: clear) {
+            Button(action: putBack) {
+                Label("Put Back", systemImage: "arrow.uturn.backward")
+            }
+            .help("Return them where they were deleted from")
+            Button(role: .destructive, action: deleteNow) {
+                Label("Delete Now", systemImage: "trash.slash")
+            }
+            .help("Delete them for good")
         }
     }
 }
@@ -447,13 +593,15 @@ private struct SelectionBar: View {
 // MARK: - Folder names
 
 enum FolderNaming: Identifiable {
-    case newFolder(moving: [MediaItem])
+    /// A new folder, inside `parent` (nil for the top of Folders), with items to move into it.
+    case newFolder(moving: [MediaItem], in: String? = nil)
+    /// Renames the folder at this path.
     case rename(String)
 
     var id: String {
         switch self {
-        case .newFolder: "new"
-        case .rename(let name): "rename-\(name)"
+        case .newFolder(_, let parent): "new-\(parent ?? "")"
+        case .rename(let path): "rename-\(path)"
         }
     }
 }
@@ -467,6 +615,7 @@ extension View {
 }
 
 private struct FolderNameAlert: ViewModifier {
+    @Environment(FileHistory.self) private var history
     @Binding var naming: FolderNaming?
     let library: MediaLibrary
     let server: BackupServer
@@ -483,7 +632,7 @@ private struct FolderNameAlert: ViewModifier {
                 Text(isRename ? "Its photos and videos stay in it." : "A folder on your backup drive, next to your iPhones' folders.")
             }
             .onChange(of: naming?.id) {
-                if case .rename(let old) = naming { name = old } else { name = "" }
+                if case .rename(let old) = naming { name = (old as NSString).lastPathComponent } else { name = "" }
             }
     }
 
@@ -499,12 +648,14 @@ private struct FolderNameAlert: ViewModifier {
         let name = name
         Task {
             switch request {
-            case .newFolder(let items):
-                if let created = await library.createFolder(name, server: server), !items.isEmpty {
-                    await library.move(items, to: created, server: server)
-                }
+            case .newFolder(let items, let parent):
+                guard let created = await library.createFolder(name, in: parent, server: server) else { return }
+                history.record(created.undo)
+                if !items.isEmpty { await library.transfer(items, toFolder: created.path, server: server, history: history) }
             case .rename(let old):
-                if let new = await library.renameFolder(old, to: name, server: server) { renamed(new) }
+                guard let new = await library.renameFolder(old, to: name, server: server) else { return }
+                history.record(new.undo)
+                renamed(new.path)
             case nil:
                 break
             }

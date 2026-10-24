@@ -95,17 +95,36 @@ the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6
 
 ## Browsing and organizing on the Mac
 
-**Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder.
-**Folders** in the sidebar are real folders on the backup drive (`Folders/<name>`), so they stay usable
-without the app. Select items (click, ⌘-click, ⇧-click, ⌘A), then from the bar at the bottom:
+**Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder;
+**Large Files** shows the biggest first (filter to what's still on an iPhone to see what frees space there).
+**Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep
+as you like), so they stay usable without the app. The **Files** panel on the right (toolbar button, shown on
+photo pages) lists the drive as Finder does: every folder by name, the iPhones' opening to their years and
+months, and Recently Deleted. Make, rename and delete folders there, and drop photos and videos on them:
+from any grid (the whole selection comes along) or from Finder (copied in).
 
-- **Move To** a Folder, or drag items onto one in the sidebar. Their sidecars go with them, and the
-  phone isn't asked for them again. **Back to iPhone's Folder** moves them back into the dated layout.
-- **Remove from iPhone** queues a deletion for the phone (only for items fully backed up). It happens
-  once you confirm it on the iPhone.
-  A Folder with items still on an iPhone says so at the top, with a button to remove them all there:
-  move today's tennis videos into Folders/Tennis, then remove them from the iPhone in one step.
-- **Trash** moves them to the Trash and stops backing them up from the phone.
+**Copy | Move** in the toolbar decides what putting photos into a folder does, by dragging or with
+Copy To / Move To. **Copy** (the default) copies them in; the iPhone and its backup keep them. **Move**
+moves them out of the iPhone's backup into the folder and asks the iPhone to delete them, after checking
+each against its backup: this is how large videos leave the iPhone. Switching to Move explains this first.
+Dropping an iPhone's items on its own folder moves them back; dropping on Recently Deleted deletes.
+
+Select items (click, ⌘-click, ⇧-click, ⌘A), then from the bar at the bottom:
+
+- **Copy To** or **Move To** a folder (by the toolbar's mode), or drag items onto one. Moved items take
+  their sidecars along, and the phone isn't asked for them again. **Back to iPhone's Folder** moves them
+  back into the dated layout.
+- **Remove from iPhone** checks each file against its checksum from the backup, then queues the deletion
+  for the phone (only for items fully backed up). It happens once you confirm it on the iPhone.
+  A Folder with items still on an iPhone says so at the top, with a button to remove them all there.
+- **Delete** (⌫) moves them to **Recently Deleted**: a folder on the backup drive (chosen in Settings),
+  with a note of where each came from. **Put Back** returns them; **Delete Now** and **Empty** delete for
+  good. Items are deleted for good after 30 days (or 7, 60, or never). Deleted iPhone items aren't backed
+  up again while they're there.
+
+**Undo and Redo** (⌘Z, ⇧⌘Z) cover moves, deletions and Put Back, new, renamed and deleted folders, copies
+from Finder, and changes queued for an iPhone (while they're still waiting). Deleting for good can't be
+undone, nor can a deletion the iPhone has already done.
 
 A double-click or Space opens it in Imago's viewer, inside the window like the Photos app (AreteMedia's
 `MediaViewer`, copied from Arete into `Packages/ImagoMedia`). The toolbar shows when it was taken and where
@@ -121,9 +140,8 @@ seconds. While Imago is the active app or a photo page is open, it keeps the dri
 assertion, plus a small read every 45 seconds), so photos and videos open without that wait; if one still has
 to wait, the viewer says it's waking the drive. While the viewer is open, making thumbnails waits, so the
 drive serves only what's being viewed. ⌘O opens the file in
-its default app (Preview, QuickTime…). Pinch the grid to make thumbnails bigger or smaller. Delete moves
-items to the Trash. Files put into a Folder in Finder or by
-AirDrop show up too. A phone's file moved there in Finder is recognized by name, size and checksum.
+its default app (Preview, QuickTime…). Pinch the grid to make thumbnails bigger or smaller. Files put
+into a Folder in Finder or by AirDrop show up too. A phone's file moved there in Finder is recognized by name, size and checksum.
 
 ## Not built yet
 

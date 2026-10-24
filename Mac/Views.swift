@@ -5,8 +5,11 @@ import SwiftUI
 enum SidebarItem: Hashable {
     case overview
     case library
+    case large
     case storage
+    /// A folder inside Folders, by path ("Tennis/Serve").
     case folder(String)
+    case trash
     case device(String)
     case manage(String)
 }
@@ -15,10 +18,14 @@ struct MainView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
     @Environment(MediaViewerHost.self) private var viewer
+    @Environment(FileHistory.self) private var history
     @State private var selection: SidebarItem? = .overview
     @State private var showingAddPhone = false
     @State private var naming: FolderNaming?
-    @State private var deletingFolder: String?
+    @AppStorage("showsFilesPanel") private var showsFilesPanel = true
+    @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
+    /// Move was picked: the alert explaining it is up.
+    @State private var confirmingMoveMode = false
 
     var body: some View {
         NavigationSplitView {
@@ -26,20 +33,26 @@ struct MainView: View {
                 Section {
                     Label("Overview", systemImage: "checkmark.shield").tag(SidebarItem.overview)
                     Label("Library", systemImage: "photo.on.rectangle.angled").tag(SidebarItem.library)
+                    Label("Large Files", systemImage: "externaldrive.fill.badge.minus").tag(SidebarItem.large)
                     StorageRow().tag(SidebarItem.storage)
                 }
                 Section("Folders") {
                     ForEach(library.folders) { folder in
                         FolderRow(folder: folder)
-                            .tag(SidebarItem.folder(folder.name))
+                            .tag(SidebarItem.folder(folder.path))
                             .contextMenu {
-                                Button("Rename…") { naming = .rename(folder.name) }
-                                Button("Show in Finder") { server.revealInFinder(server.foldersURL.appending(path: folder.name)) }
+                                Button("New Folder Inside…") { naming = .newFolder(moving: [], in: folder.path) }
+                                Button("Rename…") { naming = .rename(folder.path) }
+                                Button("Show in Finder") { server.revealInFinder(server.foldersURL.appending(path: folder.path)) }
                                 Divider()
-                                Button("Delete Folder…", role: .destructive) { deletingFolder = folder.name }
-                                    .disabled(folder.count > 0)
+                                Button("Delete Folder", role: .destructive) {
+                                    if selection == .folder(folder.path) { selection = .library }
+                                    Task { history.record(await library.deleteFolder(folder.path, server: server)) }
+                                }
+                                .disabled(folder.count > 0 || folder.children != nil)
                             }
                     }
+                    TrashRow().tag(SidebarItem.trash)
                     Button { naming = .newFolder(moving: []) } label: {
                         Label("New Folder", systemImage: "plus.circle.fill")
                     }
@@ -69,14 +82,21 @@ struct MainView: View {
                     OverviewView(showingAddPhone: $showingAddPhone, selection: $selection)
                 case .library:
                     BrowserView(scope: .all)
-                case .folder(let name):
-                    BrowserView(scope: .folder(name))
+                case .large:
+                    BrowserView(scope: .large)
+                case .folder(let path):
+                    BrowserView(scope: .folder(path))
+                case .trash:
+                    BrowserView(scope: .trash)
                 case .storage:
                     StorageView()
                 case .device(let id):
                     if let device = server.devices.first(where: { $0.id == id }) {
-                        DeviceView(device: device) { selection = .manage(device.id) }
-                            .id(id)
+                        DeviceView(device: device) { section in
+                            PhoneLibraryModel.model(for: device).requestedSection = section
+                            selection = .manage(device.id)
+                        }
+                        .id(id)
                     } else {
                         OverviewView(showingAddPhone: $showingAddPhone, selection: $selection)
                     }
@@ -88,31 +108,75 @@ struct MainView: View {
                     }
                 }
             }
+            // A fresh view per sidebar item, so the last page's title and toolbar don't linger.
+            .id(selection)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .mediaViewerOverlay()
-        }
-        .toolbar {
-            if !viewer.isOpen {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showingAddPhone = true } label: { Label("Add iPhone", systemImage: "plus") }
-                        .help("Pair another iPhone")
+            .toolbar {
+                if !viewer.isOpen {
+                    if pageHasPhotos {
+                        ToolbarItem(placement: .primaryAction) { transferPicker }
+                    }
+                    // With the panel open, its own toolbar holds this, at the window's right end.
+                    if !showsFilesPanel, pageHasPhotos {
+                        ToolbarItem(placement: .primaryAction) { FilesPanelToggle(isShown: $showsFilesPanel) }
+                    }
                 }
             }
         }
+        // The backup drive's folders on the right, full height like the sidebar (hidden while viewing a photo).
+        .inspector(isPresented: Binding(get: { showsFilesPanel && pageHasPhotos && !viewer.isOpen }, set: { showsFilesPanel = $0 })) {
+            FilesPanel(selection: $selection, isShown: $showsFilesPanel)
+                .inspectorColumnWidth(min: 220, ideal: 270, max: 400)
+        }
         .sheet(isPresented: $showingAddPhone) { AddPhoneSheet() }
         .folderNameAlert($naming, library: library, server: server) { selection = .folder($0) }
-        .confirmationDialog("Delete “\(deletingFolder ?? "")”?", isPresented: Binding(get: { deletingFolder != nil }, set: { if !$0 { deletingFolder = nil } })) {
-            Button("Move to Trash", role: .destructive) {
-                guard let folder = deletingFolder else { return }
-                if selection == .folder(folder) { selection = .library }
-                Task { await library.deleteFolder(folder, server: server) }
-            }
+        .alert("Move photos off the iPhone?", isPresented: $confirmingMoveMode) {
+            Button("Use Move") { transferMode = TransferMode.move.rawValue }
+            Button("Keep Copying", role: .cancel) {}
         } message: {
-            Text("The folder is empty.")
+            Text("Photos and videos you drag or send to a folder will be moved there from their iPhone's backup, and the iPhone will be asked to delete them, freeing space on it. Each is checked against its backup first, you confirm on the iPhone, and they stay in Recently Deleted there for 30 days.")
         }
         .task(id: server.catalogRevision) { await library.load(from: server) }
         .focusEffectDisabled()
+    }
+
+    /// Pages of photos and videos, where the Files panel is there to drop them into folders. Not the
+    /// Overview, Storage or an iPhone's own page.
+    private var pageHasPhotos: Bool {
+        switch selection ?? .overview {
+        case .library, .large, .folder, .trash, .manage: true
+        case .overview, .storage, .device: false
+        }
+    }
+
+    /// Copy | Move: what putting photos into a folder does. Move asks first.
+    private var transferPicker: some View {
+        Picker("Into folders", selection: Binding(
+            get: { transferMode },
+            set: { new in
+                if new == TransferMode.move.rawValue, transferMode != new { confirmingMoveMode = true } else { transferMode = new }
+            }
+        )) {
+            Text("Copy").tag(TransferMode.copy.rawValue)
+            Text("Move").tag(TransferMode.move.rawValue)
+        }
+        .pickerStyle(.segmented)
+        .fixedSize()
+        .help(transferMode == TransferMode.move.rawValue
+              ? "Move: photos put into a folder leave the iPhone's backup and are deleted from the iPhone"
+              : "Copy: photos put into a folder are copied there; the iPhone keeps them")
+    }
+}
+
+/// Shows or hides the Files panel.
+struct FilesPanelToggle: View {
+    @Binding var isShown: Bool
+
+    var body: some View {
+        Button { isShown.toggle() } label: { Label("Files", systemImage: "sidebar.right") }
+            .help(isShown ? "Hide the backup drive's folders" : "Show the backup drive's folders, to drop photos into")
     }
 }
 
@@ -120,6 +184,7 @@ struct MainView: View {
 struct FolderRow: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
     let folder: MediaLibrary.Folder
     @State private var targeted = false
 
@@ -138,15 +203,34 @@ struct FolderRow: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .dropDestination(for: URL.self) { urls, _ in
-            let dropped = Set(urls.map(\.lexicallyStandardized))
-            let items = library.items.filter { dropped.contains($0.url.lexicallyStandardized) }
-            guard !items.isEmpty else { return false }
-            // Dragging one selected item moves the whole selection.
-            let moving = items.contains { library.selection.contains($0.id) }
-                ? library.items.filter { library.selection.contains($0.id) }
-                : items
-            Task { await library.move(moving, to: folder.name, server: server) }
-            return true
+            library.drop(urls, onto: .folder(folder.path), server: server, history: history)
+        } isTargeted: { targeted = $0 }
+    }
+}
+
+/// Recently Deleted in the sidebar. Drop photos or videos on it to delete them.
+struct TrashRow: View {
+    @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
+    @State private var targeted = false
+
+    var body: some View {
+        Label {
+            HStack {
+                Text("Recently Deleted")
+                Spacer()
+                if !library.trash.isEmpty {
+                    Text(library.trash.count.formatted()).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        } icon: {
+            Image(systemName: targeted ? "trash.fill" : "trash")
+                .foregroundStyle(.tint)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            library.drop(urls, onto: .trash, server: server, history: history)
         } isTargeted: { targeted = $0 }
     }
 }
@@ -360,227 +444,6 @@ struct ActivityCard: View {
 }
 
 // MARK: - Device
-
-struct DeviceView: View {
-    @Environment(BackupServer.self) private var server
-    let device: PairedDevice
-    /// Opens this iPhone's Photos page.
-    var openPhotos: () -> Void = {}
-    @State private var model: PhoneLibraryModel
-    @State private var confirmingRemove = false
-    @State private var renaming = false
-    @State private var newName = ""
-
-    init(device: PairedDevice, openPhotos: @escaping () -> Void = {}) {
-        self.device = device
-        self.openPhotos = openPhotos
-        _model = State(initialValue: PhoneLibraryModel.model(for: device))
-    }
-
-    var body: some View {
-        let summary = server.summaries[device.id]
-        let session = server.session(for: device)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(spacing: 20) {
-                    HealthBadge(symbol: session == nil ? "iphone" : "arrow.triangle.2.circlepath", tint: .imago, size: 64, spinning: session != nil)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(device.name).font(.system(size: 28, weight: .bold, design: .rounded))
-                        Text(statusText(summary: summary, session: session)).foregroundStyle(.secondary)
-                        if server.liveDevices.contains(device.id) {
-                            Label("Imago is open on this iPhone: changes reach it right away", systemImage: "iphone.radiowaves.left.and.right")
-                                .font(.callout).foregroundStyle(.green)
-                        }
-                    }
-                    Spacer()
-                    Button("Open Photos", action: openPhotos)
-                        .controlSize(.large)
-                }
-                .card(padding: 24)
-
-                HStack(spacing: 16) {
-                    StatTile(title: "On the iPhone", value: model.state == .ready ? model.base.count.formatted() : "–",
-                             symbol: "iphone", tint: .imago)
-                    StatTile(title: "Backed up", value: model.state == .ready ? backedUpText : (summary?.assetCount ?? 0).formatted(),
-                             symbol: "checkmark.shield.fill", tint: .green)
-                    StatTile(title: "Space on this Mac", value: (summary?.totalBytes ?? 0).bytes, symbol: "internaldrive.fill", tint: .purple)
-                }
-
-                if model.state == .ready {
-                    libraryCard
-                    spaceCard
-                    if !model.queue.pending.isEmpty || !model.queue.done.isEmpty { changesCard }
-                } else {
-                    Text(model.state == .unavailable
-                         ? "Connect the backup drive to see what's on \(device.name)."
-                         : "After \(device.name)'s next backup, what's on it shows here.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .card()
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(title: "Folder", symbol: "folder")
-                    HStack {
-                        Text(server.location.displayPath + "/" + device.folder)
-                            .font(.callout).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                        Button("Show in Finder") { server.revealInFinder(server.folderURL(for: device)) }
-                            .disabled(!server.location.isAvailable)
-                    }
-                    Text("Paired \(device.pairedAt.formatted(date: .long, time: .omitted))")
-                        .font(.caption).foregroundStyle(.tertiary)
-                }
-                .card()
-
-                HStack {
-                    Button("Rename…") { newName = device.name; renaming = true }
-                    Spacer()
-                    Button("Remove iPhone…", role: .destructive) { confirmingRemove = true }
-                }
-            }
-            .padding(28)
-            .frame(maxWidth: 880)
-            .frame(maxWidth: .infinity)
-        }
-        .navigationTitle(device.name)
-        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])") { await model.load(from: server) }
-        .confirmationDialog("Remove “\(device.name)”?", isPresented: $confirmingRemove) {
-            Button("Remove iPhone", role: .destructive) { server.remove(device) }
-        } message: {
-            Text("It can't back up to this Mac until you pair it again. Its photos stay in the backup folder.")
-        }
-        .alert("Rename iPhone", isPresented: $renaming) {
-            TextField("Name", text: $newName)
-            Button("Rename") { server.rename(device, to: newName) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The folder name stays the same.")
-        }
-    }
-
-    private var backedUpText: String {
-        let total = model.base.count
-        guard total > 0 else { return "0" }
-        let percent = Double(model.backedUpCount) / Double(total)
-        return percent >= 0.9995 ? "All" : percent.formatted(.percent.precision(.fractionLength(0...1)))
-    }
-
-    /// What's on the iPhone, from its last backup.
-    private var libraryCard: some View {
-        let assets = model.base
-        let videos = assets.count(where: \.isVideo)
-        let dates = assets.compactMap(\.metadata.creationDate)
-        let notBackedUp = assets.count - model.backedUpCount
-        let types = PhoneMediaType.allCases.filter { $0 != .videos && model.mediaTypeCounts[$0, default: 0] > 0 }
-        return VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "iPhone library", symbol: "photo.on.rectangle.angled")
-            VStack(alignment: .leading, spacing: 6) {
-                ProgressView(value: Double(model.backedUpCount), total: Double(max(assets.count, 1)))
-                    .tint(notBackedUp == 0 ? .green : .imago)
-                Text(notBackedUp == 0
-                     ? "Everything on \(device.name) is backed up on this Mac."
-                     : "\(notBackedUp.formatted()) not backed up yet. They're copied at the next backup.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 8) {
-                InfoGridRow("Photos", (assets.count - videos).formatted())
-                InfoGridRow("Videos", videos.formatted())
-                if let oldest = dates.min(), let newest = dates.max() {
-                    InfoGridRow("Taken", "\(oldest.formatted(date: .abbreviated, time: .omitted)) – \(newest.formatted(date: .abbreviated, time: .omitted))")
-                }
-                InfoGridRow("Favorites", model.favorites.count.formatted())
-                InfoGridRow("Albums", model.albums.count.formatted())
-                if !types.isEmpty {
-                    InfoGridRow("Also", types.map { "\(model.mediaTypeCounts[$0, default: 0].formatted()) \($0.title)" }.joined(separator: " · "))
-                }
-                if let takenAt = model.takenAt {
-                    InfoGridRow("As of", "Its last backup, \(takenAt.shortRelative)")
-                }
-            }
-            .font(.callout)
-        }
-        .card()
-    }
-
-    /// How much could be freed on the iPhone, and where.
-    private var spaceCard: some View {
-        let backedUp = model.assets.filter(\.isBackedUp)
-        let screenshots = model.assets(of: .screenshots) + model.assets(of: .screenRecordings)
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                SectionHeader(title: "Free up space on the iPhone", symbol: "externaldrive.badge.minus")
-                Spacer()
-                Button("Open Photos", action: openPhotos).buttonStyle(.link)
-            }
-            Grid(alignment: .leading, horizontalSpacing: 28, verticalSpacing: 8) {
-                InfoGridRow("Backed up, so safe to remove", "\(backedUp.reduce(0) { $0 + $1.bytes }.bytes) in \(backedUp.count.formatted()) items")
-                InfoGridRow("Duplicates", model.duplicates.isEmpty ? "None" :
-                            "\(model.duplicates.reduce(0) { $0 + $1.reclaimableBytes }.bytes) in \(model.duplicates.count.formatted()) sets")
-                InfoGridRow("Large videos", model.largeVideos.isEmpty ? "None" :
-                            "\(model.largeVideos.reduce(0) { $0 + $1.bytes }.bytes) in \(model.largeVideos.count.formatted())")
-                InfoGridRow("Screenshots", screenshots.isEmpty ? "None" :
-                            "\(screenshots.reduce(0) { $0 + $1.bytes }.bytes) in \(screenshots.count.formatted())")
-                if !model.deleting.isEmpty {
-                    InfoGridRow("Waiting to be deleted", "\(model.deleting.reduce(0) { $0 + $1.bytes }.bytes) in \(model.deleting.count.formatted())")
-                }
-            }
-            .font(.callout)
-        }
-        .card()
-    }
-
-    /// Changes waiting for the iPhone, and the last few it handled.
-    private var changesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Changes for the iPhone", symbol: "iphone.and.arrow.forward")
-            if !model.queue.pending.isEmpty {
-                Text(model.queue.pending.count == 1 ? "1 change waiting" : "\(model.queue.pending.count) changes waiting")
-                    .font(.callout.weight(.medium))
-            }
-            ForEach(model.queue.done.prefix(4)) { done in
-                HStack(spacing: 10) {
-                    Image(systemName: done.report.outcome == .applied ? "checkmark.circle.fill" : "xmark.circle")
-                        .foregroundStyle(done.report.outcome == .applied ? .green : .secondary)
-                    Text(done.change.summary)
-                    Spacer()
-                    Text(done.report.date.shortRelative).foregroundStyle(.secondary)
-                }
-                .font(.callout)
-            }
-        }
-        .card()
-    }
-
-    private func statusText(summary: BackupStore.Summary?, session: BackupServer.Session?) -> String {
-        if let session { return session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)" }
-        if summary?.isPartial == true, let received = summary?.lastReceived {
-            return "Backup not finished · last file \(received.shortRelative). It continues when Imago is open on the iPhone."
-        }
-        if let last = summary?.lastBackup { return "Last backup \(last.shortRelative)" }
-        return "Waiting for the first backup"
-    }
-}
-
-/// A label and its value in a card's two-column list.
-private struct InfoGridRow: View {
-    let label: String
-    let value: String
-
-    init(_ label: String, _ value: String) {
-        self.label = label
-        self.value = value
-    }
-
-    var body: some View {
-        GridRow {
-            Text(label).foregroundStyle(.secondary)
-            Text(value)
-        }
-    }
-}
-
-// MARK: - Pairing
 
 struct AddPhoneSheet: View {
     @Environment(BackupServer.self) private var server

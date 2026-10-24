@@ -5,6 +5,7 @@ struct ImagoMacApp: App {
     @State private var server: BackupServer
     @State private var library = MediaLibrary()
     @State private var viewer = MediaViewerHost()
+    @State private var history = FileHistory()
 
     init() {
         let server = BackupServer()
@@ -27,10 +28,12 @@ struct ImagoMacApp: App {
                 .environment(server)
                 .environment(library)
                 .environment(viewer)
+                .environment(history)
                 .frame(minWidth: 820, minHeight: 560)
                 .tint(.imago)
         }
         .windowToolbarStyle(.unified)
+        .commands { FileHistoryCommands(history: history) }
 
         Settings {
             SettingsView()

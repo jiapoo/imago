@@ -57,6 +57,8 @@ final class PhoneLibraryModel {
     private(set) var largeVideos: [PhoneAsset] = []
     /// Bumped whenever what's shown changes, so grids regroup only then.
     private(set) var revision = 0
+    /// A section to open the Photos page at, e.g. Large Videos from the iPhone's page. Taken once.
+    var requestedSection: PhoneSection?
 
     private var baseByID: [String: PhoneAsset] = [:]
     /// As shown (waiting changes made), by ID, waiting deletions included.

@@ -130,6 +130,19 @@ extension Color {
 }
 
 extension Color {
+    /// Videos and photos in charts. Checked as a pair in both appearances (colour-blind separation,
+    /// contrast against the card).
+    static let chartVideos = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0xE0 / 255, green: 0x32 / 255, blue: 0x4F / 255, alpha: 1)
+            : NSColor(srgbRed: 0xDD / 255, green: 0x1B / 255, blue: 0x3F / 255, alpha: 1)
+    })
+    static let chartPhotos = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x39 / 255, green: 0x87 / 255, blue: 0xE5 / 255, alpha: 1)
+            : NSColor(srgbRed: 0x2A / 255, green: 0x78 / 255, blue: 0xD6 / 255, alpha: 1)
+    })
+
     /// Behind a photo or video in the viewer: white in light mode, black in dark, as in Photos.
     static let mediaBackground = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .black : .white

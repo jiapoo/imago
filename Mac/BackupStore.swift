@@ -258,12 +258,13 @@ actor BackupStore {
     }
 
     /// Recreates the index by reading every sidecar: this phone's folder, and its assets that were
-    /// moved into the library's Folders.
+    /// moved elsewhere in the library (Folders, Recently Deleted). Elsewhere, only sidecars that name
+    /// this phone count, so other phones' assets are left to them.
     func rebuildIndex() throws {
         var rebuilt = Index()
         rebuilt.lastBackupByDevice = index.lastBackupByDevice
-        let folders = root.deletingLastPathComponent().appending(path: MediaLibrary.foldersName, directoryHint: .isDirectory)
-        for (top, ownedWithoutID) in [(root, true), (folders, false)] {
+        let library = root.deletingLastPathComponent()
+        for (top, ownedWithoutID) in [(root, true), (library, false)] {
             let enumerator = fileManager.enumerator(at: top, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             while let url = enumerator?.nextObject() as? URL {
                 guard url.pathExtension == "json", let sidecar = Self.readSidecar(at: url),
@@ -327,8 +328,9 @@ actor BackupStore {
         }
     }
 
-    /// Moves assets' files and sidecars to the Trash, and stops asking the phone for them.
-    func trash(_ assetIDs: [String]) throws {
+    /// Deletes assets' files and sidecars for good (Recently Deleted › Delete Now), and stops asking
+    /// the phone for them.
+    func deletePermanently(_ assetIDs: [String]) throws {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
         defer {
             try? saveIndex()
@@ -340,12 +342,20 @@ actor BackupStore {
             for key in keys {
                 guard let stored = index.resources[key] else { continue }
                 let file = url(of: stored.relativePath)
-                if fileManager.fileExists(atPath: file.path) { try fileManager.trashItem(at: file, resultingItemURL: nil) }
+                if fileManager.fileExists(atPath: file.path) { try fileManager.removeItem(at: file) }
                 index.resources[key] = nil
                 skipped.insert(key)
             }
-            if let sidecar { try? fileManager.trashItem(at: root.appending(path: sidecar), resultingItemURL: nil) }
+            if let sidecar { try? fileManager.removeItem(at: root.appending(path: sidecar)) }
             index.assets[assetID] = nil
+        }
+    }
+
+    /// Each asset's stored files and the checksum each had when it arrived, to check them again
+    /// before the phone is asked to delete its copy.
+    func storedFiles(of assetIDs: [String]) -> [String: [(url: URL, sha256: String)]] {
+        resourcesByAsset(only: Set(assetIDs)).mapValues { keys in
+            keys.compactMap { index.resources[$0].map { (url(of: $0.relativePath), $0.sha256) } }
         }
     }
 

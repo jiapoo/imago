@@ -71,6 +71,14 @@ actor Thumbnails {
         return image
     }
 
+    /// A file moved: its thumbnail, if made, goes with it, so it isn't made again from the drive.
+    nonisolated func carryOver(from old: URL, to new: URL, bytes: UInt64) {
+        let oldKey = Self.key(old, bytes: bytes), newKey = Self.key(new, bytes: bytes)
+        guard oldKey != newKey else { return }
+        if let image = memory.object(forKey: oldKey as NSString) { memory.setObject(image, forKey: newKey as NSString) }
+        try? FileManager.default.moveItem(at: directory.appending(path: oldKey + ".jpg"), to: directory.appending(path: newKey + ".jpg"))
+    }
+
     func holdBackgroundWork(_ held: Bool) {
         backgroundHeld = held
     }
