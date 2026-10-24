@@ -1,7 +1,9 @@
 import Foundation
 
 public enum ProtocolVersion {
-    public static let current = 4
+    public static let current = 5
+    /// Versions the Mac still accepts. A version-4 phone backs up as before; it just never opens a live session.
+    public static let supported = 4...5
 }
 
 /// Which file of an asset a resource is. Mirrors the PHAssetResourceType cases worth keeping.
@@ -114,6 +116,19 @@ public struct ManifestEntry: Codable, Sendable, Hashable {
     }
 }
 
+/// A small JPEG preview of one asset, at most `Thumbnail.pixelSize` on the long side.
+public struct Thumbnail: Codable, Sendable, Hashable {
+    public static let pixelSize = 360
+
+    public var assetID: String
+    public var jpeg: Data
+
+    public init(assetID: String, jpeg: Data) {
+        self.assetID = assetID
+        self.jpeg = jpeg
+    }
+}
+
 /// A resource the Mac still needs, and how many bytes of it it already has.
 public struct ResumePoint: Codable, Sendable, Hashable {
     public var key: ResourceKey
@@ -135,6 +150,13 @@ public struct ResumePoint: Codable, Sendable, Hashable {
 ///   manifestEnd → changes(Mac)           the Mac's pending library changes, maybe none
 ///   beginResource, chunk…, endResource → stored | failed (Mac)
 ///   goodbye
+///
+/// Live session (version 5, while Imago is open on the phone; a second connection beside any backup):
+///   hello(proof) → welcome | unavailable(Mac)
+///   live → changes(Mac)                  then the Mac sends `changes` again whenever its queue changes
+///   changeReport                         as soon as the user acts on changes
+///   thumbnailRequest(Mac) → thumbnails   previews of photos the Mac hasn't backed up yet
+///   goodbye, or the connection just closes when the app leaves the screen
 public enum ControlMessage: Codable, Sendable, Equatable {
     case pairRequest(deviceID: String, deviceName: String, protocolVersion: Int)
     case paired(deviceKey: Data, serverName: String)
@@ -157,10 +179,17 @@ public enum ControlMessage: Codable, Sendable, Equatable {
     case changes([LibraryChange])
     /// What happened to changes the phone received earlier.
     case changeReport([ChangeReport])
+    /// Version 5: the app is open on the phone. The Mac keeps the connection and pushes `changes` to it.
+    case live
+    /// Version 5: the Mac asks for small previews of these assets, which it has no backed-up copy of yet.
+    case thumbnailRequest([String])
+    /// Version 5: previews the Mac asked for. Assets the phone no longer has are left out.
+    case thumbnails([Thumbnail])
 
     /// Every message name on the wire. A name not in here comes from a newer version and is skipped.
     public static let names: Set<String> = [
         "pairRequest", "paired", "hello", "welcome", "unavailable", "manifest", "need", "beginResource",
         "endResource", "stored", "failed", "goodbye", "manifestEnd", "changes", "changeReport",
+        "live", "thumbnailRequest", "thumbnails",
     ]
 }

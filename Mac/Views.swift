@@ -48,7 +48,7 @@ struct MainView: View {
                 Section("iPhones") {
                     ForEach(server.devices) { device in
                         DeviceRow(device: device).tag(SidebarItem.device(device.id))
-                        Label("Manage Library", systemImage: "square.grid.3x3")
+                        Label("Photos", systemImage: "photo.stack")
                             .padding(.leading, 32)
                             .tag(SidebarItem.manage(device.id))
                     }
@@ -79,7 +79,7 @@ struct MainView: View {
                     }
                 case .manage(let id):
                     if let device = server.devices.first(where: { $0.id == id }) {
-                        ManageView(device: device).id(id)
+                        PhoneBrowserView(device: device).id(id)
                     } else {
                         OverviewView(showingAddPhone: $showingAddPhone, selection: $selection)
                     }

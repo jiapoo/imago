@@ -53,6 +53,14 @@ final class BackupServer {
     private(set) var library: LibraryRecord?
     /// Bumped when files arrive or the location changes, so the library browser reloads.
     private(set) var catalogRevision = 0
+    /// Phones with Imago open right now, which get changes the moment they're made.
+    private(set) var liveDevices: Set<String> = []
+    /// Previews the phones sent of assets not backed up yet: device ID → asset ID → JPEG file.
+    private(set) var previews: [String: [String: URL]] = [:]
+
+    private var livePeers: [String: (session: UUID, peer: PeerConnection)] = [:]
+    private var requestedPreviews: [String: Set<String>] = [:]
+    private var previewQueue: [String: [String]] = [:]
 
     private var keys: [String: Data]
     private var stores: [String: BackupStore] = [:]
@@ -181,7 +189,7 @@ final class BackupServer {
                 try await peer.start()
                 var frames = peer.frames.makeAsyncIterator()
                 guard case .control(.pairRequest(let deviceID, let deviceName, let version))? = try await frames.next(),
-                      version == ProtocolVersion.current
+                      ProtocolVersion.supported.contains(version)
                 else { return }
 
                 let key = Secret.random()
@@ -252,13 +260,15 @@ final class BackupServer {
         var store: BackupStore?
         var device: PairedDevice?
         var manifest: [ManifestEntry] = []
+        /// A live session rather than a backup (version 5).
+        var isLive = false
         updateSleepAssertion()
         do {
             try await peer.start()
             for try await frame in peer.frames {
                 switch frame {
                 case .control(.hello(let deviceID, let deviceName, let version, let proof)):
-                    guard version == ProtocolVersion.current else {
+                    guard ProtocolVersion.supported.contains(version) else {
                         try await peer.send(.control(.unavailable(
                             reason: "Update Imago on this iPhone and on your Mac so both are on the same version."
                         )))
@@ -344,8 +354,26 @@ final class BackupServer {
                     }
                     libraryChanged(device.id)
 
+                case .control(.live):
+                    guard let store, let device else { peer.cancel(); break }
+                    // Not a backup: it doesn't show as one or keep the Mac awake.
+                    isLive = true
+                    sessions[id] = nil
+                    updateSleepAssertion()
+                    livePeers[device.id] = (id, peer)
+                    liveDevices.insert(device.id)
+                    requestedPreviews[device.id] = []
+                    try await peer.send(.control(.changes(await store.changeQueue().pending)))
+                    addLog("Imago is open on \(device.name): changes go to it right away", symbol: "iphone.radiowaves.left.and.right")
+                    libraryChanged(device.id)
+
+                case .control(.thumbnails(let thumbnails)):
+                    guard let device else { break }
+                    savePreviews(thumbnails, for: device.id)
+
                 case .control(.goodbye):
-                    if let device { await store?.recordBackup(deviceID: device.id) }
+                    // A live session says goodbye too, but it backed nothing up.
+                    if let device, !isLive { await store?.recordBackup(deviceID: device.id) }
                     peer.cancel()
 
                 default:
@@ -353,16 +381,22 @@ final class BackupServer {
                 }
             }
         } catch {
-            if let device {
+            if let device, !isLive {
                 addLog("\(device.name) disconnected; it will resume next time", symbol: "wifi.exclamationmark")
             }
         }
 
+        if let device, livePeers[device.id]?.session == id {
+            livePeers[device.id] = nil
+            liveDevices.remove(device.id)
+            libraryChanged(device.id)
+        }
         await store?.flush()
         if let session = sessions.removeValue(forKey: id), let device, session.received > 0 {
             addLog("\(device.name): backed up \(session.received) files", symbol: "checkmark.circle")
         }
         updateSleepAssertion()
+        guard !isLive else { return }
         await refreshSummaries()
         catalogRevision += 1
     }
@@ -402,14 +436,28 @@ final class BackupServer {
             action: action, assetIDs: targets.map(\.id),
             bytes: action == .delete ? targets.reduce(0) { $0 + $1.bytes } : nil
         )
+        let base = Dictionary(targets.map { ($0.id, $0.metadata) }, uniquingKeysWith: { a, _ in a })
         Task {
             do {
-                try await store.enqueue(change)
-                addLog("Queued for \(device.name): \(change.summary)", symbol: change.symbol)
+                if let queued = try await store.enqueue(change, base: base) {
+                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                           symbol: queued.symbol)
+                }
             } catch {
                 addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
             }
             libraryChanged(device.id)
+            await pushChanges(to: device.id, from: store)
+        }
+    }
+
+    /// Keeps assets on the phone after all: takes them out of the deletions waiting for it.
+    func keep(_ assetIDs: Set<String>, on device: PairedDevice) {
+        guard let store = store(for: device) else { return }
+        Task {
+            try? await store.withdraw(assetIDs, from: .delete)
+            libraryChanged(device.id)
+            await pushChanges(to: device.id, from: store)
         }
     }
 
@@ -418,7 +466,72 @@ final class BackupServer {
         Task {
             try? await store.cancelChange(change.id)
             libraryChanged(device.id)
+            await pushChanges(to: device.id, from: store)
         }
+    }
+
+    // MARK: Live sessions
+
+    /// Sends the whole queue to the phone if Imago is open on it. The phone drops changes it has
+    /// already handled, and ones no longer in the queue were cancelled here.
+    private func pushChanges(to deviceID: String, from store: BackupStore) async {
+        guard let live = livePeers[deviceID] else { return }
+        let pending = await store.changeQueue().pending
+        do {
+            try await live.peer.send(.control(.changes(pending)))
+        } catch {
+            live.peer.cancel()
+        }
+    }
+
+    /// Asks the phone, if Imago is open on it, for a preview of an asset the Mac has no copy of yet.
+    /// Tiles ask as they scroll into view; requests made close together go out as one message.
+    /// Each asset is asked for once per session.
+    func requestPreview(_ assetID: String, on device: PairedDevice) {
+        guard livePeers[device.id] != nil, previews[device.id]?[assetID] == nil,
+              requestedPreviews[device.id]?.contains(assetID) == false else { return }
+        requestedPreviews[device.id, default: []].insert(assetID)
+        let first = previewQueue[device.id, default: []].isEmpty
+        previewQueue[device.id, default: []].append(assetID)
+        guard first else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            let wanted = previewQueue.removeValue(forKey: device.id) ?? []
+            guard let live = livePeers[device.id] else { return }
+            // Small batches, so the first previews show while the rest are made.
+            for start in stride(from: 0, to: wanted.count, by: 60) {
+                let batch = Array(wanted[start..<min(start + 60, wanted.count)])
+                do { try await live.peer.send(.control(.thumbnailRequest(batch))) } catch { live.peer.cancel(); return }
+            }
+        }
+    }
+
+    /// Previews live on this Mac's own disk, not the backup drive: they're replaced by the real
+    /// photo once it's backed up.
+    private static var previewsDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appending(path: "PhonePreviews", directoryHint: .isDirectory)
+    }
+
+    private func savePreviews(_ thumbnails: [Thumbnail], for deviceID: String) {
+        let folder = Self.previewsDirectory.appending(path: deviceID, directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var known = previews[deviceID] ?? [:]
+        for thumbnail in thumbnails {
+            let name = thumbnail.assetID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? UUID().uuidString
+            let file = folder.appending(path: name + ".jpg")
+            if (try? thumbnail.jpeg.write(to: file, options: .atomic)) != nil { known[thumbnail.assetID] = file }
+        }
+        previews[deviceID] = known
+    }
+
+    /// Previews saved in earlier sessions.
+    func loadPreviews(for device: PairedDevice) {
+        guard previews[device.id] == nil else { return }
+        let folder = Self.previewsDirectory.appending(path: device.id, directoryHint: .isDirectory)
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        previews[device.id] = Dictionary(files.compactMap { file in
+            file.deletingPathExtension().lastPathComponent.removingPercentEncoding.map { ($0, file) }
+        }, uniquingKeysWith: { a, _ in a })
     }
 
     // MARK: Location

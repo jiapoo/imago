@@ -114,6 +114,19 @@ private func asset(
         #expect(throws: (any Error).self) { try FrameCodec.decodeBody(body) }
     }
 
+    @Test func liveMessagesRoundTrip() throws {
+        let frames: [Frame] = [
+            .control(.live), .control(.thumbnailRequest(["a/L0/001"])),
+            .control(.thumbnails([Thumbnail(assetID: "a/L0/001", jpeg: Data([0xFF, 0xD8, 0xFF]))])),
+        ]
+        for frame in frames {
+            var decoder = FrameDecoder()
+            decoder.append(try FrameCodec.encode(frame))
+            #expect(try decoder.next() == frame)
+        }
+        #expect(String(decoding: try JSONEncoder().encode(ControlMessage.live), as: UTF8.self) == #"{"live":{}}"#)
+    }
+
     @Test func everyMessageNameIsListed() throws {
         let key = ResourceKey(assetID: "a", kind: .photo, revision: "original")
         let descriptor = ResourceDescriptor(key: key, originalFilename: "a", uti: "public.heic")
@@ -124,6 +137,7 @@ private func asset(
             .hello(deviceID: "", deviceName: "", protocolVersion: 4, proof: nil), .welcome(serverName: ""), .unavailable(reason: ""),
             .manifest([]), .need([]), .beginResource(descriptor, metadata: metadata, size: 0), .endResource(key, sha256: ""),
             .stored(key), .failed(key, reason: ""), .goodbye, .manifestEnd(albums: []), .changes([]), .changeReport([]),
+            .live, .thumbnailRequest([]), .thumbnails([]),
         ]
         let names = try all.map { try (JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) as! [String: Any]).keys.first! }
         #expect(Set(names) == ControlMessage.names)

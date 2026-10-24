@@ -62,14 +62,28 @@ The phone schedules a `BGProcessingTask` that requires power and network. iOS pi
 
 ## Managing the iPhone's library from the Mac
 
-Each iPhone in the Mac's sidebar has **Manage Library**: the phone's library as of its last backup, with
-suggestions for freeing space (exact duplicates, similar shots and bursts, large videos, screenshots, by year)
-and album and favorite tools. Similar shots are found with Vision on the backed-up copies, on the Mac.
+Under each iPhone in the Mac's sidebar, **Photos** shows that phone's library laid out like the Photos
+app: **Library** by Years, Months or All Photos (by day), **Favorites**, **Media Types** (Videos, Live
+Photos, Portrait, Screenshots…), and **Albums**. **Free Up Space** has exact duplicates, similar shots and
+bursts (found with Vision on the backed-up copies, on the Mac), large videos, and what isn't backed up yet.
 
-Changes don't happen right away. The Mac queues them, and hands them to the phone at its next backup. The
-iPhone app shows **"Your Mac suggests N changes"**, and the user approves or declines each one. Deletions
-also go through iOS's own confirmation and land in Recently Deleted. Only items fully backed up on the Mac
-can be deleted. See `docs/PROTOCOL.md` §6.1.
+Select as in Finder (click, ⌘-click, ⇧-click, ⌘A), then Favorite (or press `.`), Add to Album, Remove from
+Album, or Delete (the Delete key). Space shows the backed-up copy in Quick Look. A change shows straight
+away, with a clock badge until the phone has done it; doing the opposite before then takes it back
+instead of sending both. Only items fully backed up on the Mac can be deleted. **Waiting for iPhone ›
+To Delete** lists what's on its way out, with **Keep on iPhone** to change your mind.
+
+How changes reach the phone:
+
+- **Imago open on the iPhone:** the phone keeps a live connection to the Mac, and the toolbar says
+  **Connected**. Changes arrive within a second. With **Apply changes from your Mac** on (the default),
+  favorites and albums are made right away; deletions show iOS's own confirmation, once for a batch, and go
+  to Recently Deleted. Turn it off to review every change in the app first. While connected, photos the Mac
+  hasn't backed up yet show previews the phone sends.
+- **Imago not open:** changes wait, and go to the phone when you next open Imago or at its next backup.
+
+The Mac's view is the library as of the phone's last backup, plus what's been done since. Changes made on
+the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6.2.
 
 ## Browsing and organizing on the Mac
 
@@ -98,3 +112,4 @@ AirDrop show up too. A phone's file moved there in Finder is recognized by name,
 - Keeping pairings when the library moves to another Mac: `library.json` keeps each phone's folder, but each phone scans the new Mac's QR code once
 - Deduplicating photos that two phones share through iCloud Photos (each phone keeps its own copy)
 - Incremental scans using `PHPhotoLibrary` change tokens (today every backup reads the whole library's metadata)
+- Sending changes made in Photos on the iPhone to the Mac during a live session (today they show after the next backup)

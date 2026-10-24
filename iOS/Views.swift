@@ -19,6 +19,7 @@ struct ContentView: View {
                     LibraryCard()
                     if client.credential != nil {
                         OvernightCard()
+                        MacChangesSettingCard()
                         MacCard()
                     }
                 }
@@ -324,6 +325,44 @@ struct OvernightCard: View {
     private var lastRunText: String {
         guard let date = client.lastAutomaticRun else { return "Hasn't run yet" }
         return "Last ran \(date.formatted(.relative(presentation: .named)))"
+    }
+}
+
+/// Whether changes the Mac asks for are made as they arrive, and whether the Mac is connected now.
+struct MacChangesSettingCard: View {
+    @Environment(BackupClient.self) private var client
+    @Environment(LiveLink.self) private var live
+
+    var body: some View {
+        @Bindable var client = client
+        let mac = client.credential?.serverName ?? "your Mac"
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $client.applyRightAway) {
+                Label {
+                    Text("Apply changes from \(mac)").font(.headline)
+                } icon: {
+                    Image(systemName: "desktopcomputer.and.arrow.down").foregroundStyle(.orange)
+                }
+            }
+            .tint(.orange)
+            Text(client.applyRightAway
+                 ? "While Imago is open, favorites and albums you change on \(mac) are made here right away. Deletions still ask you first, and go to Recently Deleted."
+                 : "Changes from \(mac) wait here until you review them.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Label(liveText(mac), systemImage: live.state == .connected ? "dot.radiowaves.left.and.right" : "wifi.slash")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(live.state == .connected ? .green : .secondary)
+        }
+        .card()
+    }
+
+    private func liveText(_ mac: String) -> String {
+        switch live.state {
+        case .connected: "Connected to \(mac)"
+        case .connecting: "Looking for \(mac)…"
+        case .off: "Not connected"
+        }
     }
 }
 

@@ -141,14 +141,14 @@ struct BrowserView: View {
         return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)"
     }
 
-    private func keyHandling(_ items: [MediaItem]) -> KeyboardModifier {
-        KeyboardModifier(
+    private func keyHandling(_ items: [MediaItem]) -> GridKeys {
+        GridKeys(
             focused: $focused,
             clear: { library.selection = [] },
             selectAll: { library.selection = Set(items.map(\.id)) },
             preview: previewSelection,
             open: { selected.forEach { NSWorkspace.shared.open($0.url) } },
-            trash: { if !selected.isEmpty { confirmingTrash = true } }
+            delete: { if !selected.isEmpty { confirmingTrash = true } }
         )
     }
 
@@ -158,40 +158,6 @@ struct BrowserView: View {
             confirmingTrash: $confirmingTrash, removing: $removing,
             naming: $naming, trashTitle: trashTitle
         )
-    }
-}
-
-/// Space, ⌘O, Escape, ⌘A and Delete for the grid.
-private struct KeyboardModifier: ViewModifier {
-    var focused: FocusState<Bool>.Binding
-    var clear: () -> Void
-    var selectAll: () -> Void
-    var preview: () -> Void
-    var open: () -> Void
-    var trash: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .contentShape(Rectangle())
-            .onTapGesture { clear() }
-            .focusable()
-            .focused(focused)
-            .focusEffectDisabled()
-            .onAppear { focused.wrappedValue = true }
-            .onKeyPress(.space) { preview(); return .handled }
-            .onKeyPress(characters: ["o", "\u{F701}"]) { press in   // ⌘O and ⌘↓, as in Finder
-                guard press.modifiers.contains(.command) else { return .ignored }
-                open()
-                return .handled
-            }
-            .onKeyPress(.escape) { clear(); return .handled }
-            .onKeyPress(characters: ["a"]) { press in
-                guard press.modifiers.contains(.command) else { return .ignored }
-                selectAll()
-                return .handled
-            }
-            // The Delete key arrives as DEL (0x7F) on the Mac, forward delete as 0xF728.
-            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { _ in trash(); return .handled }
     }
 }
 
@@ -272,12 +238,7 @@ extension BrowserView {
             }
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            HStack(spacing: 6) {
-                Image(systemName: "photo").imageScale(.small).foregroundStyle(.secondary)
-                Slider(value: $tileSize, in: 90...300).frame(width: 96).controlSize(.small)
-                Image(systemName: "photo").imageScale(.large).foregroundStyle(.secondary)
-            }
-            .help("Thumbnail size")
+            TileSizeSlider(size: $tileSize)
             if case .folder(let name) = scope {
                 Button { server.revealInFinder(server.foldersURL.appending(path: name)) } label: {
                     Label("Show in Finder", systemImage: "folder")
@@ -349,23 +310,13 @@ extension BrowserView {
     /// Click selects; ⌘-click toggles; ⇧-click selects a range; a double-click opens.
     private func click(_ item: MediaItem, in items: [MediaItem]) {
         focused = true
-        let event = NSApp.currentEvent
-        // Two quick clicks on different items are two clicks, not a double-click.
-        if event?.clickCount == 2, anchor == item.id {
+        var selection = GridSelection(selected: library.selection, anchor: anchor)
+        if selection.click(item.id, in: items.map(\.id)) == .doubleClicked {
             NSWorkspace.shared.open(item.url)
             return
         }
-        let modifiers = event?.modifierFlags ?? []
-        if modifiers.contains(.shift), let anchor,
-           let from = items.firstIndex(where: { $0.id == anchor }), let to = items.firstIndex(where: { $0.id == item.id }) {
-            library.selection.formUnion(items[min(from, to)...max(from, to)].map(\.id))
-        } else if modifiers.contains(.command) {
-            library.selection.formSymmetricDifference([item.id])
-            anchor = item.id
-        } else {
-            library.selection = [item.id]
-            anchor = item.id
-        }
+        library.selection = selection.selected
+        anchor = selection.anchor
     }
 
     private func previewSelection() {
@@ -374,70 +325,6 @@ extension BrowserView {
         } else {
             quickLook = (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)?.url
         }
-    }
-}
-
-// MARK: - Days
-
-struct Day: Identifiable {
-    var date: Date?
-    var items: [MediaItem]
-    var id: Date { date ?? .distantPast }
-
-    /// Items grouped by the day they were taken, newest first; items without a date last.
-    static func group(_ items: [MediaItem]) -> [Day] {
-        let calendar = Calendar.current
-        var days: [Day] = []
-        for item in items {
-            let date = item.date.map { calendar.startOfDay(for: $0) }
-            if days.last?.date == date {
-                days[days.count - 1].items.append(item)
-            } else {
-                days.append(Day(date: date, items: [item]))
-            }
-        }
-        return days
-    }
-
-    var title: String {
-        guard let date else { return "No Date" }
-        let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
-        if calendar.isDate(date, equalTo: .now, toGranularity: .year) {
-            return date.formatted(.dateTime.weekday(.wide).day().month(.wide))
-        }
-        return date.formatted(.dateTime.day().month(.wide).year())
-    }
-}
-
-private struct DayHeader: View {
-    let day: Day
-    var selectAll: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(day.title).font(.title3.weight(.semibold))
-            Text(summary).font(.callout).foregroundStyle(.secondary)
-            Spacer()
-            Button("Select", action: selectAll)
-                .buttonStyle(.borderless)
-                .opacity(hovering ? 1 : 0)
-        }
-        .padding(.horizontal, 4)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
-        .background(Color(nsColor: .textBackgroundColor).opacity(0.94))
-        .onHover { hovering = $0 }
-    }
-
-    private var summary: String {
-        let videos = day.items.count { $0.isVideo }
-        let photos = day.items.count - videos
-        return [photos > 0 ? "\(photos) \(photos == 1 ? "photo" : "photos")" : nil,
-                videos > 0 ? "\(videos) \(videos == 1 ? "video" : "videos")" : nil]
-            .compactMap { $0 }.joined(separator: ", ")
     }
 }
 
@@ -476,25 +363,7 @@ private struct MediaTile: View {
                     .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 6, bottomTrailingRadius: 6))
                 }
             }
-            .overlay {
-                if selected {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.tint.opacity(0.18))
-                        .strokeBorder(.tint, lineWidth: 3)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if selected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .tint)
-                        .shadow(color: .black.opacity(0.25), radius: 2)
-                        .padding(6)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .animation(.snappy(duration: 0.15), value: selected)
+            .modifier(SelectedOverlay(selected: selected))
             .contentShape(Rectangle())
             .help(item.name)
     }
@@ -514,15 +383,7 @@ private struct SelectionBar: View {
     var clear: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(items.count == 1 ? "1 item" : "\(items.count) items").font(.headline)
-                Text(items.reduce(0) { $0 + $1.bytes }.bytes).font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(minWidth: 70, alignment: .leading)
-
-            Divider().frame(height: 26)
-
+        FloatingBar(count: items.count, detail: items.reduce(0) { $0 + $1.bytes }.bytes, clear: clear) {
             Menu {
                 ForEach(folders, id: \.self) { folder in
                     Button(folder) { move(folder) }
@@ -549,21 +410,7 @@ private struct SelectionBar: View {
             Button(role: .destructive, action: trash) {
                 Label("Trash", systemImage: "trash")
             }
-
-            Button(action: clear) {
-                Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Deselect all")
         }
-        .controlSize(.large)
-        .padding(.leading, 20)
-        .padding(.trailing, 12)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
-        .padding(.bottom, 22)
     }
 }
 

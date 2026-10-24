@@ -66,15 +66,31 @@ extension BackupStore {
         return PhoneLibrary(takenAt: snapshot.takenAt, assets: assets, albums: snapshot.albums, files: files)
     }
 
+    /// When the snapshot was last written, to tell whether it needs reading again.
+    func snapshotModified() -> Date? {
+        try? snapshotURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
     func changeQueue() -> ChangeQueue {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return (try? decoder.decode(ChangeQueue.self, from: Data(contentsOf: changesURL))) ?? ChangeQueue()
     }
 
-    func enqueue(_ change: LibraryChange) throws {
+    /// Queues `change`, taking back an opposite one still waiting instead. `base` is the assets as
+    /// they were on the phone at its last backup. Returns what was actually queued, if anything.
+    @discardableResult
+    func enqueue(_ change: LibraryChange, base: [String: AssetMetadata]) throws -> LibraryChange? {
         var queue = changeQueue()
-        queue.pending.append(change)
+        queue.pending = PendingChanges.queue(change, onto: queue.pending, base: base)
+        try save(queue)
+        return queue.pending.last { $0.id == change.id }
+    }
+
+    /// Takes assets out of waiting changes with `action`, e.g. to keep them on the phone after all.
+    func withdraw(_ assetIDs: Set<String>, from action: LibraryChange.Action) throws {
+        var queue = changeQueue()
+        queue.pending = PendingChanges.withdraw(assetIDs, from: action, in: queue.pending)
         try save(queue)
     }
 
@@ -97,7 +113,30 @@ extension BackupStore {
         }
         queue.done = Array(queue.done.prefix(200))
         try save(queue)
+        let applied = matched.filter { $0.report.outcome == .applied }.map(\.change)
+        if !applied.isEmpty { try patchSnapshot(with: applied) }
         return matched
+    }
+
+    /// Makes changes the phone has done to the saved snapshot, so the library shows them before the
+    /// phone's next backup sends a fresh one. Otherwise a change done during a live session would
+    /// look undone once it leaves the queue.
+    private func patchSnapshot(with changes: [LibraryChange]) throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard var snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return }
+        for change in changes {
+            let ids = Set(change.assetIDs)
+            if change.action == .delete {
+                snapshot.entries.removeAll { ids.contains($0.metadata.assetID) }
+                continue
+            }
+            for index in snapshot.entries.indices where ids.contains(snapshot.entries[index].metadata.assetID) {
+                PendingChanges.apply(change.action, to: &snapshot.entries[index].metadata)
+            }
+            if case .addToAlbum(let title) = change.action, !snapshot.albums.contains(title) { snapshot.albums.append(title) }
+        }
+        try saveSnapshot(snapshot)
     }
 
     private func save(_ queue: ChangeQueue) throws {

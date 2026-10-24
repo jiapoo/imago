@@ -4,25 +4,36 @@ import SwiftUI
 @main
 struct ImagoApp: App {
     @State private var client: BackupClient
+    @State private var live: LiveLink
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let client = BackupClient()
         BackgroundBackup.register(client: client)
         _client = State(initialValue: client)
+        _live = State(initialValue: LiveLink(client: client))
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(client)
+                .environment(live)
+                // Pairing happens while the app is open: connect as soon as there's a Mac.
+                .onChange(of: client.credential?.serverID, initial: true) { _, id in
+                    live.stop()
+                    if id != nil, scenePhase == .active { live.start() }
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 // Pick up a backup that iOS interrupted, e.g. when the phone locked.
                 client.resumeIfUnfinished()
+                client.applyWaitingChanges()
+                live.start()
             case .background:
+                live.stop()
                 if client.overnightBackup, client.credential != nil { BackgroundBackup.schedule() }
             default:
                 break

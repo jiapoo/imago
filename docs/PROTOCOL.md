@@ -1,4 +1,4 @@
-# Imago protocol, version 4
+# Imago protocol, version 5
 
 This is everything a server needs to accept backups from the Imago iPhone app:
 discovery, encryption, pairing, the messages, and how files are laid out on disk.
@@ -85,13 +85,13 @@ JSON is base64**url**-encoded without padding, but `secret` inside it is ordinar
 The phone connects to the **pairing service** with PSK identity `pair` and PSK = `secret`.
 
 ```
-phone → server   pairRequest { deviceID, deviceName, protocolVersion: 4 }
+phone → server   pairRequest { deviceID, deviceName, protocolVersion: 5 }
 server → phone   paired      { deviceKey: <32 random bytes>, serverName }
 ```
 
 Then both sides close. The server MUST:
 
-1. Reject a `protocolVersion` other than 4 by closing the connection without replying.
+1. Reject a `protocolVersion` other than 4 or 5 by closing the connection without replying.
 2. Store `deviceKey` under identity `deviceID` and add it to the backup service's keys, restarting
    that listener if needed.
 3. If `deviceID` is already paired, replace its key and keep its existing folder (this is how a
@@ -223,9 +223,9 @@ many bytes of it the server already has.
 
 | Message | Direction | JSON |
 |---|---|---|
-| `pairRequest` | phone → server | `{"pairRequest":{"deviceID":"…","deviceName":"Jia's iPhone","protocolVersion":4}}` |
+| `pairRequest` | phone → server | `{"pairRequest":{"deviceID":"…","deviceName":"Jia's iPhone","protocolVersion":5}}` |
 | `paired` | server → phone | `{"paired":{"deviceKey":"<base64>","serverName":"Studio Mac"}}` |
-| `hello` | phone → server | `{"hello":{"deviceID":"…","deviceName":"…","protocolVersion":4,"proof":"<base64 of 32 bytes>"}}` |
+| `hello` | phone → server | `{"hello":{"deviceID":"…","deviceName":"…","protocolVersion":5,"proof":"<base64 of 32 bytes>"}}` |
 | `welcome` | server → phone | `{"welcome":{"serverName":"Studio Mac"}}` |
 | `unavailable` | server → phone | `{"unavailable":{"reason":"<shown to the user>"}}` |
 | `manifest` | phone → server | `{"manifest":{"_0":[<ManifestEntry>, …]}}` |
@@ -238,6 +238,9 @@ many bytes of it the server already has.
 | `manifestEnd` | phone → server | `{"manifestEnd":{"albums":["Trip","Family"]}}`, every album title, empty ones too |
 | `changes` | server → phone | `{"changes":{"_0":[<LibraryChange>, …]}}`, maybe empty |
 | `changeReport` | phone → server | `{"changeReport":{"_0":[<ChangeReport>, …]}}` |
+| `live` | phone → server | `{"live":{}}`, version 5: start a live session (§6.2) |
+| `thumbnailRequest` | server → phone | `{"thumbnailRequest":{"_0":["<assetID>", …]}}`, version 5 |
+| `thumbnails` | phone → server | `{"thumbnails":{"_0":[{"assetID":"…","jpeg":"<base64>"}, …]}}`, version 5; at most 360 px on the long side |
 
 ## 6. A backup session
 
@@ -265,7 +268,7 @@ The phone waits for each reply before sending more: one `need` per `manifest`, o
 per file. Only one file is ever in flight. The server MUST behave as follows.
 
 **`hello`**
-- Reply `unavailable` and close if `protocolVersion` isn't 4. The Mac says "Update Imago on this
+- Reply `unavailable` and close if `protocolVersion` isn't 4 or 5. The Mac says "Update Imago on this
   iPhone and on your Mac so both are on the same version." A phone older than version 3 sends no `proof`
   and also gets this reply.
 - Reply `unavailable` ("Pair this iPhone with your Mac again.") and close if `deviceID` isn't paired, or
@@ -327,14 +330,47 @@ Rules for the server:
   manifest entry for that asset is stored and checksum-verified.
 - Keep a change waiting until a report for it arrives. The phone gets the same change again at each
   backup until then, and ignores ones it has already handled.
+- Undoing a waiting change takes it back instead of queuing its opposite: unfavoriting a photo whose
+  favorite is still waiting removes it from that change. Changes that are already true on the phone
+  (as of its last `manifestEnd`) aren't queued.
+- On an `applied` report, make the change to the library snapshot (§7.5) too, so it doesn't look undone
+  until the next `manifestEnd`.
 
 Rules for the phone:
-- Never act on a change without the user reviewing it in the app. Deletions also go through iOS's own
-  confirmation, and all approved deletions go in one request so iOS asks once. Deleted items go to
-  Recently Deleted for 30 days.
+- Never act on a change without the user's say-so: either they review it in the app, or they turned
+  on "Apply changes from my Mac", which makes favorites and album changes as they arrive while the app
+  is open. Deletions always go through iOS's own confirmation, and all approved deletions go in one
+  request so iOS asks once. Deleted items go to Recently Deleted for 30 days.
 - `addToAlbum` uses the user's regular album with that title, creating it if there isn't one.
   `removeFromAlbum` only works on a regular album, and fails otherwise.
-- Report every change it was given, applied or not, at the start of the next session.
+- Report every change it was given, applied or not, at the start of the next session, and right
+  away over a live session if one is open. The server ignores a report it already has.
+
+### 6.2 Live session (version 5)
+
+While the app is on screen, the phone keeps a second connection to the backup service, beside any
+backup, so changes made on the server reach it in about a second instead of at the next backup.
+
+```
+phone                                         server
+  hello ─────────────────────────────────────▶
+       ◀──────────────────────────── welcome  (or unavailable, then close)
+  live ──────────────────────────────────────▶
+       ◀──────────────────────────── changes  every waiting change, at once
+       ◀──────────────────────────── changes  again whenever the queue changes (a change added, cancelled, withdrawn)
+  changeReport ──────────────────────────────▶   as soon as the user acts; no reply
+       ◀─────────────────────── thumbnailRequest
+  thumbnails ────────────────────────────────▶   one or more, for the assets the phone still has
+  goodbye, or the connection closes ─────────▶
+```
+
+- `changes` always carries the whole queue. The phone replaces its list with it, minus changes it has
+  already handled, so a change cancelled on the server disappears from the phone too (unless the user
+  has already acted on it).
+- A live session isn't a backup: the server doesn't count it as one, doesn't record a backup time on
+  `goodbye`, and doesn't hold off sleep for it. iOS closes it when the app leaves the screen.
+- The server asks for previews of assets it has no backed-up copy of, as the user scrolls to them. It
+  keeps them in its own cache, not in the backup folder, and stops using one once the real file arrives.
 
 ## 7. Files on disk
 
@@ -478,13 +514,16 @@ has them. Without this, the next backup would bring the file straight back.
 
 ## 8. Versioning and changes
 
-`protocolVersion` must match exactly, and both sides refuse anything else. From version 4, both sides
+The server accepts versions 4 and 5; the phone sends 5. A version-4 phone backs up as before and never
+opens a live session. Older versions are refused. From version 4, both sides
 skip control messages whose names they don't know (§4) instead of dropping the connection. So a later
 message the other side can ignore can be added without a version bump, and a Windows server can lag
 behind the Mac by a release. A change the other side must understand still needs a new version.
 
 ## 9. History
 
+- **Version 5:** live sessions (`live`), with `changes` pushed whenever the queue changes and
+  `changeReport` sent as soon as the user acts; previews (`thumbnailRequest`, `thumbnails`).
 - **Version 4:** the phone sends `manifestEnd` with its album list, and the server replies `changes`;
   the phone sends `changeReport`. Metadata gains `subtypes` and `burstID`. Unknown messages are skipped.
 - **Version 3:** `hello` carries `proof`, so the server checks which phone it's talking to, not just that

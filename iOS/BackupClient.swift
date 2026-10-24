@@ -109,6 +109,17 @@ final class BackupClient {
         didSet { saveChangeState() }
     }
     private(set) var isApplyingChanges = false
+    /// Favorites and album changes from the Mac are made as soon as they arrive while the app is open,
+    /// and deletions go straight to iOS's confirmation. Off: every change waits for a review here.
+    var applyRightAway: Bool {
+        didSet {
+            UserDefaults.standard.set(applyRightAway, forKey: "applyRightAway")
+            scheduleAutoApply()
+        }
+    }
+    /// Set while the live link is connected, to send reports to the Mac the moment there are any.
+    var sendReportsNow: (([ChangeReport]) -> Void)?
+    private var autoApply: Task<Void, Never>?
     /// What the user did with earlier changes; sent to the Mac at the next backup.
     private var unsentReports: [ChangeReport] = [] {
         didSet { saveChangeState() }
@@ -144,6 +155,7 @@ final class BackupClient {
         lastAutomaticRun = UserDefaults.standard.object(forKey: "lastAutomaticRun") as? Date
         deviceName = UserDefaults.standard.string(forKey: "deviceName") ?? Self.systemDeviceName
         overnightBackup = UserDefaults.standard.object(forKey: "overnightBackup") as? Bool ?? true
+        applyRightAway = UserDefaults.standard.object(forKey: "applyRightAway") as? Bool ?? true
         if let data = UserDefaults.standard.data(forKey: "unfinishedBackup") {
             unfinished = try? JSONDecoder().decode(Progress.self, from: data)
         }
@@ -454,36 +466,9 @@ final class BackupClient {
 
         startStep()
         phase = .searching
-        log.info("Looking for the Mac on the network")
-        let endpoint = try await BackupService.findServer(id: credential.serverID)
-
-        log.info("Found the Mac; connecting")
-        phase = .connecting
-        let peer = PeerConnection(endpoint: endpoint, parameters: BackupService.parameters(
-            secret: credential.key, identity: credential.deviceID
-        ))
+        let (peer, connectedReplies) = try await connect(credential) { self.phase = .connecting }
+        var replies = connectedReplies
         defer { peer.cancel() }
-        do {
-            try await peer.withDeadline(Self.connectTimeout, "connecting") { try await peer.start() }
-        } catch let error as NWError {
-            // A TLS failure means the Mac doesn't know this phone's key. Anything else is network trouble.
-            if case .tls = error {
-                throw ClientError.refused("Your Mac didn't accept this iPhone. If you removed it on the Mac, unpair here and pair again.")
-            }
-            throw error
-        }
-        var replies = peer.frames.makeAsyncIterator()
-
-        guard let binding = peer.keyingMaterial(label: HelloProof.exporterLabel) else { throw ClientError.unexpectedReply }
-        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.hello(
-            deviceID: credential.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current,
-            proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding)
-        ))) }
-        switch try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) {
-        case .control(.welcome)?: break
-        case .control(.unavailable(let reason))?: throw ClientError.refused(reason)
-        default: throw ClientError.unexpectedReply
-        }
         let reports = unsentReports
         if !reports.isEmpty { try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.changeReport(reports))) } }
 
@@ -515,7 +500,7 @@ final class BackupClient {
         guard case .control(.changes(let changes))? = try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
         // The Mac handles frames in order, so it recorded the reports before replying.
         unsentReports.removeAll { reports.contains($0) }
-        macChanges = changes.filter { !handledChangeIDs.contains($0.id) }
+        receive(changes)
 
         var lookup: [ResourceKey: (AssetMetadata, ResourceDescriptor)] = [:]
         for entry in manifest {
@@ -567,6 +552,47 @@ final class BackupClient {
         return .finished(sent: sent, failed: failed)
     }
 
+    /// Finds the Mac, opens an encrypted connection with this phone's key and says hello.
+    /// Returns once the Mac welcomes it; throws if the Mac turns it away. The caller cancels the connection.
+    func connect(
+        _ credential: DeviceCredential, found: () -> Void = {}
+    ) async throws -> (PeerConnection, AsyncThrowingStream<Frame, Error>.Iterator) {
+        log.info("Looking for the Mac on the network")
+        let endpoint = try await BackupService.findServer(id: credential.serverID)
+
+        log.info("Found the Mac; connecting")
+        found()
+        let peer = PeerConnection(endpoint: endpoint, parameters: BackupService.parameters(
+            secret: credential.key, identity: credential.deviceID
+        ))
+        do {
+            do {
+                try await peer.withDeadline(Self.connectTimeout, "connecting") { try await peer.start() }
+            } catch let error as NWError {
+                // A TLS failure means the Mac doesn't know this phone's key. Anything else is network trouble.
+                if case .tls = error {
+                    throw ClientError.refused("Your Mac didn't accept this iPhone. If you removed it on the Mac, unpair here and pair again.")
+                }
+                throw error
+            }
+            var replies = peer.frames.makeAsyncIterator()
+
+            guard let binding = peer.keyingMaterial(label: HelloProof.exporterLabel) else { throw ClientError.unexpectedReply }
+            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.hello(
+                deviceID: credential.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current,
+                proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding)
+            ))) }
+            switch try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) {
+            case .control(.welcome)?: return (peer, replies)
+            case .control(.unavailable(let reason))?: throw ClientError.refused(reason)
+            default: throw ClientError.unexpectedReply
+            }
+        } catch {
+            peer.cancel()
+            throw error
+        }
+    }
+
     /// Exports one file and streams it from `offset`, so an interrupted video resumes where it stopped.
     /// `progress` gets 0...1: the iCloud download (if any) is the first half, sending the second.
     private nonisolated static func upload(
@@ -594,6 +620,34 @@ final class BackupClient {
 
     // MARK: Changes from the Mac
 
+    /// Takes the Mac's current list of changes, at a backup or over the live link. With "apply right
+    /// away" on and the app on screen, they're made straight away (deletions still ask in iOS's own
+    /// prompt); otherwise they wait for the user to review them.
+    func receive(_ changes: [LibraryChange]) {
+        macChanges = changes.filter { !handledChangeIDs.contains($0.id) }
+        scheduleAutoApply()
+    }
+
+    /// Applies changes that arrived while the app was in the background, e.g. at an overnight backup.
+    func applyWaitingChanges() {
+        scheduleAutoApply()
+    }
+
+    private func scheduleAutoApply() {
+        guard applyRightAway, autoApply == nil, !macChanges.isEmpty else { return }
+        autoApply = Task {
+            defer { autoApply = nil }
+            // Changes made together on the Mac arrive one after another; wait a moment so deletions go in one prompt.
+            try? await Task.sleep(for: .seconds(1.5))
+            while applyRightAway, UIApplication.shared.applicationState == .active, !macChanges.isEmpty {
+                let batch = macChanges
+                await review(approve: batch, decline: [])
+                // Stop if nothing was handled (e.g. a review was already running); more may have arrived meanwhile.
+                if macChanges.allSatisfy(batch.contains) { break }
+            }
+        }
+    }
+
     /// Makes the approved changes and turns down the rest. All deletions go in one request, so iOS
     /// asks once. The Mac hears what happened at the next backup.
     func review(approve approved: [LibraryChange], decline declined: [LibraryChange]) async {
@@ -617,6 +671,9 @@ final class BackupClient {
 
         let ids = Set(reports.map(\.changeID))
         unsentReports += reports
+        // Over the live link the Mac hears now. They're also sent at the next backup, in case this
+        // doesn't arrive; the Mac ignores reports it already has.
+        sendReportsNow?(reports)
         handledChangeIDs = Array((handledChangeIDs + ids).suffix(500))
         macChanges.removeAll { ids.contains($0.id) }
         await refreshCounts()

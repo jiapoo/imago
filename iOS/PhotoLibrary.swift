@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import UIKit
 import ImagoKit
 
 /// Reads the Photos library into a manifest (metadata only) and exports single files on demand.
@@ -106,6 +107,33 @@ enum PhotoLibrary {
             if let title = album.localizedTitle, !titles.contains(title) { titles.append(title) }
         }
         return titles
+    }
+
+    // MARK: Previews for the Mac
+
+    /// Small JPEG previews, from what's on the phone (no iCloud downloads). Missing assets are left out.
+    static func thumbnails(_ assetIDs: [String]) async -> [Thumbnail] {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil)
+        var list: [PHAsset] = []
+        assets.enumerateObjects { asset, _, _ in list.append(asset) }
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = false
+        options.isSynchronous = false
+        let size = CGSize(width: Thumbnail.pixelSize, height: Thumbnail.pixelSize)
+        var thumbnails: [Thumbnail] = []
+        for asset in list {
+            let image: UIImage? = await withCheckedContinuation { done in
+                PHImageManager.default().requestImage(for: asset, targetSize: size, contentMode: .aspectFill, options: options) { image, _ in
+                    done.resume(returning: image)
+                }
+            }
+            if let jpeg = image?.jpegData(compressionQuality: 0.7) {
+                thumbnails.append(Thumbnail(assetID: asset.localIdentifier, jpeg: jpeg))
+            }
+        }
+        return thumbnails
     }
 
     // MARK: Changes from the Mac
