@@ -55,7 +55,9 @@ Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821.json         metadata, albums, c
 Jia's iPhone/.photobackup/index.json                         cache; rebuildable from the sidecars
 ```
 
-Deletions on the phone never delete anything on the Mac. Interrupted files resume from the last byte received.
+Deletions on the phone never delete anything on the Mac: a photo deleted on the iPhone after it was
+backed up stays in the backup. Each iPhone's **Deleted on iPhone** (in the sidebar, under its row, and on
+its page) lists them, as of its last backup, to keep, copy or move into a folder, or delete here. Interrupted files resume from the last byte received.
 
 ## Overnight backups
 
@@ -95,13 +97,17 @@ the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6
 
 ## Browsing and organizing on the Mac
 
+**Home** shows how the backups stand: a status banner, the library's numbers, any backup running now, a
+card per iPhone, shortcuts into the library, the backup drive and recent activity.
+
 **Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder;
 **Large Files** shows the biggest first (filter to what's still on an iPhone to see what frees space there).
 **Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep
-as you like), so they stay usable without the app. The **Files** panel on the right (toolbar button, shown on
-photo pages) lists the drive as Finder does: every folder by name, the iPhones' opening to their years and
-months, and Recently Deleted. Make, rename and delete folders there, and drop photos and videos on them:
-from any grid (the whole selection comes along) or from Finder (copied in).
+as you like), so they stay usable without the app. The sidebar's **Folders** section shows them as a tree,
+with Recently Deleted; **iPhones** has a row per iPhone that opens to its Photos and how its backup stands.
+Both sections fold. Make, rename and delete folders there, and drop photos and videos on them: from any
+grid (the whole selection comes along) or from Finder (copied in). Dropping an iPhone's items on its row
+moves them back into its folder.
 
 **Copy | Move** in the toolbar decides what putting photos into a folder does, by dragging or with
 Copy To / Move To. **Copy** (the default) copies them in; the iPhone and its backup keep them. **Move**

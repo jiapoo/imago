@@ -7,17 +7,21 @@ import SwiftUI
 /// on its Photos page, which every part of this page opens.
 struct DeviceView: View {
     @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
     let device: PairedDevice
     /// Opens this iPhone's Photos page, at a section if given.
     var openPhotos: (PhoneSection?) -> Void
+    /// Opens what's backed up but deleted on the iPhone since.
+    var openDeleted: () -> Void = {}
     @State private var model: PhoneLibraryModel
     @State private var confirmingRemove = false
     @State private var renaming = false
     @State private var newName = ""
 
-    init(device: PairedDevice, openPhotos: @escaping (PhoneSection?) -> Void) {
+    init(device: PairedDevice, openPhotos: @escaping (PhoneSection?) -> Void, openDeleted: @escaping () -> Void = {}) {
         self.device = device
         self.openPhotos = openPhotos
+        self.openDeleted = openDeleted
         _model = State(initialValue: PhoneLibraryModel.model(for: device))
     }
 
@@ -26,6 +30,7 @@ struct DeviceView: View {
             VStack(alignment: .leading, spacing: 22) {
                 hero
                 numbers
+                deletedOnPhone
                 if model.state == .ready {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 380), spacing: 22, alignment: .top)], spacing: 22) {
                         SpaceCard(model: model)
@@ -174,6 +179,32 @@ struct DeviceView: View {
         return left == 0 ? "Everything" : "\(left.formatted()) to go"
     }
 
+    /// Backed up, but deleted on the iPhone since: there to review.
+    @ViewBuilder
+    private var deletedOnPhone: some View {
+        let deleted = library.deletedOnPhone(device.id)
+        if !deleted.isEmpty {
+            HStack(spacing: 14) {
+                Image(systemName: "iphone.slash")
+                    .font(.title3)
+                    .foregroundStyle(Color.imago)
+                    .frame(width: 38, height: 38)
+                    .background(Color.imago.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(deleted.count == 1 ? "1 item was deleted on \(device.name) after it was backed up"
+                                            : "\(deleted.count.formatted()) items were deleted on \(device.name) after they were backed up")
+                        .font(.headline)
+                    Text("\(deleted.reduce(0) { $0 + $1.bytes }.bytes). They stay in this backup until you decide.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Review", action: openDeleted)
+                    .controlSize(.large)
+            }
+            .modernCard(padding: 18)
+        }
+    }
+
     private var waiting: some View {
         ContentUnavailableView(
             model.state == .unavailable ? "Backup drive not connected" : "Nothing to show yet",
@@ -217,7 +248,7 @@ extension View {
 }
 
 /// A card's title: a small icon and a heading, with an optional action on the right.
-private struct CardTitle<Trailing: View>: View {
+struct CardTitle<Trailing: View>: View {
     let title: String
     let symbol: String
     @ViewBuilder var trailing: Trailing
@@ -242,7 +273,7 @@ extension CardTitle where Trailing == EmptyView {
     }
 }
 
-private struct NumberTile: View {
+struct NumberTile: View {
     let title: String
     let value: String
     let detail: String?

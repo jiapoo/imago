@@ -60,6 +60,7 @@ struct BrowserView: View {
         ScrollView {
             if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
             if isTrash, !items.isEmpty { trashBanner.padding(.horizontal, 16) }
+            if case .deletedOnPhone = scope, !items.isEmpty { deletedOnPhoneBanner.padding(.horizontal, 16) }
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: tileSize, maximum: tileSize * 1.5), spacing: 4)],
                 spacing: 4, pinnedViews: scope == .large ? [] : [.sectionHeaders]
@@ -199,6 +200,17 @@ struct BrowserView: View {
             .padding(.top, 14)
     }
 
+    /// Deleted on iPhone: what these are, and what to do with them.
+    private var deletedOnPhoneBanner: some View {
+        Label("Backed up here, but deleted on the iPhone since. They stay in this backup until you decide: keep them, copy or move them into a folder, or delete them here (they go to Recently Deleted first).",
+              systemImage: "iphone.slash")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 14)
+    }
+
     private var otherFolders: [String] {
         flatten(library.folders).map(\.path).filter { MediaLibrary.Scope.folder($0) != scope }
     }
@@ -316,6 +328,7 @@ extension BrowserView {
         case .folder(let path): (path as NSString).lastPathComponent
         case .trash: "Recently Deleted"
         case .large: "Large Files"
+        case .deletedOnPhone(let id): "Deleted on \(server.devices.first { $0.id == id }?.name ?? "iPhone")"
         }
     }
 
@@ -389,6 +402,9 @@ extension BrowserView {
             case .large:
                 ContentUnavailableView("No large files", systemImage: "externaldrive",
                                        description: Text("Photos and videos over \(MediaLibrary.largeFileBytes.bytes) show here, biggest first."))
+            case .deletedOnPhone:
+                ContentUnavailableView("Nothing deleted on the iPhone", systemImage: "checkmark.circle",
+                                       description: Text("Photos and videos deleted on the iPhone after they were backed up show here, as of its last backup."))
             }
         case .ready:
             EmptyView()

@@ -65,6 +65,8 @@ final class MediaLibrary {
         case trash
         /// The biggest items, biggest first.
         case large
+        /// Backed up from this iPhone (by device ID) and still in its folder, but no longer on it.
+        case deletedOnPhone(String)
     }
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -219,6 +221,7 @@ final class MediaLibrary {
         let source: [MediaItem] = switch scope {
         case .trash: trash.map(\.item)
         case .large: items.filter { $0.bytes >= Self.largeFileBytes }.sorted { $0.bytes > $1.bytes }
+        case .deletedOnPhone(let deviceID): deletedOnPhone(deviceID)
         default: items
         }
         return source.filter { item in
@@ -238,6 +241,16 @@ final class MediaLibrary {
     func phoneAsset(_ item: MediaItem) -> PhoneAsset? {
         guard let deviceID = item.deviceID, let assetID = item.assetID else { return nil }
         return onPhone[deviceID]?[assetID]
+    }
+
+    /// Items backed up from an iPhone that weren't on it at its last backup: deleted there since. Only
+    /// ones still in its own folder: ones moved into a folder or deleted here were dealt with already.
+    /// Empty until the iPhone has sent its library list.
+    func deletedOnPhone(_ deviceID: String) -> [MediaItem] {
+        guard let phone = onPhone[deviceID] else { return [] }
+        return items.filter { item in
+            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil } == true
+        }
     }
 
     func trashed(_ item: MediaItem) -> TrashedItem? {
