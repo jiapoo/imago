@@ -235,7 +235,8 @@ struct BrowserView: View {
             delete: {
                 guard !selected.isEmpty else { return }
                 if isTrash { deletingNow = selected.compactMap(library.trashed) } else { trash(selected) }
-            }
+            },
+            deleteTitle: isTrash ? "Delete Now…" : "Move to Recently Deleted"
         )
     }
 

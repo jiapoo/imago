@@ -471,6 +471,7 @@ struct PhoneGrid: View {
             preview: { openViewer(on: assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first) },
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
+            deleteTitle: "Delete from iPhone…",
             extra: [".": { if !selected.isEmpty { actions.toggleFavorite(selected) } }]
         ))
         // Back from the viewer: the keys work on the grid again.

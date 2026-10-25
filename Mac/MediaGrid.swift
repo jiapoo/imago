@@ -112,7 +112,9 @@ struct GridSelection {
 
 // MARK: - Keys
 
-/// Space, ⌘O, Escape, ⌘A and Delete for a grid, plus any extra keys it wants.
+/// A grid's shortcuts, as in Finder: Space, ⌘O, Escape, ⌘A (select all), ⌥⌘A (deselect all), and
+/// Delete or ⌘⌫, plus any extra keys it wants. While the grid has the keyboard, Edit › Deselect All
+/// and the delete command act on it too (see `GridCommands`).
 struct GridKeys: ViewModifier {
     var focused: FocusState<Bool>.Binding
     var clear: () -> Void
@@ -120,6 +122,8 @@ struct GridKeys: ViewModifier {
     var preview: () -> Void
     var open: () -> Void
     var delete: () -> Void
+    /// For Edit › Delete: "Move to Recently Deleted", "Delete from iPhone…"…
+    var deleteTitle = "Move to Recently Deleted"
     /// Other characters, e.g. "." to favorite.
     var extra: [Character: () -> Void] = [:]
 
@@ -130,6 +134,7 @@ struct GridKeys: ViewModifier {
             .focusable()
             .focused(focused)
             .focusEffectDisabled()
+            .focusedValue(\.gridCommands, GridCommandActions(deselectAll: clear, delete: delete, deleteTitle: deleteTitle))
             .onAppear { focused.wrappedValue = true }
             .onKeyPress(.space) { preview(); return .handled }
             .onKeyPress(characters: ["o", "\u{F701}"]) { press in   // ⌘O and ⌘↓, as in Finder
@@ -140,16 +145,49 @@ struct GridKeys: ViewModifier {
             .onKeyPress(.escape) { clear(); return .handled }
             .onKeyPress(characters: ["a"]) { press in
                 guard press.modifiers.contains(.command) else { return .ignored }
-                selectAll()
+                // ⌥⌘A deselects, as in Finder; ⌘A selects everything.
+                if press.modifiers.contains(.option) { clear() } else { selectAll() }
                 return .handled
             }
-            // The Delete key arrives as DEL (0x7F) on the Mac, forward delete as 0xF728.
-            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { _ in delete(); return .handled }
+            // Delete or ⌘⌫. The Delete key arrives as DEL (0x7F) on the Mac, forward delete as 0xF728.
+            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { press in
+                guard press.modifiers.isSubset(of: [.command]) else { return .ignored }
+                delete()
+                return .handled
+            }
             .onKeyPress(characters: CharacterSet(charactersIn: String(extra.keys))) { press in
                 guard press.modifiers.isEmpty || press.modifiers == .shift, let action = press.characters.first.flatMap({ extra[$0] }) else { return .ignored }
                 action()
                 return .handled
             }
+    }
+}
+
+/// What Edit › Deselect All and the delete command do to the grid with the keyboard.
+struct GridCommandActions {
+    var deselectAll: () -> Void
+    var delete: () -> Void
+    var deleteTitle: String
+}
+
+extension FocusedValues {
+    @Entry var gridCommands: GridCommandActions?
+}
+
+/// Edit › Deselect All (⌥⌘A) and the delete command (⌘⌫), for the grid with the keyboard. Disabled
+/// otherwise, so in a text field ⌘⌫ still deletes text.
+struct GridCommands: Commands {
+    @FocusedValue(\.gridCommands) private var grid
+
+    var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Button("Deselect All") { grid?.deselectAll() }
+                .keyboardShortcut("a", modifiers: [.command, .option])
+                .disabled(grid == nil)
+            Button(grid?.deleteTitle ?? "Move to Recently Deleted") { grid?.delete() }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(grid == nil)
+        }
     }
 }
 

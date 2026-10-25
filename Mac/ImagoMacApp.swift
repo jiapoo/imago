@@ -33,7 +33,10 @@ struct ImagoMacApp: App {
                 .tint(.imago)
         }
         .windowToolbarStyle(.unified)
-        .commands { FileHistoryCommands(history: history) }
+        .commands {
+            FileHistoryCommands(history: history)
+            GridCommands()
+        }
 
         Settings {
             SettingsView()

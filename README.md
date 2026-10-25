@@ -115,7 +115,8 @@ moves them out of the iPhone's backup into the folder and asks the iPhone to del
 each against its backup: this is how large videos leave the iPhone. Switching to Move explains this first.
 Dropping an iPhone's items on its own folder moves them back; dropping on Recently Deleted deletes.
 
-Select items (click, ⌘-click, ⇧-click, ⌘A), then from the bar at the bottom:
+Select items as in Finder (click; ⌘-click to add or remove one; ⇧-click for a range; ⌘A for all; ⌥⌘A to
+deselect all), then from the bar at the bottom (⌘⌫ or Delete deletes):
 
 - **Copy To** or **Move To** a folder (by the toolbar's mode), or drag items onto one. Moved items take
   their sidecars along, and the phone isn't asked for them again. **Back to iPhone's Folder** moves them
