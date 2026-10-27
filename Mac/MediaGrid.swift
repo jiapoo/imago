@@ -1,6 +1,7 @@
 import AppKit
 import ImagoKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // Pieces shared by the grids: the backup Library and Folders, and the iPhone's Photos.
 
@@ -124,6 +125,10 @@ struct GridKeys: ViewModifier {
     var delete: () -> Void
     /// For Edit › Delete: "Move to Recently Deleted", "Delete from iPhone…"…
     var deleteTitle = "Move to Recently Deleted"
+    /// Edit › Copy (⌘C): the selected files, to paste in Finder.
+    var copy: (() -> [URL])? = nil
+    /// Edit › Paste (⌘V): files from Finder, or copied here; nil where nothing can be pasted.
+    var paste: (([URL]) -> Void)? = nil
     /// Other characters, e.g. "." to favorite.
     var extra: [Character: () -> Void] = [:]
 
@@ -135,6 +140,10 @@ struct GridKeys: ViewModifier {
             .focused(focused)
             .focusEffectDisabled()
             .focusedValue(\.gridCommands, GridCommandActions(deselectAll: clear, delete: delete, deleteTitle: deleteTitle))
+            .onCopyCommand { (copy?() ?? []).map { NSItemProvider(object: $0 as NSURL) } }
+            .onPasteCommand(of: paste == nil ? [] : [.fileURL]) { providers in
+                Task { if let paste { paste(await Self.fileURLs(from: providers)) } }
+            }
             .onAppear { focused.wrappedValue = true }
             .onKeyPress(.space) { preview(); return .handled }
             .onKeyPress(characters: ["o", "\u{F701}"]) { press in   // ⌘O and ⌘↓, as in Finder
@@ -160,6 +169,132 @@ struct GridKeys: ViewModifier {
                 action()
                 return .handled
             }
+    }
+
+    /// The file URLs on the pasteboard (or in a drop).
+    static func fileURLs(from providers: [NSItemProvider]) async -> [URL] {
+        var urls: [URL] = []
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            let url: URL? = await withCheckedContinuation { done in
+                _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
+                    done.resume(returning: data.flatMap { URL(dataRepresentation: $0, relativeTo: nil) })
+                }
+            }
+            if let url { urls.append(url) }
+        }
+        return urls
+    }
+}
+
+// MARK: - Selection box
+
+/// Where each tile is in its grid, for the selection box. A plain class: tiles write it as they're laid
+/// out, and nothing redraws for it.
+final class TileFrames {
+    var frames: [String: CGRect] = [:]
+}
+
+extension View {
+    /// Records this tile's frame in its grid, for the selection box.
+    func tileFrame(_ id: String, in frames: TileFrames) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SelectionBox.space)) } action: { frames.frames[id] = $0 }
+    }
+}
+
+/// Drag across empty space in a grid to select the tiles the box touches, as in Finder. With ⌘ or ⇧
+/// held, they're added to the selection instead of replacing it.
+struct SelectionBox: ViewModifier {
+    static let space = "selectionBox"
+    let frames: TileFrames
+    /// The tiles' IDs in order, so only ones still in the grid are picked.
+    let ids: [String]
+    @Binding var selection: Set<String>
+    @State private var box: CGRect?
+    @State private var before: Set<String> = []
+
+    func body(content: Content) -> some View {
+        content
+            .coordinateSpace(.named(Self.space))
+            // Behind the tiles: only a drag that starts on empty space draws a box.
+            .background {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
+                            .onChanged { drag in
+                                if box == nil {
+                                    let modifiers = NSEvent.modifierFlags
+                                    before = modifiers.contains(.command) || modifiers.contains(.shift) ? selection : []
+                                }
+                                let rect = CGRect(x: min(drag.startLocation.x, drag.location.x), y: min(drag.startLocation.y, drag.location.y),
+                                                  width: abs(drag.location.x - drag.startLocation.x), height: abs(drag.location.y - drag.startLocation.y))
+                                box = rect
+                                let inside = Set(ids.filter { frames.frames[$0]?.intersects(rect) == true })
+                                selection = before.union(inside)
+                            }
+                            .onEnded { _ in box = nil }
+                    )
+            }
+            .overlay(alignment: .topLeading) {
+                if let box {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.12))
+                        .overlay(Rectangle().strokeBorder(Color.accentColor.opacity(0.7), lineWidth: 1))
+                        .frame(width: box.width, height: box.height)
+                        .offset(x: box.minX, y: box.minY)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+// MARK: - Open With
+
+/// Right-click › Open With: the apps that can open these files, the default first, and Other….
+struct OpenWithMenu: View {
+    let urls: [URL]
+
+    var body: some View {
+        Menu("Open With") {
+            if let first = urls.first {
+                let apps = NSWorkspace.shared.urlsForApplications(toOpen: first)
+                let preferred = NSWorkspace.shared.urlForApplication(toOpen: first)
+                ForEach(apps, id: \.self) { app in
+                    Button { open(with: app) } label: {
+                        Label {
+                            Text(name(of: app) + (app == preferred ? " (default)" : ""))
+                        } icon: {
+                            Image(nsImage: icon(of: app))
+                        }
+                    }
+                }
+                if !apps.isEmpty { Divider() }
+                Button("Other…") { chooseApp() }
+            }
+        }
+    }
+
+    private func name(of app: URL) -> String {
+        FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func icon(of app: URL) -> NSImage {
+        let image = NSWorkspace.shared.icon(forFile: app.path)
+        image.size = NSSize(width: 16, height: 16)
+        return image
+    }
+
+    private func open(with app: URL) {
+        NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.directoryURL = URL(filePath: "/Applications")
+        panel.allowedContentTypes = [.application]
+        panel.message = "Choose an app to open \(urls.count == 1 ? "this file" : "these files")."
+        guard panel.runModal() == .OK, let app = panel.url else { return }
+        open(with: app)
     }
 }
 

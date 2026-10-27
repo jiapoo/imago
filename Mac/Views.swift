@@ -5,6 +5,10 @@ import SwiftUI
 enum SidebarItem: Hashable {
     case home
     case library
+    /// Every iPhone's photos on a map.
+    case places
+    /// Taken on today's date in earlier years.
+    case onThisDay
     case large
     case storage
     /// A folder inside Folders, by path ("Tennis/Serve").
@@ -38,6 +42,10 @@ struct MainView: View {
                     HomeView(showingAddPhone: $showingAddPhone, selection: $selection)
                 case .library:
                     BrowserView(scope: .all)
+                case .places:
+                    LibraryPlacesView()
+                case .onThisDay:
+                    BrowserView(scope: .onThisDay)
                 case .large:
                     BrowserView(scope: .large)
                 case .folder(let path):
@@ -71,6 +79,15 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .mediaViewerOverlay()
+            // What's under way (copying a big video, moving hundreds): above everything, bottom right.
+            .overlay(alignment: .bottomTrailing) {
+                if let activity = library.activity {
+                    ActivityPanel(activity: activity)
+                        .padding(20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.25), value: library.activity == nil)
             .toolbar {
                 if !viewer.isOpen {
                     if pageHasPhotos {
@@ -94,8 +111,8 @@ struct MainView: View {
     /// Pages of photos and videos, where Copy | Move applies. Not Home, Storage or an iPhone's own page.
     private var pageHasPhotos: Bool {
         switch selection ?? .home {
-        case .library, .large, .folder, .trash, .manage, .deletedOnPhone: true
-        case .home, .storage, .device: false
+        case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay: true
+        case .home, .storage, .device, .places: false
         }
     }
 
@@ -115,6 +132,44 @@ struct MainView: View {
         .help(transferMode == TransferMode.move.rawValue
               ? "Move: photos put into a folder leave the iPhone's backup and are deleted from the iPhone"
               : "Copy: photos put into a folder are copied there; the iPhone keeps them")
+    }
+}
+
+/// What's under way, while it lasts: what, how far (a bar), and the file being worked on.
+struct ActivityPanel: View {
+    let activity: MediaLibrary.Activity
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ProgressView(value: activity.fraction)
+                .progressViewStyle(.circular)
+                .controlSize(.small)
+                .tint(.imago)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(activity.title).font(.headline)
+                    Spacer(minLength: 12)
+                    Text(activity.total > 1 ? "\(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())" : "")
+                        .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                }
+                ProgressView(value: activity.fraction).tint(.imago)
+                if let detail = activity.detail {
+                    HStack {
+                        Text(detail).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        if let bytes = activity.bytes {
+                            Text("\(bytes.done.bytes) of \(bytes.total.bytes)").monospacedDigit()
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 340)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+        .shadow(color: .black.opacity(0.15), radius: 18, y: 6)
     }
 }
 

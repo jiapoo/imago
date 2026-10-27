@@ -625,7 +625,19 @@ final class BackupClient {
     /// prompt); otherwise they wait for the user to review them.
     func receive(_ changes: [LibraryChange]) {
         macChanges = changes.filter { !handledChangeIDs.contains($0.id) }
+        // Arrived while Imago isn't on screen (an overnight backup): tell the user, once per change.
+        let fresh = macChanges.filter { !notifiedChangeIDs.contains($0.id) }
+        if !fresh.isEmpty, UIApplication.shared.applicationState != .active {
+            MacChangeNotifications.post(macChanges, mac: credential?.serverName ?? "Your Mac")
+            notifiedChangeIDs = Array((notifiedChangeIDs + fresh.map(\.id)).suffix(500))
+        }
         scheduleAutoApply()
+    }
+
+    /// Changes the user has already been notified about.
+    private var notifiedChangeIDs: [UUID] {
+        get { (UserDefaults.standard.array(forKey: "notifiedChangeIDs") as? [String] ?? []).compactMap(UUID.init) }
+        set { UserDefaults.standard.set(newValue.map(\.uuidString), forKey: "notifiedChangeIDs") }
     }
 
     /// Applies changes that arrived while the app was in the background, e.g. at an overnight backup.

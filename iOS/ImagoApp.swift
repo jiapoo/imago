@@ -23,6 +23,8 @@ struct ImagoApp: App {
                 .onChange(of: client.credential?.serverID, initial: true) { _, id in
                     live.stop()
                     if id != nil, scenePhase == .active { live.start() }
+                    // Paired: the Mac may now send changes, so it may need to say so.
+                    if id != nil { Task { await MacChangeNotifications.requestPermission() } }
                 }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -31,6 +33,7 @@ struct ImagoApp: App {
                 // Pick up a backup that iOS interrupted, e.g. when the phone locked.
                 client.resumeIfUnfinished()
                 client.applyWaitingChanges()
+                MacChangeNotifications.clear()
                 live.start()
             case .background:
                 live.stop()

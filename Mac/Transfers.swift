@@ -53,8 +53,10 @@ extension MediaLibrary {
     /// mode); onto an iPhone's folder, its items move back; onto Recently Deleted, they're deleted.
     /// Photos and videos from elsewhere (Finder) are copied into a folder. Returns whether anything was taken.
     func drop(_ urls: [URL], onto place: Place, server: BackupServer, history: FileHistory) -> Bool {
-        let moving = droppedItems(urls)
-        let known = Set(moving.map { $0.url.lexicallyStandardized })
+        let dropped = droppedItems(urls)
+        let known = Set(dropped.map { $0.url.lexicallyStandardized })
+        // Ones already there stay put (a folder's own items dropped back on it).
+        let moving = dropped.filter { self.place(of: $0) != place }
         let outside = urls.filter { !known.contains($0.lexicallyStandardized) && Self.isMedia($0) && !$0.path.hasPrefix(server.location.url.path) }
         guard !moving.isEmpty || !outside.isEmpty else { return false }
         DragSession.urls = []
@@ -75,24 +77,73 @@ extension MediaLibrary {
     /// Copies files from outside the library into a folder. Returns the step that removes the copies.
     func copyIn(_ files: [URL], to path: String, server: BackupServer) async -> FileHistory.Step? {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        let copies: [URL] = await Task.detached(priority: .userInitiated) {
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            return files.compactMap { file in
-                var target = folder.appending(path: file.lastPathComponent)
-                var n = 2
-                while FileManager.default.fileExists(atPath: target.path) {
-                    target = URL(filePath: LibraryLayout.numbered(folder.appending(path: file.lastPathComponent).path, n))
-                    n += 1
-                }
-                return (try? FileManager.default.copyItem(at: file, to: target)) != nil ? target : nil
+        activity = Activity(title: "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
+        defer { activity = nil }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var copies: [URL] = []
+        for (index, file) in files.enumerated() {
+            var target = folder.appending(path: file.lastPathComponent)
+            var n = 2
+            while FileManager.default.fileExists(atPath: target.path) {
+                target = URL(filePath: LibraryLayout.numbered(folder.appending(path: file.lastPathComponent).path, n))
+                n += 1
             }
-        }.value
+            activity?.detail = file.lastPathComponent
+            activity?.bytes = nil
+            let destination = target
+            let copied = await Task.detached(priority: .userInitiated) { [weak self] in
+                (try? Self.copyFile(file, to: destination) { done, total in
+                    Task { @MainActor in self?.activity?.bytes = (done, total) }
+                }) != nil
+            }.value
+            if copied { copies.append(target) }
+            activity?.done = index + 1
+        }
         await load(from: server, force: true)
         guard !copies.isEmpty else { return nil }
         return FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
             await self?.load(from: server, force: true)
             return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyIn(files, to: path, server: server) }
+        }
+    }
+
+    /// Copies one file. A big one goes in 8 MB pieces with `progress` (bytes so far, size), so a long
+    /// copy shows how far it's got; a small one in one go. The copy keeps the original's dates.
+    nonisolated static func copyFile(_ source: URL, to destination: URL, progress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
+        let size = UInt64((try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        guard size > 64_000_000 else {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return
+        }
+        guard FileManager.default.createFile(atPath: destination.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        do {
+            let input = try FileHandle(forReadingFrom: source)
+            defer { try? input.close() }
+            let output = try FileHandle(forWritingTo: destination)
+            defer { try? output.close() }
+            var copied: UInt64 = 0
+            var lastReport = Date.distantPast
+            while let chunk = try input.read(upToCount: 8 << 20), !chunk.isEmpty {
+                try output.write(contentsOf: chunk)
+                copied += UInt64(chunk.count)
+                if Date.now.timeIntervalSince(lastReport) > 0.1 {
+                    lastReport = .now
+                    progress(copied, size)
+                }
+            }
+            progress(copied, size)
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: source.path) {
+                var dates: [FileAttributeKey: Any] = [:]
+                if let created = attributes[.creationDate] as? Date { dates[.creationDate] = created }
+                if let modified = attributes[.modificationDate] as? Date { dates[.modificationDate] = modified }
+                try? FileManager.default.setAttributes(dates, ofItemAtPath: destination.path)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw error
         }
     }
 

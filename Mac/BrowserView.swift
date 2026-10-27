@@ -21,6 +21,8 @@ struct BrowserView: View {
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
     @State private var anchorFrame: CGRect?
+    /// Where each tile is, for the selection box.
+    @State private var tileFrames = TileFrames()
     /// Recently Deleted: items to delete for good, while the confirmation is up.
     @State private var deletingNow: [TrashedItem]?
     /// Items to ask their iPhone to remove, while the confirmation is up.
@@ -81,9 +83,16 @@ struct BrowserView: View {
             .padding(.horizontal, 16)
             .padding(.top, scope == .large ? 12 : 0)
             .padding(.bottom, 96)
+            .modifier(SelectionBox(frames: tileFrames, ids: items.map(\.id),
+                                   selection: Binding(get: { library.selection }, set: { library.selection = $0 })))
         }
         .scrollContentBackground(.hidden)
         .background(Color(nsColor: .textBackgroundColor))
+        // A folder takes photos and videos dropped on it: from Finder (copied in) or another grid.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard case .folder(let path) = scope else { return false }
+            return library.drop(urls, onto: .folder(path), server: server, history: history)
+        }
         .modifier(PinchToResize(size: $tileSize))
     }
 
@@ -99,6 +108,7 @@ struct BrowserView: View {
         .contextMenu { menu(for: item) }
         .onDrag { dragProvider(for: item) }
         .reportsViewerSourceFrame(item.id == anchor, to: $anchorFrame)
+        .tileFrame(item.id, in: tileFrames)
     }
 
     /// Recently Deleted: days left. Large Files: the size.
@@ -236,8 +246,16 @@ struct BrowserView: View {
                 guard !selected.isEmpty else { return }
                 if isTrash { deletingNow = selected.compactMap(library.trashed) } else { trash(selected) }
             },
-            deleteTitle: isTrash ? "Delete Now…" : "Move to Recently Deleted"
+            deleteTitle: isTrash ? "Delete Now…" : "Move to Recently Deleted",
+            copy: { selected.map(\.url) },
+            paste: pasteTarget.map { path in { urls in _ = library.drop(urls, onto: .folder(path), server: server, history: history) } }
         )
+    }
+
+    /// Where ⌘V puts files: this folder, when one is shown.
+    private var pasteTarget: String? {
+        if case .folder(let path) = scope { return path }
+        return nil
     }
 
     private var dialogs: DialogsModifier {
@@ -330,6 +348,7 @@ extension BrowserView {
         case .trash: "Recently Deleted"
         case .large: "Large Files"
         case .deletedOnPhone(let id): "Deleted on \(server.devices.first { $0.id == id }?.name ?? "iPhone")"
+        case .onThisDay: "On This Day"
         }
     }
 
@@ -403,6 +422,9 @@ extension BrowserView {
             case .large:
                 ContentUnavailableView("No large files", systemImage: "externaldrive",
                                        description: Text("Photos and videos over \(MediaLibrary.largeFileBytes.bytes) show here, biggest first."))
+            case .onThisDay:
+                ContentUnavailableView("Nothing on this day", systemImage: "calendar.badge.clock",
+                                       description: Text("Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here."))
             case .deletedOnPhone:
                 ContentUnavailableView("Nothing deleted on the iPhone", systemImage: "checkmark.circle",
                                        description: Text("Photos and videos deleted on the iPhone after they were backed up show here, as of its last backup."))
@@ -416,7 +438,7 @@ extension BrowserView {
     private func menu(for item: MediaItem) -> some View {
         let targets = library.selection.contains(item.id) ? selected : [item]
         Button("Open") { openViewer(on: item) }
-        Button("Open in Default App") { targets.forEach { NSWorkspace.shared.open($0.url) } }
+        OpenWithMenu(urls: targets.map(\.url))
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
         Divider()
         if isTrash {
@@ -479,7 +501,13 @@ extension BrowserView {
                 rows.append(.init(label: "File", value: item.url.path))
                 return rows
             },
-            sourceFrame: item.id == anchor ? anchorFrame : nil
+            sourceFrame: item.id == anchor ? anchorFrame : nil,
+            deleteTitle: isTrash ? nil : "Move to Recently Deleted",
+            delete: isTrash ? nil : { [library, server, history] index in
+                guard let step = await library.trash([items[index]], server: server) else { return false }
+                history.record(step)
+                return true
+            }
         ))
     }
 }

@@ -17,6 +17,18 @@ final class FileHistory {
         let run: @MainActor () async -> Step?
     }
 
+    /// One step for several done together: undoing it undoes them in reverse order.
+    static func combine(_ name: String, _ steps: [Step?]) -> Step? {
+        let steps = steps.compactMap { $0 }
+        guard !steps.isEmpty else { return nil }
+        guard steps.count > 1 else { return steps[0] }
+        return Step(name: name) {
+            var reversed: [Step?] = []
+            for step in steps.reversed() { reversed.append(await step.run()) }
+            return combine(name, reversed)
+        }
+    }
+
     private(set) var undoStack: [Step] = []
     private(set) var redoStack: [Step] = []
     /// An undo or redo is running; another waits for it.

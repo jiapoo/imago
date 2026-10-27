@@ -20,6 +20,9 @@ struct MediaItem: Identifiable, Hashable, Sendable {
     /// The phone it came from and its asset there. Nil for files that didn't come from a phone.
     var deviceID: String?
     var assetID: String?
+    /// Where it was taken, when the iPhone knew.
+    var latitude: Double? = nil
+    var longitude: Double? = nil
 }
 
 /// An item in Recently Deleted, and where Put Back returns it.
@@ -67,6 +70,8 @@ final class MediaLibrary {
         case large
         /// Backed up from this iPhone (by device ID) and still in its folder, but no longer on it.
         case deletedOnPhone(String)
+        /// Taken on today's date in earlier years.
+        case onThisDay
     }
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -107,6 +112,30 @@ final class MediaLibrary {
     private(set) var pendingRemoval: Set<String> = []
     /// Assets being checked against their checksums before their phone is asked to remove them.
     private(set) var verifying = 0
+
+    /// Something long under way (copying, moving, checking, deleting), for the progress panel.
+    struct Activity: Equatable {
+        var title: String
+        /// The file being worked on.
+        var detail: String?
+        var done: Int
+        var total: Int
+        /// For one big file: bytes so far, and its size.
+        var bytes: (done: UInt64, total: UInt64)?
+
+        var fraction: Double {
+            guard total > 0 else { return 0 }
+            let part = bytes.map { $0.total > 0 ? Double($0.done) / Double($0.total) : 0 } ?? 0
+            return min(1, (Double(done) + part) / Double(total))
+        }
+
+        static func == (a: Activity, b: Activity) -> Bool {
+            a.title == b.title && a.detail == b.detail && a.done == b.done && a.total == b.total
+                && a.bytes?.done == b.bytes?.done && a.bytes?.total == b.bytes?.total
+        }
+    }
+
+    var activity: Activity?
     /// Shared with the sidebar, so dropping one selected item on a Folder moves the whole selection.
     var selection: Set<MediaItem.ID> = []
     var error: String?
@@ -153,7 +182,8 @@ final class MediaLibrary {
                     isVideo: entry.metadata.mediaType == "video", duration: entry.metadata.duration,
                     bytes: entry.files.reduce(0) { $0 + $1.size },
                     folder: Self.folderPath(of: display.url, in: foldersURL, reserved: reserved),
-                    deviceID: device.id, assetID: entry.assetID
+                    deviceID: device.id, assetID: entry.assetID,
+                    latitude: entry.metadata.location?.latitude, longitude: entry.metadata.location?.longitude
                 )
                 if Self.isInside(display.url, trashURL) {
                     item.folder = nil
@@ -222,6 +252,7 @@ final class MediaLibrary {
         case .trash: trash.map(\.item)
         case .large: items.filter { $0.bytes >= Self.largeFileBytes }.sorted { $0.bytes > $1.bytes }
         case .deletedOnPhone(let deviceID): deletedOnPhone(deviceID)
+        case .onThisDay: items.filter { Self.isOnThisDay($0.date) }
         default: items
         }
         return source.filter { item in
@@ -251,6 +282,15 @@ final class MediaLibrary {
         return items.filter { item in
             item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil } == true
         }
+    }
+
+    /// Taken on today's month and day, in an earlier year.
+    nonisolated static func isOnThisDay(_ date: Date?, today: Date = .now) -> Bool {
+        guard let date else { return false }
+        let calendar = Calendar.current
+        let day = calendar.dateComponents([.year, .month, .day], from: date)
+        let now = calendar.dateComponents([.year, .month, .day], from: today)
+        return day.month == now.month && day.day == now.day && (day.year ?? 0) < (now.year ?? 0)
     }
 
     func trashed(_ item: MediaItem) -> TrashedItem? {
@@ -291,13 +331,20 @@ final class MediaLibrary {
     /// Deletes items in Recently Deleted for good. This can't be undone.
     func deleteNow(_ items: [TrashedItem], server: BackupServer) async {
         let trashURL = server.trashURL
+        activity = Activity(title: "Deleting for good", done: 0, total: items.count)
+        defer { activity = nil }
         await perform(server) {
             for (deviceID, assets) in Dictionary(grouping: items.map(\.item).filter { $0.deviceID != nil }, by: { $0.deviceID! }) {
                 guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
-                try await store.deletePermanently(assets.compactMap(\.assetID))
+                for batch in assets.chunked(25) {
+                    try await store.deletePermanently(batch.compactMap(\.assetID))
+                    activity?.done += batch.count
+                }
             }
             for item in items.map(\.item) where item.deviceID == nil {
+                activity?.detail = item.name
                 try FileManager.default.removeItem(at: item.url)
+                activity?.done += 1
             }
             await Task.detached {
                 var manifest = TrashManifest.read(in: trashURL)
@@ -362,7 +409,16 @@ final class MediaLibrary {
         }
         // Each moved item as it was, and how to find it now.
         var moved: [(was: MediaItem, now: ItemRef)] = []
+        if let to = wanted.first?.to {
+            let title = switch to {
+            case .trash: "Deleting"
+            case .phoneFolder: "Moving back to the iPhone's folder"
+            case .folder(let path): "Moving to “\((path as NSString).lastPathComponent)”"
+            }
+            activity = Activity(title: title, done: 0, total: wanted.count)
+        }
         defer {
+            activity = nil
             // Thumbnails follow their files, so moved items don't make them again from the drive.
             for (was, ref) in moved {
                 guard let now = item(for: ref) else { continue }
@@ -376,17 +432,24 @@ final class MediaLibrary {
                       let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device),
                       let to = group.first?.to else { continue }
                 if let target = directory(to) { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
-                try await store.move(group.compactMap(\.item.assetID), to: directory(to))
-                for move in group {
-                    done.append((Self.ref(move.item), move.from))
-                    moved.append((move.item, Self.ref(move.item)))
+                // In batches, so the progress panel moves (and a cross-drive move shows each step).
+                for batch in group.chunked(25) {
+                    activity?.detail = batch.first?.item.name
+                    try await store.move(batch.compactMap(\.item.assetID), to: directory(to))
+                    for move in batch {
+                        done.append((Self.ref(move.item), move.from))
+                        moved.append((move.item, Self.ref(move.item)))
+                    }
+                    activity?.done += batch.count
                 }
             }
             for move in wanted where move.item.deviceID == nil {
                 guard let target = directory(move.to) else { continue }
                 try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
                 let destination = Self.unusedURL(target.appending(path: move.item.url.lastPathComponent))
+                activity?.detail = move.item.name
                 try FileManager.default.moveItem(at: move.item.url, to: destination)
+                activity?.done += 1
                 done.append((.file(destination.lexicallyStandardized), move.from))
                 moved.append((move.item, .file(destination.lexicallyStandardized)))
                 if move.to == .trash { deleted[TrashManifest.key(forFile: destination)] = .init(deletedAt: .now, from: move.from) }
@@ -424,12 +487,19 @@ final class MediaLibrary {
             guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
             let ids = removable.compactMap(\.assetID)
             verifying += ids.count
+            activity = Activity(title: "Checking against the backup", done: 0, total: ids.count)
             let files = await store.storedFiles(of: ids)
-            let verified = await Task.detached(priority: .userInitiated) {
-                Set(files.filter { _, files in
-                    !files.isEmpty && files.allSatisfy { (try? FileHasher.sha256(of: $0.url)) == $0.sha256 }
-                }.keys)
-            }.value
+            var verified: Set<String> = []
+            // One asset at a time, so the progress panel moves; reading a big video takes a while.
+            for (assetID, assetFiles) in files {
+                activity?.detail = assetFiles.first?.url.lastPathComponent
+                let matches = await Task.detached(priority: .userInitiated) {
+                    !assetFiles.isEmpty && assetFiles.allSatisfy { (try? FileHasher.sha256(of: $0.url)) == $0.sha256 }
+                }.value
+                if matches { verified.insert(assetID) }
+                activity?.done += 1
+            }
+            activity = nil
             verifying -= ids.count
             failed += ids.count - verified.count
             let assets = removable.filter { verified.contains($0.assetID ?? "") }.compactMap(phoneAsset)
@@ -450,6 +520,18 @@ final class MediaLibrary {
                 await self?.removeFromPhone(items, server: server)
             }
         }
+    }
+
+    /// Deletes items from their iPhone and from this backup: the iPhone is asked to delete them (each
+    /// checked against its backup first; the iPhone keeps them in its own Recently Deleted), and the
+    /// backed-up copies go to Imago's Recently Deleted here on the Mac, so Put Back returns them.
+    /// Returns one step that undoes both.
+    func deleteFromPhoneAndHere(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
+        let removal = await removeFromPhone(items, server: server)
+        // Only what the iPhone was asked to delete: items that failed the check stay put.
+        let asked = items.filter { pendingRemoval.contains($0.id) }
+        let trashed = asked.isEmpty ? nil : await trash(asked, server: server)
+        return FileHistory.combine(asked.count == 1 ? "Delete" : "Delete \(asked.count) Items", [removal, trashed])
     }
 
     // MARK: Folders
@@ -712,5 +794,12 @@ struct TrashManifest: Codable, Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try? encoder.encode(self).write(to: Self.url(in: directory), options: .atomic)
+    }
+}
+
+extension Array {
+    /// The elements in runs of `size`.
+    func chunked(_ size: Int) -> [ArraySlice<Element>] {
+        stride(from: 0, to: count, by: size).map { self[$0..<Swift.min($0 + size, count)] }
     }
 }

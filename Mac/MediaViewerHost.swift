@@ -37,11 +37,28 @@ final class MediaViewerHost {
         /// Where the opened item's thumbnail is, in `space`: the viewer grows out of it and shrinks
         /// back into it. Nil to fade instead.
         var sourceFrame: CGRect? = nil
+        /// The delete button's help, e.g. "Move to Recently Deleted"; nil where there's nothing to delete.
+        var deleteTitle: String? = nil
+        /// Deletes the item at this index. Returns whether it went, so the viewer moves to the next one.
+        var delete: ((Int) async -> Bool)? = nil
     }
 
     private(set) var request: Request?
-    /// The item on screen.
+    /// The item on screen, as an index into `request.urls`.
     var index = 0
+    /// Items deleted while the viewer is open: no longer stepped through.
+    private(set) var removed = IndexSet()
+    /// Changes when the viewer must start again on another item (after a deletion).
+    private(set) var viewerRevision = 0
+
+    /// Indexes into `request.urls` still shown, in order.
+    var shown: [Int] {
+        guard let request else { return [] }
+        return request.urls.indices.filter { !removed.contains($0) }
+    }
+
+    /// Where the item on screen is among those still shown.
+    var position: Int { shown.firstIndex(of: index) ?? 0 }
     var showingInfo = false
     /// Closing: the viewer is shrinking back into its thumbnail.
     private(set) var isClosing = false
@@ -54,6 +71,7 @@ final class MediaViewerHost {
         isClosing = false
         self.request = request
         index = request.index
+        removed = []
         // A video plays from the backup drive: thumbnails made after backups can wait.
         Task { await Thumbnails.shared.holdBackgroundWork(true) }
     }
@@ -68,6 +86,24 @@ final class MediaViewerHost {
         request = nil
         isClosing = false
         Task { await Thumbnails.shared.holdBackgroundWork(false) }
+    }
+
+    /// Deletes the item on screen, then shows the next one (or the one before, at the end); closes when
+    /// none are left.
+    func deleteCurrent() async {
+        guard let request, let delete = request.delete else { return }
+        let deleting = index
+        guard await delete(deleting) else { return }
+        let before = shown
+        guard let at = before.firstIndex(of: deleting) else { return }
+        removed.insert(deleting)
+        let after = shown
+        guard !after.isEmpty else {
+            finishClosing()
+            return
+        }
+        index = after[min(at, after.count - 1)]
+        viewerRevision += 1
     }
 
     /// The thumbnail to show for a file while it opens or closes.
@@ -160,15 +196,22 @@ private struct MediaViewerOverlay: ViewModifier {
 
     private func viewer(_ request: MediaViewerHost.Request) -> some View {
         HStack(spacing: 0) {
+            let shown = host.shown
             MediaViewer(
-                urls: request.urls, startAt: request.index, accent: .imago,
+                urls: shown.map { request.urls[$0] }, startAt: host.position, accent: .imago,
                 placeholder: { host.thumbnail($0) },
                 embedded: true,
-                onIndexChange: { host.index = $0 },
+                onIndexChange: { position in if shown.indices.contains(position) { host.index = shown[position] } },
                 slowStartMessage: "Waking up the backup drive…",
                 onClose: { host.close() }
             )
-            .id(request.id)
+            .id("\(request.id)-\(host.viewerRevision)")
+            // Delete (and ⌘⌫, in the toolbar) deletes what's on screen.
+            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { press in
+                guard request.delete != nil, press.modifiers.isEmpty else { return .ignored }
+                Task { await host.deleteCurrent() }
+                return .handled
+            }
             if host.showingInfo {
                 Divider()
                 InfoPanel(rows: request.info(host.index))
@@ -255,8 +298,8 @@ private struct ViewerToolbar: ToolbarContent {
                 Text(request.date(index)?.formatted(date: .long, time: .standard) ?? request.name(index))
                     .font(.headline)
                     .lineLimit(1)
-                if request.urls.count > 1 {
-                    Text("\(index + 1) of \(request.urls.count.formatted())")
+                if host.shown.count > 1 {
+                    Text("\(host.position + 1) of \(host.shown.count.formatted())")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
@@ -281,6 +324,13 @@ private struct ViewerToolbar: ToolbarContent {
                         .foregroundStyle(favorite ? Color.imago : Color.primary)
                 }
                 .help(favorite ? "Unfavorite on the iPhone" : "Favorite on the iPhone")
+            }
+            if let title = request.deleteTitle {
+                Button { Task { await host.deleteCurrent() } } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .help("\(title) (⌘⌫)")
             }
         }
     }

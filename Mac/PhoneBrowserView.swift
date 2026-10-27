@@ -2,7 +2,7 @@ import ImagoKit
 import SwiftUI
 
 enum PhoneSection: Hashable {
-    case library, favorites
+    case library, favorites, places, onThisDay
     case mediaType(PhoneMediaType)
     case album(String)
     case duplicates, similar, largeVideos, notBackedUp
@@ -119,6 +119,10 @@ struct PhoneBrowserView: View {
             Section {
                 SectionRow(title: "Library", symbol: "photo.on.rectangle", detail: model.assets.count.formatted()).tag(PhoneSection.library)
                 SectionRow(title: "Favorites", symbol: "heart", detail: model.favorites.count.formatted()).tag(PhoneSection.favorites)
+                SectionRow(title: "Places", symbol: "map",
+                           detail: model.assets.count { $0.metadata.location != nil }.formatted()).tag(PhoneSection.places)
+                SectionRow(title: "On This Day", symbol: "calendar.badge.clock",
+                           detail: onThisDay.count.formatted()).tag(PhoneSection.onThisDay)
             }
             let types = PhoneMediaType.allCases.filter { model.mediaTypeCounts[$0, default: 0] > 0 }
             if !types.isEmpty {
@@ -157,6 +161,11 @@ struct PhoneBrowserView: View {
         .scrollContentBackground(.hidden)
     }
 
+    /// Taken on today's date in earlier years.
+    private var onThisDay: [PhoneAsset] {
+        model.assets.filter { MediaLibrary.isOnThisDay($0.metadata.creationDate) }
+    }
+
     private func groupDetail(_ groups: [Cleanup.Group]) -> String {
         groups.isEmpty ? "None" : groups.reduce(0) { $0 + $1.reclaimableBytes }.bytes
     }
@@ -172,6 +181,12 @@ struct PhoneBrowserView: View {
         switch section {
         case .library:
             LibraryView(model: model, device: device, zoom: $zoom)
+        case .places:
+            PhonePlacesView(model: model, device: device)
+        case .onThisDay:
+            PhoneGrid(model: model, device: device, assets: onThisDay,
+                      empty: ("Nothing on this day", "calendar.badge.clock",
+                              "Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here."))
         case .favorites:
             PhoneGrid(model: model, device: device, assets: model.favorites,
                       empty: ("No Favorites", "heart", "Select photos and choose Favorite, or press the period key."))
@@ -223,7 +238,7 @@ extension PhoneSection {
     /// Shows a grid of items that can be selected (Select applies).
     var hasGrid: Bool {
         switch self {
-        case .similar, .queue: false
+        case .similar, .queue, .places: false
         default: true
         }
     }
@@ -410,6 +425,8 @@ struct PhoneGrid: View {
     @State private var days: [Day<PhoneAsset>] = []
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
     @State private var anchorFrame: CGRect?
+    /// Where each tile is, for the selection box.
+    @State private var tileFrames = TileFrames()
     @FocusState private var focused: Bool
 
     private var selected: [PhoneAsset] {
@@ -447,6 +464,7 @@ struct PhoneGrid: View {
                 .padding(.horizontal, 16)
                 .padding(.top, byDay ? 0 : 12)
                 .padding(.bottom, 96)
+                .modifier(SelectionBox(frames: tileFrames, ids: assets.map(\.id), selection: $selection.selected))
             }
             .onAppear {
                 guard let target = scrollTarget.wrappedValue else { return }
@@ -472,6 +490,7 @@ struct PhoneGrid: View {
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
             deleteTitle: "Delete from iPhone…",
+            copy: { selected.compactMap { model.files[$0.id] } },
             extra: [".": { if !selected.isEmpty { actions.toggleFavorite(selected) } }]
         ))
         // Back from the viewer: the keys work on the grid again.
@@ -498,6 +517,7 @@ struct PhoneGrid: View {
             .contextMenu { menu(for: asset) }
             .onAppear { if file == nil { server.requestPreview(asset.id, on: device) } }
             .reportsViewerSourceFrame(asset.id == selection.anchor, to: $anchorFrame)
+            .tileFrame(asset.id, in: tileFrames)
             .onDrag { dragProvider(for: asset) }
     }
 
@@ -525,7 +545,7 @@ struct PhoneGrid: View {
         let targets = selection.selected.contains(asset.id) ? selected : [asset]
         if model.files[asset.id] != nil {
             Button("Open") { openViewer(on: asset) }
-            Button("Open in Default App") { targets.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } }
+            OpenWithMenu(urls: targets.compactMap { model.files[$0.id] })
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.compactMap { model.files[$0.id] }) }
             Divider()
         }
@@ -592,7 +612,14 @@ struct PhoneGrid: View {
             info: { model.asset(ids[$0]).map(Self.info) ?? [] },
             isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
             toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },
-            sourceFrame: asset.id == selection.anchor ? anchorFrame : nil
+            sourceFrame: asset.id == selection.anchor ? anchorFrame : nil,
+            deleteTitle: "Delete from iPhone (the backup goes to Recently Deleted on this Mac)",
+            delete: { [library, server, history] index in
+                let items = library.items.filter { $0.id == "\(device.id)/\(ids[index])" }
+                guard !items.isEmpty, let step = await library.deleteFromPhoneAndHere(items, server: server) else { return false }
+                history.record(step)
+                return true
+            }
         ))
     }
 
@@ -729,9 +756,11 @@ struct PhoneActions {
     }
 
     /// Asks the phone to delete them, once each is checked against its backed-up copy. Undo withdraws it.
+    /// Deletes them from the iPhone (it keeps them in its own Recently Deleted) and moves the backed-up
+    /// copies to Imago's Recently Deleted on the Mac, so Put Back returns them. Undo takes both back.
     func delete(_ assets: [PhoneAsset]) {
         let items = libraryItems(assets)
-        Task { history.record(await library.removeFromPhone(items, server: server)) }
+        Task { history.record(await library.deleteFromPhoneAndHere(items, server: server)) }
     }
 
     /// The library's items for these assets: their backed-up files.
@@ -890,8 +919,9 @@ struct PhoneDialogs: ViewModifier {
 
     private func deleteMessage(skipped: Int) -> String {
         let when = actions.isLive ? "now" : "when you next open Imago on it, or at its next backup"
-        var text = "They're backed up on this Mac and stay here; each is checked against that copy first. \(actions.device.name) asks you to confirm \(when); "
-            + "then they go to Recently Deleted on the iPhone for 30 days. If iCloud Photos is on, they're removed from your other devices too."
+        var text = "\(actions.device.name) asks you to confirm \(when); then they go to Recently Deleted on the iPhone for 30 days. "
+            + "The backed-up copies go to Recently Deleted in Imago on this Mac, where Put Back returns them; each is checked against them first. "
+            + "If iCloud Photos is on, they're removed from your other devices too."
         if skipped > 0 { text += " \(skipped) selected \(skipped == 1 ? "item isn't" : "items aren't") fully backed up yet and will be left alone." }
         return text
     }

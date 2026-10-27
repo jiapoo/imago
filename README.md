@@ -87,6 +87,7 @@ How changes reach the phone:
   to Recently Deleted. Turn it off to review every change in the app first. While connected, photos the Mac
   hasn't backed up yet show previews the phone sends.
 - **Imago not open:** changes wait, and go to the phone when you next open Imago or at its next backup.
+  When they arrive while Imago isn't on screen (an overnight backup), the iPhone shows a notification.
 
 The page opens from a copy of the phone's library kept on the Mac's own disk, then refreshes from the
 backup drive, so a slow or sleeping drive doesn't hold it up. Thumbnails for each backup's new photos are
@@ -101,7 +102,10 @@ the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6
 card per iPhone, shortcuts into the library, the backup drive and recent activity.
 
 **Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder;
-**Large Files** shows the biggest first (filter to what's still on an iPhone to see what frees space there).
+**Places** shows them on a map where they were taken (grouped by area; click a group to zoom in, or to open
+the photos when they're all at one spot); **On This Day** shows what was taken on today's date in earlier
+years; **Large Files** shows the biggest first (filter to what's still on an iPhone to see what frees space
+there). Each iPhone's Photos page has its own Places and On This Day.
 **Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep
 as you like), so they stay usable without the app. The sidebar's **Folders** section shows them as a tree,
 with Recently Deleted; **iPhones** has a row per iPhone that opens to its Photos and how its backup stands.
@@ -115,8 +119,11 @@ moves them out of the iPhone's backup into the folder and asks the iPhone to del
 each against its backup: this is how large videos leave the iPhone. Switching to Move explains this first.
 Dropping an iPhone's items on its own folder moves them back; dropping on Recently Deleted deletes.
 
-Select items as in Finder (click; ⌘-click to add or remove one; ⇧-click for a range; ⌘A for all; ⌥⌘A to
-deselect all), then from the bar at the bottom (⌘⌫ or Delete deletes):
+Select items as in Finder (click; ⌘-click to add or remove one; ⇧-click for a range; drag a box across
+empty space; ⌘A for all; ⌥⌘A to deselect all), then from the bar at the bottom (⌘⌫ or Delete deletes).
+⌘C copies the files, to paste in Finder; ⌘V in a folder pastes files from Finder, and dropping them from
+Finder onto a folder's grid copies them in. Right-click › **Open With** lists the apps that can open a file.
+Long copies, moves, checks and deletions show their progress at the bottom right.
 
 - **Copy To** or **Move To** a folder (by the toolbar's mode), or drag items onto one. Moved items take
   their sidecars along, and the phone isn't asked for them again. **Back to iPhone's Folder** moves them
@@ -129,6 +136,10 @@ deselect all), then from the bar at the bottom (⌘⌫ or Delete deletes):
   good. Items are deleted for good after 30 days (or 7, 60, or never). Deleted iPhone items aren't backed
   up again while they're there.
 
+On an iPhone's Photos page, **Delete** deletes from the iPhone (it asks you to confirm and keeps them in
+its own Recently Deleted for 30 days) and moves the backed-up copies to **Recently Deleted** in Imago on
+the Mac, where Put Back returns them. One ⌘Z undoes both while the iPhone's deletion is still waiting.
+
 **Undo and Redo** (⌘Z, ⇧⌘Z) cover moves, deletions and Put Back, new, renamed and deleted folders, copies
 from Finder, and changes queued for an iPhone (while they're still waiting). Deleting for good can't be
 undone, nor can a deletion the iPhone has already done.
@@ -140,7 +151,7 @@ sharpens when the full photo is decoded; it grows out of its thumbnail and shrin
 Photos. Pinch or double-click to zoom a photo. Videos have the native floating controls (as in Photos and
 QuickTime), start while their details load, and read ahead so a slow drive doesn't stutter; `,` and `.` step
 one frame. ← and → or a two-finger swipe move through the grid; Esc, the back button or Space on a photo go
-back. Playback is logged (Console, category "media") with when it started, stalls and dropped frames.
+back. The trash button (⌘⌫ or Delete) deletes what's on screen and moves to the next. Playback is logged (Console, category "media") with when it started, stalls and dropped frames.
 
 A backup drive that spins (most USB hard drives) stops after a few idle minutes, and waking it takes 10–25
 seconds. While Imago is the active app or a photo page is open, it keeps the drive spinning (macOS's disk-idle

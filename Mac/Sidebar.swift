@@ -20,6 +20,8 @@ struct Sidebar: View {
             Section {
                 Label("Home", systemImage: "house").tag(SidebarItem.home)
                 Label("Library", systemImage: "photo.on.rectangle.angled").tag(SidebarItem.library)
+                Label("Places", systemImage: "map").tag(SidebarItem.places)
+                Label("On This Day", systemImage: "calendar.badge.clock").tag(SidebarItem.onThisDay)
                 Label("Large Files", systemImage: "externaldrive.fill.badge.minus").tag(SidebarItem.large)
                 StorageRow().tag(SidebarItem.storage)
             }
