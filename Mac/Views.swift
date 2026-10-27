@@ -98,6 +98,16 @@ struct MainView: View {
         }
         .sheet(isPresented: $showingAddPhone) { AddPhoneSheet() }
         .folderNameAlert($naming, library: library, server: server) { selection = .folder($0) }
+        .confirmationDialog(duplicateTitle, isPresented: Binding(
+            get: { library.duplicateQuestion != nil },
+            set: { if !$0 { library.answerDuplicates(.cancel) } }
+        ), titleVisibility: .visible) {
+            Button("Skip Duplicates") { library.answerDuplicates(.skip) }
+            Button("Keep Both") { library.answerDuplicates(.keepBoth) }
+            Button("Cancel", role: .cancel) { library.answerDuplicates(.cancel) }
+        } message: {
+            Text(duplicateMessage)
+        }
         .alert("Move photos off the iPhone?", isPresented: $confirmingMoveMode) {
             Button("Use Move") { transferMode = TransferMode.move.rawValue }
             Button("Keep Copying", role: .cancel) {}
@@ -128,6 +138,20 @@ struct MainView: View {
         case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay: true
         case .home, .storage, .device, .places: false
         }
+    }
+
+    private var duplicateTitle: String {
+        guard let question = library.duplicateQuestion else { return "" }
+        let folder = (question.folder as NSString).lastPathComponent
+        return question.duplicates == question.total
+            ? (question.total == 1 ? "“\(folder)” already has this file" : "“\(folder)” already has all \(question.total) files")
+            : "\(question.duplicates) of \(question.total) files are already in “\(folder)”"
+    }
+
+    private var duplicateMessage: String {
+        guard let question = library.duplicateQuestion else { return "" }
+        let verb = question.isMove ? "moving" : "copying"
+        return "They're exactly the same as files already there. Skip them and go on \(verb) the rest, or keep both: the new ones get a numbered name."
     }
 
     /// Copy | Move: what putting photos into a folder does. Move asks first.

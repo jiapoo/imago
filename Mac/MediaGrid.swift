@@ -422,3 +422,24 @@ struct TileSizeSlider: View {
         .help("Thumbnail size")
     }
 }
+
+// MARK: - Show
+
+/// What a library view shows: on all iPhones (the default), on one, or everything on the backup drive.
+struct SourcePicker: View {
+    @Environment(BackupServer.self) private var server
+    @Binding var selection: String
+
+    var body: some View {
+        Picker("Show", selection: $selection) {
+            Text("On All iPhones").tag(MediaLibrary.Source.phones.raw)
+            ForEach(server.devices) { device in
+                Text("On \(device.name)").tag(MediaLibrary.Source.phone(device.id).raw)
+            }
+            Divider()
+            Text("Everything on the Drive").tag(MediaLibrary.Source.drive.raw)
+        }
+        .fixedSize()
+        .help("Show what's on your iPhones (as of their last backup), on one of them, or everything on the backup drive")
+    }
+}

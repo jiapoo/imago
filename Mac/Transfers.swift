@@ -26,10 +26,88 @@ enum TransferMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// What to do with files that are already in the folder, exactly the same.
+enum DuplicateChoice {
+    /// Leave them out; the rest go ahead.
+    case skip
+    /// Copy or move them anyway, with a numbered name.
+    case keepBoth
+    /// Do nothing.
+    case cancel
+}
+
+/// Files about to go into a folder that already holds identical ones, waiting for the user's answer.
+struct DuplicateQuestion: Identifiable {
+    let id = UUID()
+    var folder: String
+    var duplicates: Int
+    var total: Int
+    var isMove: Bool
+    fileprivate var answer: CheckedContinuation<DuplicateChoice, Never>
+}
+
 extension MediaLibrary {
+    /// Asks what to do about files the folder already has, and waits for the answer.
+    func ask(_ duplicates: Int, of total: Int, in folder: String, isMove: Bool) async -> DuplicateChoice {
+        await withCheckedContinuation { answer in
+            duplicateQuestion = DuplicateQuestion(folder: folder, duplicates: duplicates, total: total, isMove: isMove, answer: answer)
+        }
+    }
+
+    /// The user's answer; also cancels when the question is dismissed.
+    func answerDuplicates(_ choice: DuplicateChoice) {
+        guard let question = duplicateQuestion else { return }
+        duplicateQuestion = nil
+        question.answer.resume(returning: choice)
+    }
+
+    /// The files among `files` that `folder` already has, exactly the same: a file there of the same
+    /// size, then the same content.
+    func identicalFiles(_ files: [URL], inFolder path: String, server: BackupServer) async -> Set<URL> {
+        let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
+        let present: [(url: URL, size: Int)] = ((try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey], options: [.skipsHiddenFiles]
+        )) ?? []).compactMap { url in
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true,
+                  let size = values.fileSize else { return nil }
+            return (url, size)
+        }
+        let bySize = Dictionary(grouping: present, by: \.size)
+        let candidates = files.filter { file in
+            guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+            return bySize[size] != nil && file.deletingLastPathComponent().lexicallyStandardized != folder.lexicallyStandardized
+        }
+        guard !candidates.isEmpty else { return [] }
+        activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count)
+        defer { activity = nil }
+        var identical: Set<URL> = []
+        for file in candidates {
+            activity?.detail = file.lastPathComponent
+            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+            let others = bySize[size]?.map(\.url) ?? []
+            let same = await Task.detached(priority: .userInitiated) {
+                guard let mine = try? FileHasher.sha256(of: file) else { return false }
+                return others.contains { (try? FileHasher.sha256(of: $0)) == mine }
+            }.value
+            if same { identical.insert(file) }
+            activity?.done += 1
+        }
+        return identical
+    }
+
     /// Puts items into a folder the way the toolbar says: copies, or moves and removes them from their
-    /// iPhone. Records each step for undo.
+    /// iPhone. Asks first when the folder already has identical files. Records each step for undo.
     func transfer(_ items: [MediaItem], toFolder path: String, server: BackupServer, history: FileHistory) async {
+        var items = items
+        let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
+        if !identical.isEmpty {
+            switch await ask(identical.count, of: items.count, in: path, isMove: TransferMode.current == .move) {
+            case .cancel: return
+            case .skip: items.removeAll { identical.contains($0.url) }
+            case .keepBoth: break
+            }
+            guard !items.isEmpty else { return }
+        }
         switch TransferMode.current {
         case .copy:
             history.record(await copy(items, toFolder: path, server: server))
@@ -68,7 +146,16 @@ extension MediaLibrary {
                 }
             }
             if case .folder(let path) = place, !outside.isEmpty {
-                history.record(await copyIn(outside, to: path, server: server))
+                var files = outside
+                let identical = await identicalFiles(files, inFolder: path, server: server)
+                if !identical.isEmpty {
+                    switch await ask(identical.count, of: files.count, in: path, isMove: false) {
+                    case .cancel: return
+                    case .skip: files.removeAll { identical.contains($0) }
+                    case .keepBoth: break
+                    }
+                }
+                if !files.isEmpty { history.record(await copyIn(files, to: path, server: server)) }
             }
         }
         return true

@@ -12,11 +12,13 @@ struct BrowserView: View {
     @Environment(MediaViewerHost.self) private var viewer
     @Environment(FileHistory.self) private var history
     let scope: MediaLibrary.Scope
+    /// Inside another page (a place's panel on the map): no title or toolbar of its own.
+    var embedded = false
 
     @State private var kind: MediaLibrary.Kind = .all
-    @State private var deviceID: String?
     /// Large Files: only items still on an iPhone.
-    @State private var onlyOnPhone = false
+    /// Library, On This Day and Large Files: on the iPhones (all, or one), or everything on the drive.
+    @AppStorage(MediaLibrary.Source.key) private var sourceRaw = MediaLibrary.Source.phones.raw
     @AppStorage("browserTileSize") private var tileSize = 150.0
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
@@ -28,16 +30,25 @@ struct BrowserView: View {
     /// Items to ask their iPhone to remove, while the confirmation is up.
     @State private var removing: [MediaItem]?
     @State private var naming: FolderNaming?
+    /// Deleted on iPhone: the Delete All confirmation is up.
+    @State private var confirmingDeleteAll = false
     @FocusState private var focused: Bool
 
     private var items: [MediaItem] {
-        let items = library.items(in: scope, deviceID: deviceID, kind: kind)
-        return scope == .large && onlyOnPhone ? items.filter { library.phoneAsset($0) != nil } : items
+        let items = library.items(in: scope, kind: kind)
+        return showsSource ? library.filter(items, by: MediaLibrary.Source(raw: sourceRaw)) : items
     }
     private var selected: [MediaItem] {
         library.selection.isEmpty ? [] : items.filter { library.selection.contains($0.id) }
     }
     private var isTrash: Bool { scope == .trash }
+    /// Pages with the Show menu (on the iPhones, or everything on the drive).
+    private var showsSource: Bool {
+        switch scope {
+        case .all, .large, .onThisDay: true
+        default: false
+        }
+    }
     /// Large Files and Recently Deleted keep their own order (by size; by when deleted), so they aren't
     /// split into days: out of date order, one day would turn up in several places.
     private var isFlat: Bool { scope == .large || scope == .trash }
@@ -51,9 +62,12 @@ struct BrowserView: View {
             .modifier(keyHandling(items))
             .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
             .modifier(dialogs)
-            .navigationTitle(title)
-            .navigationSubtitle(subtitle(items))
-            .toolbar { toolbar }
+            .confirmationDialog(deleteAllTitle, isPresented: $confirmingDeleteAll) {
+                Button("Move to Recently Deleted", role: .destructive) { trash(library.items(in: scope)) }
+            } message: {
+                Text("They were deleted on the iPhone already; this moves the backed-up copies to Recently Deleted on this Mac. Put Back returns them, and ⌘Z undoes it.")
+            }
+            .modifier(PageChrome(embedded: embedded, title: title, subtitle: subtitle(items)) { toolbar })
             .task(id: server.catalogRevision) { await library.load(from: server) }
             .onChange(of: scope) { library.selection = []; anchor = nil }
             // Photos and videos open from the backup drive: keep it spinning while the grid is up.
@@ -255,6 +269,11 @@ struct BrowserView: View {
         )
     }
 
+    private var deleteAllTitle: String {
+        let count = library.items(in: scope).count
+        return count == 1 ? "Move 1 item to Recently Deleted?" : "Move all \(count.formatted()) items to Recently Deleted?"
+    }
+
     /// Where ⌘V puts files: this folder, when one is shown.
     private var pasteTarget: String? {
         if case .folder(let path) = scope { return path }
@@ -287,6 +306,25 @@ struct BrowserView: View {
             } else {
                 history.record(await library.move(items, to: .phoneFolder, server: server))
             }
+        }
+    }
+}
+
+/// A page's title, subtitle and toolbar, unless it's inside another page.
+private struct PageChrome<Toolbar: ToolbarContent>: ViewModifier {
+    let embedded: Bool
+    let title: String
+    let subtitle: String
+    @ToolbarContentBuilder var toolbar: () -> Toolbar
+
+    func body(content: Content) -> some View {
+        if embedded {
+            content
+        } else {
+            content
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
+                .toolbar(content: toolbar)
         }
     }
 }
@@ -352,6 +390,7 @@ extension BrowserView {
         case .large: "Large Files"
         case .deletedOnPhone(let id): "Deleted on \(server.devices.first { $0.id == id }?.name ?? "iPhone")"
         case .onThisDay: "On This Day"
+        case .items: "Places"
         }
     }
 
@@ -369,17 +408,8 @@ extension BrowserView {
                 .labelStyle(.titleOnly)
                 .help("Show photos, videos or both")
 
-                if scope == .all || scope == .large, server.devices.count > 1 {
-                    Picker("iPhone", selection: $deviceID) {
-                        Text("All iPhones").tag(String?.none)
-                        ForEach(server.devices) { Text($0.name).tag(Optional($0.id)) }
-                    }
-                    .fixedSize()
-                }
-                if scope == .large {
-                    Toggle("On iPhone", isOn: $onlyOnPhone)
-                        .toggleStyle(.button)
-                        .help("Only items still on an iPhone: the ones that free space there")
+                if showsSource {
+                    SourcePicker(selection: $sourceRaw)
                 }
             }
             ToolbarItemGroup(placement: .primaryAction) {
@@ -389,6 +419,13 @@ extension BrowserView {
                         Label("Show in Finder", systemImage: "folder")
                     }
                     .help("Show this folder in Finder")
+                }
+                if case .deletedOnPhone = scope {
+                    Button { confirmingDeleteAll = true } label: {
+                        Label("Move All to Recently Deleted", systemImage: "trash")
+                    }
+                    .disabled(library.items(in: scope).isEmpty)
+                    .help("Move everything deleted on this iPhone to Recently Deleted on this Mac")
                 }
                 if isTrash {
                     Button("Empty…") { deletingNow = library.trash }
@@ -428,6 +465,8 @@ extension BrowserView {
             case .onThisDay:
                 ContentUnavailableView("Nothing on this day", systemImage: "calendar.badge.clock",
                                        description: Text("Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here."))
+            case .items:
+                ContentUnavailableView("Nothing here", systemImage: "map")
             case .deletedOnPhone:
                 ContentUnavailableView("Nothing deleted on the iPhone", systemImage: "checkmark.circle",
                                        description: Text("Photos and videos deleted on the iPhone after they were backed up show here, as of its last backup."))

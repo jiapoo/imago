@@ -72,6 +72,8 @@ final class MediaLibrary {
         case deletedOnPhone(String)
         /// Taken on today's date in earlier years.
         case onThisDay
+        /// Just these, by item ID (e.g. a place on the map).
+        case items([String])
     }
 
     enum Kind: String, CaseIterable, Identifiable {
@@ -136,6 +138,8 @@ final class MediaLibrary {
     }
 
     var activity: Activity?
+    /// Files about to go into a folder that already has identical ones: what to do, asked in the window.
+    var duplicateQuestion: DuplicateQuestion?
     /// Shared with the sidebar, so dropping one selected item on a Folder moves the whole selection.
     var selection: Set<MediaItem.ID> = []
     var error: String?
@@ -253,6 +257,7 @@ final class MediaLibrary {
         case .large: items.filter { $0.bytes >= Self.largeFileBytes }.sorted { $0.bytes > $1.bytes }
         case .deletedOnPhone(let deviceID): deletedOnPhone(deviceID)
         case .onThisDay: items.filter { Self.isOnThisDay($0.date) }
+        case .items(let ids): items.filter { [wanted = Set(ids)] in wanted.contains($0.id) }
         default: items
         }
         return source.filter { item in
@@ -265,6 +270,40 @@ final class MediaLibrary {
             case .photos: return !item.isVideo
             case .videos: return item.isVideo
             }
+        }
+    }
+
+    /// Which media the library's views show: what's on the iPhones (all, or one), or everything on
+    /// the backup drive. Imago is for managing what's on the iPhones, so that's the default.
+    enum Source: Hashable {
+        /// On any iPhone at its last backup.
+        case phones
+        /// On this iPhone (by device ID) at its last backup.
+        case phone(String)
+        /// Everything on the drive: also what's left the iPhones, and files from elsewhere.
+        case drive
+
+        static let key = "librarySource"
+
+        init(raw: String) {
+            if raw == "drive" { self = .drive } else if raw.hasPrefix("phone:") { self = .phone(String(raw.dropFirst(6))) } else { self = .phones }
+        }
+
+        var raw: String {
+            switch self {
+            case .phones: "phones"
+            case .phone(let id): "phone:\(id)"
+            case .drive: "drive"
+            }
+        }
+    }
+
+    /// Keeps the items `source` shows.
+    func filter(_ items: [MediaItem], by source: Source) -> [MediaItem] {
+        switch source {
+        case .drive: items
+        case .phones: items.filter { phoneAsset($0) != nil }
+        case .phone(let id): items.filter { $0.deviceID == id && phoneAsset($0) != nil }
         }
     }
 

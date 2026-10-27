@@ -57,7 +57,8 @@ Jia's iPhone/.photobackup/index.json                         cache; rebuildable 
 
 Deletions on the phone never delete anything on the Mac: a photo deleted on the iPhone after it was
 backed up stays in the backup. Each iPhone's **Deleted on iPhone** (in the sidebar, under its row, and on
-its page) lists them, as of its last backup, to keep, copy or move into a folder, or delete here. Interrupted files resume from the last byte received.
+its page) lists them, as of its last backup, to keep, copy or move into a folder, or delete here (one at a time, or
+all with **Move All to Recently Deleted**). Interrupted files resume from the last byte received.
 
 ## Overnight backups
 
@@ -102,10 +103,11 @@ the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6
 card per iPhone, shortcuts into the library, the backup drive and recent activity.
 
 **Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder;
-**Places** shows them on a map where they were taken (grouped by area; click a group to zoom in, or to open
-the photos when they're all at one spot); **On This Day** shows what was taken on today's date in earlier
-years; **Large Files** shows the biggest first (filter to what's still on an iPhone to see what frees space
-there). Each iPhone's Photos page has its own Places and On This Day.
+**Places** shows them on a map where they were taken (grouped by area; click a group to zoom in and list its
+photos beside the map, to copy, move, delete or open them there); **On This Day** shows what was taken on
+today's date in earlier years; **Large Files** shows the biggest first. On these four, **Show** picks what's
+on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone's Photos page has its
+own Places and On This Day.
 **Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep
 as you like), so they stay usable without the app. The sidebar's **Folders** section shows them as a tree,
 with Recently Deleted; **iPhones** has a row per iPhone that opens to its Photos and how its backup stands.
@@ -114,7 +116,8 @@ grid (the whole selection comes along) or from Finder (copied in). Dropping an i
 moves them back into its folder.
 
 **Copy | Move** in the toolbar decides what putting photos into a folder does, by dragging or with
-Copy To / Move To. **Copy** (the default) copies them in; the iPhone and its backup keep them. **Move**
+Copy To / Move To. When the folder already has some of them, exactly the same, Imago asks: skip those,
+keep both (with a numbered name), or cancel. **Copy** (the default) copies them in; the iPhone and its backup keep them. **Move**
 moves them out of the iPhone's backup into the folder and asks the iPhone to delete them, after checking
 each against its backup: this is how large videos leave the iPhone. Switching to Move explains this first.
 Dropping an iPhone's items on its own folder moves them back; dropping on Recently Deleted deletes.

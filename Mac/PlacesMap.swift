@@ -15,11 +15,11 @@ struct MapPin: Identifiable, Sendable {
 
 /// Places, like the Photos map on iOS: photos and videos where they were taken, grouped into one
 /// bubble per area (its newest photo, and how many). Groups re-form as the map zooms. Click a group to
-/// zoom into it; once its photos are all at one spot, or for a single one, they open in the viewer.
+/// zoom into it and list its photos beside the map, to manage them there.
 struct PlacesMap: View {
     let pins: [MapPin]
-    /// Opens these items (by ID) in the viewer, starting at the second.
-    var open: ([String], String) -> Void
+    /// Shows a group's items (by ID, newest first) beside the map.
+    var select: ([String]) -> Void
 
     /// Fitted to the photos once, when the map opens; after that, where the user takes it. (Following
     /// `.automatic` would re-fit every time the groups change, and regrouping after each re-fit looped.)
@@ -122,15 +122,12 @@ struct PlacesMap: View {
         }
     }
 
-    /// One photo, or photos all at one spot: open them. Otherwise zoom to where they are.
+    /// Lists the group's photos beside the map, and zooms in when they're spread out.
     private func tap(_ group: Group) {
+        select(group.pins.map(\.id))
         let lats = group.pins.map(\.coordinate.latitude), lons = group.pins.map(\.coordinate.longitude)
         guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
-        let spread = max(maxLat - minLat, maxLon - minLon)
-        if group.pins.count == 1 || spread < 0.000_3 {
-            open(group.pins.map(\.id), group.pins[0].id)
-            return
-        }
+        guard group.pins.count > 1, max(maxLat - minLat, maxLon - minLon) >= 0.000_3 else { return }
         let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
         let span = MKCoordinateSpan(latitudeDelta: max((maxLat - minLat) * 1.6, 0.002), longitudeDelta: max((maxLon - minLon) * 1.6, 0.002))
         withAnimation(.smooth(duration: 0.5)) {
@@ -178,75 +175,97 @@ private struct Bubble: View {
 
 // MARK: - The whole library
 
-/// Places for every iPhone's backed-up photos and videos.
+/// Places for the library, by the Show menu (on the iPhones, or everything on the drive). A group's
+/// photos open in a panel beside the map, as an ordinary grid: select, copy or move, delete, open.
 struct LibraryPlacesView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
-    @Environment(FileHistory.self) private var history
-    @Environment(MediaViewerHost.self) private var viewer
+    @AppStorage(MediaLibrary.Source.key) private var sourceRaw = MediaLibrary.Source.phones.raw
+    /// The group listed beside the map, by item ID.
+    @State private var group: [String]?
 
     var body: some View {
-        let located = library.items.filter { $0.latitude != nil && $0.longitude != nil }
-        PlacesMap(pins: located.map { item in
-            MapPin(id: item.id, coordinate: CLLocationCoordinate2D(latitude: item.latitude!, longitude: item.longitude!),
-                   thumbnail: item.url, thumbnailBytes: item.bytes, date: item.date)
-        }) { ids, start in
-            let byID = Dictionary(located.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            let items = ids.compactMap { byID[$0] }
-            guard let index = items.firstIndex(where: { $0.id == start }) else { return }
-            viewer.open(.init(
-                urls: items.map(\.url), index: index,
-                thumbnailBytes: Dictionary(items.map { ($0.url, $0.bytes) }, uniquingKeysWith: { a, _ in a }),
-                date: { items[$0].date },
-                name: { items[$0].name },
-                info: { [MediaViewerHost.InfoRow(label: "Name", value: items[$0].name), .init(label: "File", value: items[$0].url.path)] },
-                deleteTitle: "Move to Recently Deleted",
-                delete: { [library, server, history] index in
-                    guard let step = await library.trash([items[index]], server: server) else { return false }
-                    history.record(step)
-                    return true
+        let located = library.filter(library.items, by: MediaLibrary.Source(raw: sourceRaw))
+            .filter { $0.latitude != nil && $0.longitude != nil }
+        HStack(spacing: 0) {
+            PlacesMap(pins: located.map { item in
+                MapPin(id: item.id, coordinate: CLLocationCoordinate2D(latitude: item.latitude!, longitude: item.longitude!),
+                       thumbnail: item.url, thumbnailBytes: item.bytes, date: item.date)
+            }) { group = $0 }
+            if let group {
+                Divider()
+                PlacePanel(count: library.items(in: .items(group)).count, close: { self.group = nil }) {
+                    BrowserView(scope: .items(group), embedded: true)
                 }
-            ))
+                .transition(.move(edge: .trailing))
+            }
         }
+        .animation(.snappy(duration: 0.25), value: group == nil)
         .navigationTitle("Places")
+        .toolbar {
+            ToolbarItem(placement: .principal) { SourcePicker(selection: $sourceRaw) }
+        }
+        .onChange(of: sourceRaw) { group = nil }
         .task(id: server.catalogRevision) { await library.load(from: server) }
     }
 }
 
 // MARK: - One iPhone
 
-/// Places for one iPhone's library, including what isn't backed up yet (shown by its preview).
+/// Places for one iPhone's library, including what isn't backed up yet (shown by its preview). A
+/// group's photos open beside the map in the Photos grid, with all its actions.
 struct PhonePlacesView: View {
     @Environment(BackupServer.self) private var server
-    @Environment(MediaViewerHost.self) private var viewer
     let model: PhoneLibraryModel
     let device: PairedDevice
+    @State private var group: [String]?
 
     var body: some View {
         let previews = server.previews[device.id] ?? [:]
         let located = model.assets.filter { $0.metadata.location != nil }
-        PlacesMap(pins: located.map { asset in
-            MapPin(id: asset.id,
-                   coordinate: CLLocationCoordinate2D(latitude: asset.metadata.location!.latitude, longitude: asset.metadata.location!.longitude),
-                   thumbnail: model.files[asset.id] ?? previews[asset.id], thumbnailBytes: model.thumbnailBytes[asset.id] ?? 0,
-                   date: asset.metadata.creationDate)
-        }) { ids, start in
-            var urls: [URL] = []
-            var shownIDs: [String] = []
-            var bytes: [URL: UInt64] = [:]
-            for id in ids {
-                guard let url = model.files[id] ?? previews[id] else { continue }
-                urls.append(url)
-                shownIDs.append(id)
-                bytes[url] = model.thumbnailBytes[id] ?? 0
+        HStack(spacing: 0) {
+            PlacesMap(pins: located.map { asset in
+                MapPin(id: asset.id,
+                       coordinate: CLLocationCoordinate2D(latitude: asset.metadata.location!.latitude, longitude: asset.metadata.location!.longitude),
+                       thumbnail: model.files[asset.id] ?? previews[asset.id], thumbnailBytes: model.thumbnailBytes[asset.id] ?? 0,
+                       date: asset.metadata.creationDate)
+            }) { group = $0 }
+            if let group {
+                let assets = group.compactMap(model.asset)
+                Divider()
+                PlacePanel(count: assets.count, close: { self.group = nil }) {
+                    PhoneGrid(model: model, device: device, assets: assets, empty: ("Nothing here", "map", nil))
+                }
+                .transition(.move(edge: .trailing))
             }
-            guard let index = shownIDs.firstIndex(of: start) ?? (shownIDs.isEmpty ? nil : 0) else { return }
-            viewer.open(.init(
-                urls: urls, index: index, thumbnailBytes: bytes,
-                date: { model.asset(shownIDs[$0])?.metadata.creationDate },
-                name: { model.asset(shownIDs[$0])?.metadata.originalFilename ?? "" },
-                info: { [MediaViewerHost.InfoRow(label: "Name", value: model.asset(shownIDs[$0])?.metadata.originalFilename ?? "")] }
-            ))
         }
+        .animation(.snappy(duration: 0.25), value: group == nil)
+    }
+}
+
+/// Beside the map: how many photos are at the place, and their grid.
+private struct PlacePanel<Content: View>: View {
+    let count: Int
+    let close: () -> Void
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label(count == 1 ? "1 photo here" : "\(count.formatted()) photos here", systemImage: "mappin.and.ellipse")
+                    .font(.headline)
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark.circle.fill").font(.title3).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Close")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            Divider()
+            content
+        }
+        .frame(width: 520)
     }
 }
