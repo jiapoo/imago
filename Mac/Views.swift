@@ -106,6 +106,20 @@ struct MainView: View {
         }
         .task(id: server.catalogRevision) { await library.load(from: server) }
         .focusEffectDisabled()
+        #if DEBUG
+        // Test hook: `Imago -OpenPlaces <iPhone folder>` opens that iPhone's Places (or `library` for all).
+        .onAppear {
+            let arguments = CommandLine.arguments
+            guard let at = arguments.firstIndex(of: "-OpenPlaces"), arguments.indices.contains(at + 1) else { return }
+            let name = arguments[at + 1]
+            if name == "library" {
+                selection = .places
+            } else if let device = server.devices.first(where: { $0.folder == name || $0.name == name }) {
+                PhoneLibraryModel.model(for: device).requestedSection = .places
+                selection = .manage(device.id)
+            }
+        }
+        #endif
     }
 
     /// Pages of photos and videos, where Copy | Move applies. Not Home, Storage or an iPhone's own page.

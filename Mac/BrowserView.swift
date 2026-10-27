@@ -38,6 +38,9 @@ struct BrowserView: View {
         library.selection.isEmpty ? [] : items.filter { library.selection.contains($0.id) }
     }
     private var isTrash: Bool { scope == .trash }
+    /// Large Files and Recently Deleted keep their own order (by size; by when deleted), so they aren't
+    /// split into days: out of date order, one day would turn up in several places.
+    private var isFlat: Bool { scope == .large || scope == .trash }
 
     var body: some View {
         let items = items
@@ -65,10 +68,10 @@ struct BrowserView: View {
             if case .deletedOnPhone = scope, !items.isEmpty { deletedOnPhoneBanner.padding(.horizontal, 16) }
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: tileSize, maximum: tileSize * 1.5), spacing: 4)],
-                spacing: 4, pinnedViews: scope == .large ? [] : [.sectionHeaders]
+                spacing: 4, pinnedViews: isFlat ? [] : [.sectionHeaders]
             ) {
-                if scope == .large {
-                    // Biggest first, not by day.
+                if isFlat {
+                    // In their own order (biggest first; most recently deleted first), not by day.
                     ForEach(items) { item in tile(item, in: items) }
                 } else {
                     ForEach(Day.group(items)) { day in
@@ -81,7 +84,7 @@ struct BrowserView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, scope == .large ? 12 : 0)
+            .padding(.top, isFlat ? 12 : 0)
             .padding(.bottom, 96)
             .modifier(SelectionBox(frames: tileFrames, ids: items.map(\.id),
                                    selection: Binding(get: { library.selection }, set: { library.selection = $0 })))

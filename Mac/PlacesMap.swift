@@ -21,7 +21,10 @@ struct PlacesMap: View {
     /// Opens these items (by ID) in the viewer, starting at the second.
     var open: ([String], String) -> Void
 
+    /// Fitted to the photos once, when the map opens; after that, where the user takes it. (Following
+    /// `.automatic` would re-fit every time the groups change, and regrouping after each re-fit looped.)
     @State private var position: MapCameraPosition = .automatic
+    @State private var fitted = false
     @State private var region: MKCoordinateRegion?
     @State private var groups: [Group] = []
 
@@ -49,10 +52,15 @@ struct PlacesMap: View {
             MapScaleView()
         }
         .onMapCameraChange(frequency: .onEnd) { context in
+            // Only a real move: regrouping changes the annotations, which mustn't feed back into here.
+            guard !Self.same(region, context.region) else { return }
             region = context.region
             regroup()
         }
-        .onAppear { regroup() }
+        .onAppear {
+            fitToPins()
+            regroup()
+        }
         .onChange(of: pins.count) { regroup() }
         .overlay {
             if pins.isEmpty {
@@ -71,6 +79,29 @@ struct PlacesMap: View {
                     .padding(16)
             }
         }
+    }
+
+    /// Frames every photo, once.
+    private func fitToPins() {
+        guard !fitted, !pins.isEmpty else { return }
+        fitted = true
+        let lats = pins.map(\.coordinate.latitude), lons = pins.map(\.coordinate.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
+        let fit = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: min(max((maxLat - minLat) * 1.3, 0.02), 170),
+                                   longitudeDelta: min(max((maxLon - minLon) * 1.3, 0.02), 350))
+        )
+        region = fit
+        position = .region(fit)
+    }
+
+    /// Whether two map regions are the same, near enough: a re-fit of the same view isn't a move.
+    private static func same(_ a: MKCoordinateRegion?, _ b: MKCoordinateRegion) -> Bool {
+        guard let a else { return false }
+        let tolerance = max(b.span.latitudeDelta, b.span.longitudeDelta) * 0.01
+        return abs(a.center.latitude - b.center.latitude) < tolerance && abs(a.center.longitude - b.center.longitude) < tolerance
+            && abs(a.span.latitudeDelta - b.span.latitudeDelta) < tolerance && abs(a.span.longitudeDelta - b.span.longitudeDelta) < tolerance
     }
 
     /// Groups the pins into cells about a seventh of the visible map across.
