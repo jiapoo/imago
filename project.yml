@@ -13,9 +13,12 @@ settings:
 packages:
   ImagoKit:
     path: Packages/ImagoKit
-  # The photo and video viewer and editor, shared with Arete (one package, used by both apps).
+  # Photo and video viewing and editing, shared with Arete at a version. Pinned here, since
+  # Imago.xcodeproj (and its Package.resolved) isn't kept in git: raise it to take an update.
+  # To change the package itself, see the README in github.com/jiapoo/arete-media.
   AreteMedia:
-    path: ../arete-full-stack/arete-apple/Packages/AreteMedia
+    url: https://github.com/jiapoo/arete-media
+    exactVersion: 1.0.0
 targets:
   ImagoMac:
     type: application

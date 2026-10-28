@@ -8,17 +8,22 @@ Photos move over your Wi-Fi with encryption and never pass through a cloud servi
 | Path | What |
 |---|---|
 | `Packages/ImagoKit` | Shared code: wire protocol, framing, TLS-PSK networking, pairing, library layout, hashing. Has tests. |
-| `../arete-full-stack/arete-apple/Packages/AreteMedia` | The photo and video viewer and editor, one package shared with Arete. Imago needs the Arete checkout beside it. |
+| AreteMedia | The photo and video viewer and editor, a package shared with Arete ([jiapoo/arete-media](https://github.com/jiapoo/arete-media)), pinned in `project.yml`. |
 | `Mac/` | Mac app: Bonjour listener, `BackupStore` (verified writes, sidecars, index), status, pairing QR, library grid, menu bar. |
 | `iOS/` | iPhone app: PhotoKit scan and export, upload client, QR pairing, background processing task. |
 | `project.yml` | XcodeGen spec. Generates `Imago.xcodeproj` (git-ignored). |
+| `Imago.xcworkspace` | Imago and Arete in one window, so both can use AreteMedia at once. |
 | `docs/PROTOCOL.md` | Wire protocol and on-disk layout, enough to write a server on another platform (e.g. Windows). |
 
 ## Build
 
 ```bash
-xcodegen generate && open Imago.xcodeproj
+xcodegen generate && open Imago.xcworkspace
 ```
+
+Open the workspace, not `Imago.xcodeproj`. Xcode loads a local package in only one window, so with
+`Arete.xcodeproj` open on its own, Imago reports "Couldn't load AreteMedia because it is already opened
+from another project or workspace". The workspace holds both apps, so close any separate Arete window.
 
 Set your signing team on both targets, then run `ImagoMac` and `ImagoiOS`.
 The iOS Simulator has no camera, so on the Mac use **Add iPhone → Copy Link** and paste it into the app.
@@ -170,7 +175,7 @@ from Finder, and changes queued for an iPhone (while they're still waiting). Del
 undone, nor can a deletion the iPhone has already done.
 
 A double-click or Space opens it in Imago's viewer, inside the window like the Photos app (AreteMedia's
-`MediaViewer`, the package Imago shares with Arete). The toolbar shows when it was taken and where
+`MediaViewer`, from the package Imago shares with Arete). The toolbar shows when it was taken and where
 it is in the grid, with Info, Share and, for iPhone items, Favorite. It opens at once on the thumbnail and
 sharpens when the full photo is decoded; it grows out of its thumbnail and shrinks back into it, as in
 Photos. Pinch or double-click to zoom a photo. Videos have the native floating controls (as in Photos and
