@@ -136,6 +136,11 @@ extension BackupStore {
                 snapshot.entries.removeAll { ids.contains($0.metadata.assetID) }
                 continue
             }
+            if case .deleteAlbum(let title) = change.action {
+                for index in snapshot.entries.indices { PendingChanges.apply(change.action, to: &snapshot.entries[index].metadata) }
+                snapshot.albums.removeAll { $0 == title }
+                continue
+            }
             for index in snapshot.entries.indices where ids.contains(snapshot.entries[index].metadata.assetID) {
                 PendingChanges.apply(change.action, to: &snapshot.entries[index].metadata)
             }

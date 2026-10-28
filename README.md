@@ -51,14 +51,16 @@ On disk (default `~/Pictures/Photo Backup`; any folder, external drive or networ
 Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821.HEIC         original
 Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821.MOV          Live Photo motion
 Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821_edited.JPG   rendered edit
-Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821.json         metadata, albums, checksums
+Jia's iPhone/2026/10/2026-10-20_143012_IMG_4821.json         metadata, albums, checksums (hidden)
 Jia's iPhone/.photobackup/index.json                         cache; rebuildable from the sidecars
 ```
 
 Deletions on the phone never delete anything on the Mac: a photo deleted on the iPhone after it was
 backed up stays in the backup. Each iPhone's **Deleted on iPhone** (in the sidebar, under its row, and on
 its page) lists them, as of its last backup, to keep, copy or move into a folder, or delete here (one at a time, or
-all with **Move All to Recently Deleted**). Interrupted files resume from the last byte received.
+all with **Move All to Recently Deleted**). Each tile shows the days left: after as many days as Recently
+Deleted keeps things (30 by default), they move to Recently Deleted on their own, which keeps them that long
+again before deleting them. Interrupted files resume from the last byte received.
 
 ## Overnight backups
 
@@ -88,6 +90,9 @@ How changes reach the phone:
   to Recently Deleted. Turn it off to review every change in the app first. While connected, photos the Mac
   hasn't backed up yet show previews the phone sends.
 - **Imago not open:** changes wait, and go to the phone when you next open Imago or at its next backup.
+
+Right-click an album in an iPhone's Photos sidebar to delete it. As in Photos, only the album goes: its
+photos and videos stay in the library, and iOS asks before deleting it.
   When they arrive while Imago isn't on screen (an overnight backup), the iPhone shows a notification.
 
 The page opens from a copy of the phone's library kept on the Mac's own disk, then refreshes from the
@@ -103,10 +108,12 @@ the phone itself show up after its next backup. See `docs/PROTOCOL.md` §6.1–6
 card per iPhone, shortcuts into the library, the backup drive and recent activity.
 
 **Library** shows every photo and video from every iPhone by day, wherever it is in the backup folder;
-**Places** shows them on a map where they were taken (grouped by area; click a group to zoom in and list its
-photos beside the map, to copy, move, delete or open them there); **On This Day** shows what was taken on
+**Places** shows them on a map where they were taken (grouped by area; click a group to list its
+photos beside the map, and zoom to split a group, to copy, move, delete or open them there); **On This Day** shows what was taken on
 today's date in earlier years; **Large Files** shows the biggest first. On these four, **Show** picks what's
-on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone's Photos page has its
+on all iPhones (the default), on one iPhone, or everything on the drive. On every page but Recently Deleted and Deleted on
+iPhone, a tile's corner says where it is from: a dot in the iPhone's color with its initial, or a drive
+for what's only on the drive. Info and the selection bar say it in words. Each iPhone's Photos page has its
 own Places and On This Day.
 **Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep
 as you like), so they stay usable without the app. The sidebar's **Folders** section shows them as a tree,

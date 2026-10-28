@@ -10,6 +10,15 @@ public struct LibraryChange: Codable, Sendable, Hashable, Identifiable {
         case addToAlbum(String)
         case removeFromAlbum(String)
         case setFavorite(Bool)
+        /// Version 6: deletes the regular album with this title, as Photos does: its photos stay in the
+        /// library. Has no assets. Sent only to phones on version 6 or later.
+        case deleteAlbum(String)
+
+        /// The protocol version a phone needs to understand it.
+        public var minimumVersion: Int {
+            if case .deleteAlbum = self { return 6 }
+            return 4
+        }
     }
 
     public var id: UUID
@@ -61,6 +70,7 @@ extension LibraryChange {
         case .addToAlbum(let album): return "Add \(items) to “\(album)”"
         case .removeFromAlbum(let album): return "Remove \(items) from “\(album)”"
         case .setFavorite(let on): return on ? "Favorite \(items)" : "Unfavorite \(items)"
+        case .deleteAlbum(let album): return "Delete album “\(album)”"
         }
     }
 
@@ -71,6 +81,7 @@ extension LibraryChange {
         case .addToAlbum: "rectangle.stack.badge.plus"
         case .removeFromAlbum: "rectangle.stack.badge.minus"
         case .setFavorite(let on): on ? "heart.fill" : "heart.slash"
+        case .deleteAlbum: "rectangle.stack.badge.minus"
         }
     }
 }

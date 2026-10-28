@@ -59,6 +59,8 @@ final class BackupServer {
     private(set) var previews: [String: [String: URL]] = [:]
 
     private var livePeers: [String: (session: UUID, peer: PeerConnection)] = [:]
+    /// Each phone's protocol version, from its last hello: changes it doesn't know aren't sent to it.
+    private var phoneVersions: [String: Int] = [:]
     private let driveKeepAwake = DriveKeepAwake()
     private var appActivationObservers: [NSObjectProtocol] = []
     private var isAppActive = false
@@ -321,6 +323,7 @@ final class BackupServer {
                     }
                     store = deviceStore
                     device = devices.first { $0.id == deviceID }
+                    phoneVersions[deviceID] = version
                     sessions[id]?.deviceID = deviceID
                     try await peer.send(.control(.welcome(serverName: serverName)))
 
@@ -360,7 +363,7 @@ final class BackupServer {
                         addLog("Couldn't save \(device.name)'s library list: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
                     }
                     manifest = []
-                    let pending = await store.changeQueue().pending
+                    let pending = sendable(await store.changeQueue().pending, to: device.id)
                     try await peer.send(.control(.changes(pending)))
                     if !pending.isEmpty {
                         addLog("Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review", symbol: "iphone.and.arrow.forward")
@@ -388,7 +391,7 @@ final class BackupServer {
                     livePeers[device.id] = (id, peer)
                     liveDevices.insert(device.id)
                     requestedPreviews[device.id] = []
-                    try await peer.send(.control(.changes(await store.changeQueue().pending)))
+                    try await peer.send(.control(.changes(sendable(await store.changeQueue().pending, to: device.id))))
                     addLog("Imago is open on \(device.name): changes go to it right away", symbol: "iphone.radiowaves.left.and.right")
                     libraryChanged(device.id)
 
@@ -477,6 +480,43 @@ final class BackupServer {
         }
     }
 
+    /// The changes this phone's version understands; the rest wait until its Imago is updated.
+    private func sendable(_ changes: [LibraryChange], to deviceID: String) -> [LibraryChange] {
+        let version = phoneVersions[deviceID] ?? ProtocolVersion.current
+        return changes.filter { $0.action.minimumVersion <= version }
+    }
+
+    /// Asks the phone to delete an album, as Photos does: its photos stay in the library. Returns the
+    /// change's ID, to take it back.
+    @discardableResult
+    func requestAlbumDeletion(_ title: String, on device: PairedDevice, base: [String: AssetMetadata]) -> UUID? {
+        guard let store = store(for: device) else { return nil }
+        let change = LibraryChange(action: .deleteAlbum(title), assetIDs: [])
+        Task {
+            do {
+                if let queued = try await store.enqueue(change, base: base) {
+                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                           symbol: queued.symbol)
+                }
+            } catch {
+                addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            }
+            libraryChanged(device.id)
+            await pushChanges(to: device.id, from: store)
+        }
+        return change.id
+    }
+
+    /// Takes back a waiting change by its ID.
+    func cancelChange(_ id: UUID, on device: PairedDevice) {
+        guard let store = store(for: device) else { return }
+        Task {
+            try? await store.cancelChange(id)
+            libraryChanged(device.id)
+            await pushChanges(to: device.id, from: store)
+        }
+    }
+
     /// Keeps assets on the phone after all: takes them out of the deletions waiting for it.
     func keep(_ assetIDs: Set<String>, on device: PairedDevice) {
         guard let store = store(for: device) else { return }
@@ -514,7 +554,7 @@ final class BackupServer {
     /// already handled, and ones no longer in the queue were cancelled here.
     private func pushChanges(to deviceID: String, from store: BackupStore) async {
         guard let live = livePeers[deviceID] else { return }
-        let pending = await store.changeQueue().pending
+        let pending = sendable(await store.changeQueue().pending, to: deviceID)
         do {
             try await live.peer.send(.control(.changes(pending)))
         } catch {

@@ -15,7 +15,7 @@ struct MapPin: Identifiable, Sendable {
 
 /// Places, like the Photos map on iOS: photos and videos where they were taken, grouped into one
 /// bubble per area (its newest photo, and how many). Groups re-form as the map zooms. Click a group to
-/// zoom into it and list its photos beside the map, to manage them there.
+/// list its photos beside the map, to manage them there.
 struct PlacesMap: View {
     let pins: [MapPin]
     /// Shows a group's items (by ID, newest first) beside the map.
@@ -122,17 +122,10 @@ struct PlacesMap: View {
         }
     }
 
-    /// Lists the group's photos beside the map, and zooms in when they're spread out.
+    /// Lists the group's photos beside the map. The map stays where it is; zoom in with the
+    /// trackpad or the zoom buttons to split the group.
     private func tap(_ group: Group) {
         select(group.pins.map(\.id))
-        let lats = group.pins.map(\.coordinate.latitude), lons = group.pins.map(\.coordinate.longitude)
-        guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
-        guard group.pins.count > 1, max(maxLat - minLat, maxLon - minLon) >= 0.000_3 else { return }
-        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
-        let span = MKCoordinateSpan(latitudeDelta: max((maxLat - minLat) * 1.6, 0.002), longitudeDelta: max((maxLon - minLon) * 1.6, 0.002))
-        withAnimation(.smooth(duration: 0.5)) {
-            position = .region(MKCoordinateRegion(center: center, span: span))
-        }
     }
 }
 

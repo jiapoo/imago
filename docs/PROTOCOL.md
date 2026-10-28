@@ -1,4 +1,4 @@
-# Imago protocol, version 5
+# Imago protocol, version 6
 
 This is everything a server needs to accept backups from the Imago iPhone app:
 discovery, encryption, pairing, the messages, and how files are laid out on disk.
@@ -211,7 +211,9 @@ JSON conventions (Swift `Codable` output, which a parser on any platform reads f
 ```
 
 `action` is one of `{"delete":{}}`, `{"addToAlbum":{"_0":"<title>"}}`, `{"removeFromAlbum":{"_0":"<title>"}}`,
-`{"setFavorite":{"_0":true}}`. `bytes` (deletions) is about how much space it frees.
+`{"setFavorite":{"_0":true}}`, and from version 6 `{"deleteAlbum":{"_0":"<title>"}}` (its `assetIDs` is
+empty). `bytes` (deletions) is about how much space it frees. The server never sends a phone a change
+newer than the version it said hello with.
 
 **ChangeReport**: `{"changeID":"<UUID>","outcome":"applied","assetCount":12,"date":"…","detail":"…"}`.
 `outcome` is `applied`, `declined` (by the user) or `failed` (with `detail`).
@@ -343,6 +345,8 @@ Rules for the phone:
   request so iOS asks once. Deleted items go to Recently Deleted for 30 days.
 - `addToAlbum` uses the user's regular album with that title, creating it if there isn't one.
   `removeFromAlbum` only works on a regular album, and fails otherwise.
+- `deleteAlbum` deletes the user's regular album with that title, as Photos does: its photos and videos
+  stay in the library. iOS asks the user first; declining reports `declined`. No such album: `failed`.
 - Report every change it was given, applied or not, at the start of the next session, and right
   away over a live session if one is open. The server ignores a report it already has.
 
@@ -426,7 +430,8 @@ After the move, set the file's creation and modification times to the asset's `c
 ### 7.3 Sidecar
 
 One JSON file per asset. It is the **source of truth**, and the index is rebuilt from sidecars.
-Written pretty-printed with sorted keys and ISO 8601 dates, replaced atomically.
+Written pretty-printed with sorted keys and ISO 8601 dates, replaced atomically, and marked hidden
+(the file system's hidden flag, not a leading dot), so Finder shows only the photos and videos.
 
 ```json
 {
@@ -534,14 +539,15 @@ has them. Without this, the next backup would bring the file straight back.
 
 ## 8. Versioning and changes
 
-The server accepts versions 4 and 5; the phone sends 5. A version-4 phone backs up as before and never
-opens a live session. Older versions are refused. From version 4, both sides
+The server accepts versions 4 to 6; the phone sends 6. A version-4 phone backs up as before and never
+opens a live session; a version-5 phone is never sent `deleteAlbum`. Older versions are refused. From version 4, both sides
 skip control messages whose names they don't know (§4) instead of dropping the connection. So a later
 message the other side can ignore can be added without a version bump, and a Windows server can lag
 behind the Mac by a release. A change the other side must understand still needs a new version.
 
 ## 9. History
 
+- **Version 6:** the `deleteAlbum` change.
 - **Version 5:** live sessions (`live`), with `changes` pushed whenever the queue changes and
   `changeReport` sent as soon as the user acts; previews (`thumbnailRequest`, `thumbnails`).
 - **Version 4:** the phone sends `manifestEnd` with its album list, and the server replies `changes`;

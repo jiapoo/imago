@@ -1,9 +1,10 @@
 import Foundation
 
 public enum ProtocolVersion {
-    public static let current = 5
-    /// Versions the Mac still accepts. A version-4 phone backs up as before; it just never opens a live session.
-    public static let supported = 4...5
+    public static let current = 6
+    /// Versions the Mac still accepts. A version-4 phone backs up as before; it just never opens a live
+    /// session. Changes a phone's version doesn't know (`LibraryChange.Action.minimumVersion`) aren't sent to it.
+    public static let supported = 4...6
 }
 
 /// Which file of an asset a resource is. Mirrors the PHAssetResourceType cases worth keeping.

@@ -140,6 +140,9 @@ final class MediaLibrary {
     var activity: Activity?
     /// Files about to go into a folder that already has identical ones: what to do, asked in the window.
     var duplicateQuestion: DuplicateQuestion?
+    /// When Imago first saw each item missing from its iPhone (by item ID): Deleted on iPhone moves it
+    /// to Recently Deleted after as many days as Recently Deleted keeps things.
+    private(set) var leftPhoneAt: [String: Date] = [:]
     /// Shared with the sidebar, so dropping one selected item on a Folder moves the whole selection.
     var selection: Set<MediaItem.ID> = []
     var error: String?
@@ -197,6 +200,8 @@ final class MediaLibrary {
                     loaded.append(item)
                 }
             }
+            // After the catalog, which finds the sidecars of records that didn't know theirs.
+            await store.hideOlderSidecars()
             if let library = await store.phoneLibrary() {
                 phones[device.id] = Dictionary(library.assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             }
@@ -244,11 +249,63 @@ final class MediaLibrary {
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
         state = .ready
 
+        // Deleted on an iPhone: note when each was first seen missing, and after its days, move it to
+        // Recently Deleted (where it gets the same days again before it's gone for good).
+        await noteLeftPhone(server)
+        if server.trashDays > 0 {
+            let due = server.devices.flatMap { deletedOnPhone($0.id) }.filter { (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0 }
+            if !due.isEmpty {
+                _ = await trash(due, server: server)
+                return
+            }
+        }
+
         // Past their days in Recently Deleted: gone for good.
         if server.trashDays > 0 {
             let expired = trash.filter { $0.isExpired(keeping: server.trashDays) }
             if !expired.isEmpty { await deleteNow(expired, server: server) }
         }
+    }
+
+    /// Days before an item on Deleted on iPhone moves to Recently Deleted, rounded up; nil when it isn't
+    /// there or Recently Deleted keeps things until emptied.
+    func daysUntilMoved(_ item: MediaItem, keeping days: Int) -> Int? {
+        guard days > 0, let since = leftPhoneAt[item.id] else { return nil }
+        let due = Calendar.current.date(byAdding: .day, value: days, to: since) ?? since
+        return max(0, Int((due.timeIntervalSinceNow / 86_400).rounded(.up)))
+    }
+
+    /// Updates when each item on Deleted on iPhone was first seen there, in the library's `.photobackup`.
+    private func noteLeftPhone(_ server: BackupServer) async {
+        let url = server.location.url.appending(path: ".photobackup/left-iphone.json")
+        var known = await Task.detached { () -> [String: Date] in
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return (try? decoder.decode([String: Date].self, from: Data(contentsOf: url))) ?? [:]
+        }.value
+        let now = Set(server.devices.flatMap { deletedOnPhone($0.id) }.map(\.id))
+        var changed = false
+        for id in now where known[id] == nil {
+            known[id] = .now
+            changed = true
+        }
+        // Back on its iPhone, or dealt with. Only for iPhones whose library list was read: without it,
+        // nothing looks deleted, and the days so far mustn't be lost.
+        let listed = Set(onPhone.keys)
+        for id in known.keys where !now.contains(id) && listed.contains(String(id.prefix { $0 != "/" })) {
+            known[id] = nil
+            changed = true
+        }
+        leftPhoneAt = known
+        guard changed else { return }
+        let record = known
+        await Task.detached {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? encoder.encode(record).write(to: url, options: .atomic)
+        }.value
     }
 
     func items(in scope: Scope, deviceID: String? = nil, kind: Kind = .all) -> [MediaItem] {
@@ -305,6 +362,17 @@ final class MediaLibrary {
         case .phones: items.filter { phoneAsset($0) != nil }
         case .phone(let id): items.filter { $0.deviceID == id && phoneAsset($0) != nil }
         }
+    }
+
+    /// Where an item is from: on an iPhone (at its last backup), or only on the drive.
+    enum Origin: Hashable {
+        case phone(String)
+        case drive
+    }
+
+    func origin(of item: MediaItem) -> Origin {
+        if let deviceID = item.deviceID, phoneAsset(item) != nil { return .phone(deviceID) }
+        return .drive
     }
 
     /// The item as it is on its phone, if it was there at the last backup.

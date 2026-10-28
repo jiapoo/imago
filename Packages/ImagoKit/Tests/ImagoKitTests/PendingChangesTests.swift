@@ -99,4 +99,29 @@ private func base(_ assets: [PhoneAsset]) -> [String: AssetMetadata] {
         #expect(months.map(\.month) == [9, 10, nil])
         #expect(months[1].assets.map(\.id) == ["a", "d"])
     }
+
+    @Test func deletingAnAlbumTakesItOffEveryAsset() {
+        let assets = [asset("a", albums: ["Trip", "Kids"]), asset("b", albums: ["Trip"]), asset("c")]
+        let change = LibraryChange(action: .deleteAlbum("Trip"), assetIDs: [])
+        let result = PendingChanges.apply([change], to: assets)
+        #expect(result.map(\.metadata.albums) == [["Kids"], [], []])
+        #expect(PendingChanges.albums(["Trip", "Kids"], with: [change]) == ["Kids"])
+        #expect(change.action.minimumVersion == 6)
+        #expect(LibraryChange.Action.addToAlbum("Trip").minimumVersion == 4)
+    }
+
+    @Test func deletingAnAlbumDropsItsWaitingChanges() {
+        let assets = [asset("a", albums: ["Trip"]), asset("b")]
+        let pending = [LibraryChange(action: .addToAlbum("Trip"), assetIDs: ["b"]), LibraryChange(action: .setFavorite(true), assetIDs: ["a"])]
+        let queue = PendingChanges.queue(LibraryChange(action: .deleteAlbum("Trip"), assetIDs: []), onto: pending, base: base(assets))
+        #expect(queue.map(\.action) == [.setFavorite(true), .deleteAlbum("Trip")])
+        // Queued twice: once is enough.
+        #expect(PendingChanges.queue(LibraryChange(action: .deleteAlbum("Trip"), assetIDs: []), onto: queue, base: base(assets)).count == 2)
+    }
+
+    @Test func deletingAnAlbumOnlyWaitingToBeMadeJustCancelsIt() {
+        let assets = [asset("a")]
+        let pending = [LibraryChange(action: .addToAlbum("New"), assetIDs: ["a"])]
+        #expect(PendingChanges.queue(LibraryChange(action: .deleteAlbum("New"), assetIDs: []), onto: pending, base: base(assets)).isEmpty)
+    }
 }

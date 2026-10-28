@@ -117,15 +117,24 @@ struct BrowserView: View {
         MediaTile(
             item: item,
             selected: library.selection.contains(item.id),
-            onPhone: library.phoneAsset(item) != nil,
             pendingRemoval: library.pendingRemoval.contains(item.id),
-            badge: badge(for: item)
+            badge: badge(for: item),
+            source: showsOrigin ? SourceBadge.Style(library.origin(of: item), devices: server.devices) : nil
         )
         .onTapGesture { click(item, in: items) }
         .contextMenu { menu(for: item) }
         .onDrag { dragProvider(for: item) }
         .reportsViewerSourceFrame(item.id == anchor, to: $anchorFrame)
         .tileFrame(item.id, in: tileFrames)
+    }
+
+    /// Whether tiles say which iPhone (or the drive) each item is from. Not in Recently Deleted or
+    /// Deleted on iPhone, where nothing is on an iPhone.
+    private var showsOrigin: Bool {
+        switch scope {
+        case .trash, .deletedOnPhone: false
+        default: true
+        }
     }
 
     /// Recently Deleted: days left. Large Files: the size.
@@ -136,6 +145,9 @@ struct BrowserView: View {
             return days == 1 ? "1 day" : "\(days) days"
         case .large:
             return item.bytes.bytes
+        case .deletedOnPhone:
+            guard let days = library.daysUntilMoved(item, keeping: server.trashDays) else { return nil }
+            return days == 1 ? "1 day" : "\(days) days"
         default:
             return nil
         }
@@ -163,6 +175,7 @@ struct BrowserView: View {
             } else {
                 SelectionBar(
                     items: selected,
+                    sources: SourceBadge.summary(selected.map(library.origin), devices: server.devices),
                     removable: library.removable(selected).count,
                     folders: otherFolders,
                     canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
@@ -229,7 +242,9 @@ struct BrowserView: View {
 
     /// Deleted on iPhone: what these are, and what to do with them.
     private var deletedOnPhoneBanner: some View {
-        Label("Backed up here, but deleted on the iPhone since. They stay in this backup until you decide: keep them, copy or move them into a folder, or delete them here (they go to Recently Deleted first).",
+        Label(server.trashDays > 0
+              ? "Backed up here, but deleted on the iPhone since. Each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each); before then, copy or move what you want to keep into a folder."
+              : "Backed up here, but deleted on the iPhone since. They stay until you decide: copy or move them into a folder, or delete them here (they go to Recently Deleted first).",
               systemImage: "iphone.slash")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -539,7 +554,11 @@ extension BrowserView {
                 }
                 rows.append(.init(label: "Size", value: item.bytes.bytes))
                 if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
-                if let name = item.deviceID.flatMap({ devices[$0] }) { rows.append(.init(label: "From", value: name)) }
+                let from = item.deviceID.flatMap { devices[$0] }
+                switch library.origin(of: item) {
+                case .phone: rows.append(.init(label: "Source", value: "On \(from ?? "an iPhone")"))
+                case .drive: rows.append(.init(label: "Source", value: from.map { "Only on this drive (from \($0))" } ?? "Only on this drive"))
+                }
                 rows.append(.init(label: "File", value: item.url.path))
                 return rows
             },
@@ -559,10 +578,11 @@ extension BrowserView {
 private struct MediaTile: View {
     let item: MediaItem
     let selected: Bool
-    let onPhone: Bool
     let pendingRemoval: Bool
     /// Top left: days left in Recently Deleted, or the size in Large Files.
     var badge: String? = nil
+    /// Bottom right: which iPhone it's on, or that it's only on the drive.
+    var source: SourceBadge.Style? = nil
 
     var body: some View {
         ThumbnailView(url: item.url, bytes: item.bytes, cornerRadius: 6, showsName: false)
@@ -577,7 +597,7 @@ private struct MediaTile: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if item.isVideo || onPhone {
+                if item.isVideo || source != nil || pendingRemoval {
                     HStack(spacing: 5) {
                         if item.isVideo {
                             Image(systemName: "play.fill").imageScale(.small)
@@ -588,8 +608,8 @@ private struct MediaTile: View {
                         Spacer(minLength: 0)
                         if pendingRemoval {
                             Image(systemName: "iphone.slash").help("Waiting to be removed from the iPhone")
-                        } else if onPhone {
-                            Image(systemName: "iphone").help("Also on the iPhone")
+                        } else if let source {
+                            SourceBadge(style: source)
                         }
                     }
                     .font(.caption.weight(.semibold).monospacedDigit())
@@ -607,11 +627,87 @@ private struct MediaTile: View {
     }
 }
 
+/// Which iPhone an item is on, as a dot in the iPhone's color with its initial, or a drive for
+/// what's only on the drive.
+struct SourceBadge: View {
+    struct Style: Hashable {
+        /// The iPhone's initial; nil for the drive.
+        var initial: String?
+        var color: Color
+        var help: String
+
+        init(_ origin: MediaLibrary.Origin, devices: [PairedDevice]) {
+            switch origin {
+            case .phone(let id):
+                let index = devices.firstIndex { $0.id == id }
+                let name = index.map { devices[$0].name } ?? "an iPhone"
+                initial = name.first.map { String($0).uppercased() } ?? "?"
+                color = SourceBadge.color(index ?? 0)
+                help = "On \(name)"
+            case .drive:
+                initial = nil
+                color = .black.opacity(0.55)
+                help = "Only on the drive"
+            }
+        }
+    }
+
+    let style: Style
+
+    var body: some View {
+        ZStack {
+            Circle().fill(style.color)
+            if let initial = style.initial {
+                Text(initial).font(.system(size: 10, weight: .bold))
+            } else {
+                Image(systemName: "externaldrive.fill").font(.system(size: 8, weight: .semibold))
+            }
+        }
+        .foregroundStyle(.white)
+        .frame(width: 18, height: 18)
+        .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.2))
+        .shadow(color: .black.opacity(0.3), radius: 1.5)
+        .help(style.help)
+    }
+
+    /// One color per iPhone, in the order they were paired: Imago's red first.
+    static func color(_ index: Int) -> Color {
+        let colors: [Color] = [.imago, .blue, .green, .orange, .purple, .teal, .pink, .indigo]
+        return colors[index % colors.count]
+    }
+
+    /// For the selection bar: "On 007's iPhone", "3 on 007's iPhone, 2 only on the drive".
+    static func summary(_ origins: [MediaLibrary.Origin], devices: [PairedDevice]) -> String {
+        var counts: [MediaLibrary.Origin: Int] = [:]
+        for origin in origins { counts[origin, default: 0] += 1 }
+        func name(_ origin: MediaLibrary.Origin) -> String {
+            switch origin {
+            case .phone(let id): devices.first { $0.id == id }?.name ?? "an iPhone"
+            case .drive: "the drive"
+            }
+        }
+        // iPhones in pairing order, then the drive.
+        let order = counts.keys.sorted { a, b in
+            let rank = { (o: MediaLibrary.Origin) -> Int in
+                if case .phone(let id) = o { return devices.firstIndex { $0.id == id } ?? devices.count }
+                return Int.max
+            }
+            return rank(a) < rank(b)
+        }
+        if order.count == 1 { return order[0] == .drive ? "Only on the drive" : "On \(name(order[0]))" }
+        return order.map { origin in
+            origin == .drive ? "\(counts[origin]!) only on the drive" : "\(counts[origin]!) on \(name(origin))"
+        }.joined(separator: ", ")
+    }
+}
+
 // MARK: - Selection bars
 
 private struct SelectionBar: View {
     @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
     let items: [MediaItem]
+    /// Where they're from: "On 007's iPhone", "3 on 007's iPhone, 2 only on the drive".
+    let sources: String
     let removable: Int
     let folders: [String]
     let canPutBack: Bool
@@ -622,7 +718,7 @@ private struct SelectionBar: View {
     var clear: () -> Void
 
     var body: some View {
-        FloatingBar(count: items.count, detail: items.reduce(0) { $0 + $1.bytes }.bytes, clear: clear) {
+        FloatingBar(count: items.count, detail: "\(items.reduce(0) { $0 + $1.bytes }.bytes) · \(sources)", clear: clear) {
             Menu {
                 ForEach(folders, id: \.self) { folder in
                     Button(folder) { move(folder) }

@@ -140,6 +140,8 @@ enum PhotoLibrary {
 
     /// Makes one change the user approved. Deletions show iOS's own confirmation first.
     static func apply(_ change: LibraryChange) async -> ChangeReport {
+        // An album to delete has no assets of its own.
+        if case .deleteAlbum(let title) = change.action { return await deleteAlbum(titled: title, change: change) }
         let found = PHAsset.fetchAssets(withLocalIdentifiers: change.assetIDs, options: nil).count
         guard found > 0 else {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
@@ -166,9 +168,31 @@ enum PhotoLibrary {
                     }
                 case .setFavorite(let on):
                     assets.enumerateObjects { asset, _, _ in PHAssetChangeRequest(for: asset).isFavorite = on }
+                case .deleteAlbum:
+                    break // Handled above.
                 }
             }
             return ChangeReport(changeID: change.id, outcome: .applied, assetCount: found)
+        } catch let error as PHPhotosError where error.code == .userCancelled {
+            return ChangeReport(changeID: change.id, outcome: .declined, assetCount: 0)
+        } catch {
+            return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0, detail: error.localizedDescription)
+        }
+    }
+
+    /// Deletes a regular album, as Photos does: its photos stay in the library. iOS asks the user first.
+    private static func deleteAlbum(titled title: String, change: LibraryChange) async -> ChangeReport {
+        guard let album = editableAlbum(titled: title) else {
+            return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
+                                detail: "There's no album named “\(title)” on the iPhone that can be deleted.")
+        }
+        let identifier = album.localIdentifier
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                let albums = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [identifier], options: nil)
+                PHAssetCollectionChangeRequest.deleteAssetCollections(albums)
+            }
+            return ChangeReport(changeID: change.id, outcome: .applied, assetCount: 0)
         } catch let error as PHPhotosError where error.code == .userCancelled {
             return ChangeReport(changeID: change.id, outcome: .declined, assetCount: 0)
         } catch {

@@ -265,8 +265,14 @@ actor BackupStore {
         rebuilt.lastBackupByDevice = index.lastBackupByDevice
         let library = root.deletingLastPathComponent()
         for (top, ownedWithoutID) in [(root, true), (library, false)] {
-            let enumerator = fileManager.enumerator(at: top, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+            // Not .skipsHiddenFiles: sidecars are hidden. Dot-files and folders (.photobackup, ._ files)
+            // are left out by name.
+            let enumerator = fileManager.enumerator(at: top, includingPropertiesForKeys: nil, options: [])
             while let url = enumerator?.nextObject() as? URL {
+                if url.lastPathComponent.hasPrefix(".") {
+                    if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true { enumerator?.skipDescendants() }
+                    continue
+                }
                 guard url.pathExtension == "json", let sidecar = Self.readSidecar(at: url),
                       sidecar.deviceID.map({ $0 == deviceID }) ?? ownedWithoutID else { continue }
                 let folder = relativePath(of: url.deletingLastPathComponent())
@@ -555,6 +561,28 @@ actor BackupStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(sidecar).write(to: url, options: .atomic)
+        hide(url)
+    }
+
+    /// Sidecars are hidden in Finder (the hidden flag, not a name change): they're for Imago, and
+    /// cluttered every folder. They keep their names, so the layout and other tools are unchanged.
+    private static func hide(_ url: URL) {
+        var file = url
+        var values = URLResourceValues()
+        values.isHidden = true
+        try? file.setResourceValues(values)
+    }
+
+    /// Hides the sidecars written before they were hidden, once per phone folder.
+    func hideOlderSidecars() {
+        let marker = stateDirectory.appending(path: "sidecars-hidden")
+        guard !fileManager.fileExists(atPath: marker.path) else { return }
+        for record in index.assets.values {
+            guard let sidecar = record.sidecar else { continue }
+            Self.hide(root.appending(path: sidecar))
+        }
+        try? prepareStateDirectory()
+        fileManager.createFile(atPath: marker.path, contents: nil)
     }
 
     private static func readSidecar(at url: URL) -> Sidecar? {

@@ -11,6 +11,11 @@ public enum PendingChanges {
         let byID = Dictionary(assets.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         var result = assets
         for change in changes {
+            // An album deletion has no assets: it takes the album off every asset in it.
+            if case .deleteAlbum = change.action {
+                for index in result.indices { apply(change.action, to: &result[index].metadata) }
+                continue
+            }
             for id in change.assetIDs {
                 guard let index = byID[id] else { continue }
                 apply(change.action, to: &result[index].metadata)
@@ -28,7 +33,7 @@ public enum PendingChanges {
             metadata.isFavorite = on
         case .addToAlbum(let title):
             if !metadata.albums.contains(title) { metadata.albums.append(title) }
-        case .removeFromAlbum(let title):
+        case .removeFromAlbum(let title), .deleteAlbum(let title):
             metadata.albums.removeAll { $0 == title }
         }
     }
@@ -47,7 +52,11 @@ public enum PendingChanges {
     public static func albums(_ albums: [String], with changes: [LibraryChange]) -> [String] {
         var result = albums
         for change in changes {
-            if case .addToAlbum(let title) = change.action, !result.contains(title) { result.append(title) }
+            switch change.action {
+            case .addToAlbum(let title) where !result.contains(title): result.append(title)
+            case .deleteAlbum(let title): result.removeAll { $0 == title }
+            default: break
+            }
         }
         return result
     }
@@ -56,6 +65,19 @@ public enum PendingChanges {
     /// taken back instead, and assets already as asked (on the phone at its last backup, in `base`)
     /// are left out. Returns the new queue, without `change` if nothing is left of it.
     public static func queue(_ change: LibraryChange, onto pending: [LibraryChange], base: [String: AssetMetadata]) -> [LibraryChange] {
+        // Deleting an album drops the waiting changes to it: one that would create it, and adds and
+        // removes that no longer matter. It's queued unless it already is.
+        if case .deleteAlbum(let title) = change.action {
+            var queue = pending.filter { waiting in
+                switch waiting.action {
+                case .addToAlbum(let other), .removeFromAlbum(let other): other != title
+                default: true
+                }
+            }
+            let createdHere = pending.contains { $0.action == .addToAlbum(title) } && !base.values.contains { $0.albums.contains(title) }
+            if !createdHere, !queue.contains(where: { $0.action == change.action }) { queue.append(change) }
+            return queue
+        }
         let ids = Set(change.assetIDs)
         let opposite = opposite(of: change.action)
         var queue: [LibraryChange] = []
@@ -79,6 +101,7 @@ public enum PendingChanges {
             case .setFavorite(let on): metadata.isFavorite != on
             case .addToAlbum(let title): !metadata.albums.contains(title)
             case .removeFromAlbum(let title): metadata.albums.contains(title)
+            case .deleteAlbum: true
             }
         }
         guard !new.assetIDs.isEmpty else { return queue }
@@ -110,6 +133,7 @@ public enum PendingChanges {
         case .setFavorite(let on): .setFavorite(!on)
         case .addToAlbum(let title): .removeFromAlbum(title)
         case .removeFromAlbum(let title): .addToAlbum(title)
+        case .deleteAlbum: nil
         }
     }
 }

@@ -15,8 +15,12 @@ enum PhoneSection: Hashable {
 struct PhoneBrowserView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaViewerHost.self) private var viewer
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
     let device: PairedDevice
     @State private var model: PhoneLibraryModel
+    /// An album to delete, while the confirmation is up.
+    @State private var deletingAlbum: String?
     @State private var section: PhoneSection = .library
     @State private var zoom: LibraryZoom = .all
     @AppStorage("phoneTileSize") private var tileSize = 150.0
@@ -61,6 +65,17 @@ struct PhoneBrowserView: View {
             await model.load(from: server)
         }
         .onChange(of: section) { selecting = false }
+        .confirmationDialog("Delete “\(deletingAlbum ?? "")”?", isPresented: Binding(
+            get: { deletingAlbum != nil }, set: { if !$0 { deletingAlbum = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete Album", role: .destructive) {
+                guard let album = deletingAlbum else { return }
+                if section == .album(album) { section = .library }
+                PhoneActions(server: server, model: model, device: device, library: library, history: history).deleteAlbum(album)
+            }
+        } message: {
+            Text("The album is deleted on \(device.name); its photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : "when you next open Imago on it").")
+        }
         .onAppear {
             if let requested = model.requestedSection {
                 section = requested
@@ -138,6 +153,9 @@ struct PhoneBrowserView: View {
                     ForEach(model.albums, id: \.self) { album in
                         SectionRow(title: album, symbol: "rectangle.stack", detail: model.albumCounts[album, default: 0].formatted())
                             .tag(PhoneSection.album(album))
+                            .contextMenu {
+                                Button("Delete Album…", role: .destructive) { deletingAlbum = album }
+                            }
                     }
                 }
             }
@@ -747,7 +765,7 @@ struct PhoneActions {
         case .setFavorite(let on): opposite = .setFavorite(!on)
         case .addToAlbum(let title): opposite = .removeFromAlbum(title)
         case .removeFromAlbum(let title): opposite = .addToAlbum(title)
-        case .delete: return nil   // see `delete`
+        case .delete, .deleteAlbum: return nil   // see `delete` and `deleteAlbum`
         }
         server.request(action, for: model.baseAssets(ids), on: device)
         return FileHistory.Step(name: LibraryChange(action: action, assetIDs: ids).summary) { [self] in
@@ -755,7 +773,20 @@ struct PhoneActions {
         }
     }
 
-    /// Asks the phone to delete them, once each is checked against its backed-up copy. Undo withdraws it.
+    /// Asks the iPhone to delete an album, as Photos does: its photos stay in the library. Undo takes the
+    /// request back while it waits.
+    func deleteAlbum(_ title: String) {
+        let base = Dictionary(model.base.map { ($0.id, $0.metadata) }, uniquingKeysWith: { a, _ in a })
+        guard let id = server.requestAlbumDeletion(title, on: device, base: base) else { return }
+        history.record(FileHistory.Step(name: "Delete Album") { [self] in
+            server.cancelChange(id, on: device)
+            return FileHistory.Step(name: "Delete Album") { [self] in
+                deleteAlbum(title)
+                return nil
+            }
+        })
+    }
+
     /// Deletes them from the iPhone (it keeps them in its own Recently Deleted) and moves the backed-up
     /// copies to Imago's Recently Deleted on the Mac, so Put Back returns them. Undo takes both back.
     func delete(_ assets: [PhoneAsset]) {
