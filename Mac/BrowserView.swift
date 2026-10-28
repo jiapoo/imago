@@ -29,6 +29,8 @@ struct BrowserView: View {
     @AppStorage("browserTileSize") private var tileSize = 150.0
     /// A folder shows only what's directly in it, as in Finder, unless this is on.
     @AppStorage("includeSubfolders") private var includeSubfolders = false
+    /// The subfolders' cards at the top of a folder: folded away unless opened.
+    @AppStorage("showSubfolderCards") private var showSubfolderCards = false
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
     @State private var anchorFrame: CGRect?
@@ -571,14 +573,34 @@ extension BrowserView {
             }
             let inside = subfolders
             if !inside.isEmpty {
-                Text("Folders").font(.headline)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
-                    ForEach(inside) { folder in
-                        FolderCard(folder: folder, cover: library.items(in: .folder(folder.path)).first) { openFolder(folder.path) }
-                            .dropDestination(for: URL.self) { urls, _ in
-                                library.drop(urls, onto: .folder(folder.path), server: server, history: history)
-                            }
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { showSubfolderCards.toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.bold))
+                            .rotationEffect(.degrees(showSubfolderCards ? 90 : 0))
+                        Text("Folders").font(.headline)
+                        Text(inside.count.formatted()).font(.callout).foregroundStyle(.secondary)
+                        Text(showSubfolderCards ? "Hide" : "Show")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.tint)
+                            .padding(.leading, 4)
                     }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(showSubfolderCards ? "Hide the folders inside “\(parts.last ?? path)”" : "Show the folders inside “\(parts.last ?? path)”")
+                if showSubfolderCards {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
+                        ForEach(inside) { folder in
+                            FolderCard(folder: folder, covers: Array(library.items(in: .folder(folder.path)).prefix(4))) { openFolder(folder.path) }
+                                .dropDestination(for: URL.self) { urls, _ in
+                                    library.drop(urls, onto: .folder(folder.path), server: server, history: history)
+                                }
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 Text(includeSubfolders ? "In “\(parts.last ?? path)” and its folders" : "In “\(parts.last ?? path)”")
                     .font(.headline)
@@ -918,7 +940,8 @@ private struct MediaTile: View {
 /// A subfolder on its folder's page: the newest item in it, its name, and how many items it holds.
 private struct FolderCard: View {
     let folder: MediaLibrary.Folder
-    let cover: MediaItem?
+    /// Its newest few items, as a 2×2 grid like a folder's preview.
+    let covers: [MediaItem]
     var open: () -> Void
     @State private var hovering = false
 
@@ -927,8 +950,23 @@ private struct FolderCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary)
-                    if let cover {
-                        ThumbnailView(url: cover.url, bytes: cover.bytes, cornerRadius: 10, showsName: false)
+                    if covers.count == 1 {
+                        ThumbnailView(url: covers[0].url, bytes: covers[0].bytes, cornerRadius: 10, showsName: false)
+                    } else if !covers.isEmpty {
+                        Grid(horizontalSpacing: 2, verticalSpacing: 2) {
+                            ForEach(0..<2, id: \.self) { row in
+                                GridRow {
+                                    ForEach(0..<2, id: \.self) { column in
+                                        let i = row * 2 + column
+                                        if i < covers.count {
+                                            ThumbnailView(url: covers[i].url, bytes: covers[i].bytes, cornerRadius: 0, showsName: false)
+                                        } else {
+                                            Rectangle().fill(.quaternary).aspectRatio(1, contentMode: .fit)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 .aspectRatio(1, contentMode: .fit)
