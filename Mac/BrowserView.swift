@@ -15,6 +15,8 @@ struct BrowserView: View {
     let scope: MediaLibrary.Scope
     /// Inside another page (a place's panel on the map): no title or toolbar of its own.
     var embedded = false
+    /// Goes to a folder's page: a subfolder's card, the path bar, ⌘↑.
+    var openFolder: (String) -> Void = { _ in }
 
     @State private var kind: MediaLibrary.Kind = .all
     /// Large Files: only items still on an iPhone.
@@ -25,6 +27,8 @@ struct BrowserView: View {
     /// Recently Deleted too, on its own.
     @AppStorage(MediaLibrary.Source.trashKey) private var trashSourceRaw = MediaLibrary.Source.drive.raw
     @AppStorage("browserTileSize") private var tileSize = 150.0
+    /// A folder shows only what's directly in it, as in Finder, unless this is on.
+    @AppStorage("includeSubfolders") private var includeSubfolders = false
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
     @State private var anchorFrame: CGRect?
@@ -46,9 +50,11 @@ struct BrowserView: View {
     /// What the grid shows, worked out once per change to the library or the filters, not on every
     /// redraw: selecting redraws the page, and the library can have tens of thousands of items.
     private var shown: GridCache {
-        let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? source.raw : "")
+        let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? source.raw : "",
+                                subfolders: includeSubfolders)
         if cache.key != key {
-            let items = library.items(in: scope, kind: kind)
+            var items = library.items(in: scope, kind: kind)
+            if case .folder(let path) = scope, !includeSubfolders { items.removeAll { $0.folder != path } }
             cache.items = showsSource ? library.filter(items, by: source) : items
             cache.days = isFlat ? [] : Day.group(cache.items)
             cache.ids = Set(cache.items.map(\.id))
@@ -107,7 +113,10 @@ struct BrowserView: View {
         ScrollViewReader { proxy in
         ScrollView {
           VStack(spacing: 0) {
-            if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
+            if case .folder(let path) = scope {
+                folderHeader(path, count: items.count).padding(.horizontal, 16)
+                phoneBanner.padding(.horizontal, 16)
+            }
             if isTrash, !items.isEmpty { trashBanner.padding(.horizontal, 16) }
             if case .deletedOnPhone = scope, !items.isEmpty { deletedOnPhoneBanner.padding(.horizontal, 16) }
             LazyVGrid(
@@ -153,10 +162,10 @@ struct BrowserView: View {
         }
     }
 
-    /// Selects these items and scrolls to the first, showing all kinds if the filter hid it.
+    /// Selects these items and scrolls to the first, showing all kinds and subfolders if the filters hid it.
     private func show(_ targets: [MediaItem]) {
         guard let first = targets.first else { return }
-        if !shown.ids.contains(first.id) { kind = .all }
+        if !shown.ids.contains(first.id) { kind = .all; includeSubfolders = true }
         library.selection = Set(targets.map(\.id))
         anchor = first.id
         scrollTarget = first.id
@@ -170,7 +179,8 @@ struct BrowserView: View {
                 ? item.deviceID.map { SourceBadge.Style(.phone($0), server: server, waiting: true) } : nil,
             badge: badge(for: item),
             source: source(of: item),
-            cameFrom: cameFrom(item)
+            cameFrom: cameFrom(item),
+            folders: otherFolders(holding: item)
         )
         .onTapGesture { click(item, in: items) }
         .contextMenu { menu(for: item) }
@@ -197,6 +207,13 @@ struct BrowserView: View {
         }
     }
 
+    /// Top right: the folders an iPhone item is also in. In a folder, not that one (or one inside it).
+    private func otherFolders(holding item: MediaItem) -> [FolderCopies.Copy] {
+        let all = library.inFolders[item.id] ?? []
+        guard case .folder(let path) = scope else { return all }
+        return all.filter { $0.folder != path && !$0.folder.hasPrefix(path + "/") }
+    }
+
     /// Bottom left, in a Folder and Recently Deleted: which iPhone it came from, wherever it is now.
     private func cameFrom(_ item: MediaItem) -> SourceBadge.Style? {
         switch scope {
@@ -216,6 +233,10 @@ struct BrowserView: View {
         case .deletedOnPhone:
             guard let days = library.daysUntilMoved(item, keeping: server.trashDays) else { return nil }
             return days == 1 ? "1 day" : "\(days) days"
+        case .folder(let path):
+            // With subfolders shown: which one each item is in.
+            guard let folder = item.folder, folder != path else { return nil }
+            return FolderMark.name(String(folder.dropFirst(path.count + 1)))
         default:
             return nil
         }
@@ -253,6 +274,7 @@ struct BrowserView: View {
                     } }(),
                     removable: library.removable(selected).count,
                     folders: otherFolders,
+                    copies: selected.flatMap(otherFolders(holding:)).map(\.url),
                     canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
                     move: { folder in moveSelected(selected, to: folder) },
                     newFolder: { naming = .newFolder(moving: selected) },
@@ -346,6 +368,11 @@ struct BrowserView: View {
 
     private func subtitle(_ items: [MediaItem]) -> String {
         guard library.state == .ready else { return "" }
+        if case .folder = scope, !subfolders.isEmpty {
+            let all = library.items(in: scope)
+            let here = includeSubfolders ? all.count(where: { $0.folder == folderPath }) : items.count
+            return "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)"
+        }
         let count = items.count == 1 ? "1 item" : "\(items.count.formatted()) items"
         return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)"
     }
@@ -493,6 +520,78 @@ private struct DialogsModifier: ViewModifier {
 extension BrowserView {
     // MARK: Pieces
 
+    // MARK: Folders
+
+    private var folderPath: String? { if case .folder(let path) = scope { path } else { nil } }
+
+    /// The folders directly inside this one.
+    private var subfolders: [MediaLibrary.Folder] {
+        guard let folderPath else { return [] }
+        func find(_ folders: [MediaLibrary.Folder]) -> MediaLibrary.Folder? {
+            for folder in folders {
+                if folder.path == folderPath { return folder }
+                if folderPath.hasPrefix(folder.path + "/"), let inside = find(folder.children ?? []) { return inside }
+            }
+            return nil
+        }
+        return find(library.folders)?.children ?? []
+    }
+
+    /// Like Finder: where this folder is (each part goes there), then its subfolders as cards, then a
+    /// heading for what's directly in it.
+    @ViewBuilder
+    private func folderHeader(_ path: String, count: Int) -> some View {
+        let parts = path.split(separator: "/").map(String.init)
+        VStack(alignment: .leading, spacing: 14) {
+            if parts.count > 1 {
+                HStack(spacing: 4) {
+                    ForEach(parts.indices, id: \.self) { i in
+                        if i > 0 { Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary) }
+                        let target = parts[...i].joined(separator: "/")
+                        if i == parts.count - 1 {
+                            Label(parts[i], systemImage: "folder.fill").fontWeight(.semibold)
+                        } else {
+                            Button { openFolder(target) } label: { Label(parts[i], systemImage: "folder") }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .help("Go to “\(parts[i])” (⌘↑ goes up one)")
+                        }
+                    }
+                }
+                .font(.callout)
+                .labelStyle(.titleAndIcon)
+            }
+            let inside = subfolders
+            if !inside.isEmpty {
+                Text("Folders").font(.headline)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
+                    ForEach(inside) { folder in
+                        FolderCard(folder: folder, cover: library.items(in: .folder(folder.path)).first) { openFolder(folder.path) }
+                            .dropDestination(for: URL.self) { urls, _ in
+                                library.drop(urls, onto: .folder(folder.path), server: server, history: history)
+                            }
+                    }
+                }
+                Text(includeSubfolders ? "In “\(parts.last ?? path)” and its folders" : "In “\(parts.last ?? path)”")
+                    .font(.headline)
+                    + Text(includeSubfolders ? "" : count == 0 ? "  Nothing directly in it" : "  \(count.formatted()) \(count == 1 ? "item" : "items")")
+                    .font(.callout).foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        // ⌘↑: up one folder, as in Finder.
+        .background {
+            if parts.count > 1 {
+                Button("Enclosing Folder") { openFolder(parts.dropLast().joined(separator: "/")) }
+                    .keyboardShortcut(.upArrow, modifiers: .command)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
     private var title: String {
         switch scope {
         case .all: "Library"
@@ -522,6 +621,14 @@ extension BrowserView {
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 TileSizeSlider(size: $tileSize)
+                if case .folder = scope, !subfolders.isEmpty {
+                    Toggle(isOn: $includeSubfolders) {
+                        Label("Subfolders", systemImage: includeSubfolders ? "checkmark.square.fill" : "square")
+                    }
+                    .toggleStyle(.button)
+                    .labelStyle(.titleAndIcon)
+                    .help(includeSubfolders ? "Showing what's in the subfolders too" : "Show what's in the subfolders too")
+                }
                 if case .folder(let path) = scope {
                     Button { server.revealInFinder(server.foldersURL.appending(path: path)) } label: {
                         Label("Show in Finder", systemImage: "folder")
@@ -566,6 +673,8 @@ extension BrowserView {
             case .all:
                 ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle.angled",
                                        description: Text("Photos and videos appear here as your iPhones back up."))
+            case .folder where !subfolders.isEmpty:
+                EmptyView() // The subfolders' cards are there, and the header says nothing is directly in it.
             case .folder(let path) where source != .drive && !library.items(in: scope).isEmpty:
                 ContentUnavailableView(
                     "Nothing here is on \(sourceName)", systemImage: "iphone.slash",
@@ -607,6 +716,10 @@ extension BrowserView {
         Button("Open") { openViewer(on: item) }
         OpenWithMenu(urls: targets.map(\.url))
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
+        let copies = targets.flatMap(otherFolders(holding:)).map(\.url)
+        if !copies.isEmpty {
+            Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
+        }
         Divider()
         if isTrash {
             Button("Put Back") { putBack(targets) }
@@ -684,6 +797,10 @@ extension BrowserView {
                 }
                 rows.append(.init(label: "Size", value: item.bytes.bytes))
                 if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
+                let copies = (library.inFolders[item.id] ?? []).filter { $0.folder != item.folder }
+                if !copies.isEmpty {
+                    rows.append(.init(label: copies.count == 1 ? "Also in" : "Also in Folders", value: copies.map { FolderMark.name($0.folder) }.joined(separator: "\n")))
+                }
                 let from = item.deviceID.flatMap { devices[$0] }
                 switch library.origin(of: item) {
                 case .phone: rows.append(.init(label: "Source", value: "On \(from ?? "an iPhone")"))
@@ -720,6 +837,7 @@ private final class GridCache {
         var scope: MediaLibrary.Scope
         var kind: MediaLibrary.Kind
         var source: String
+        var subfolders: Bool
     }
     var key: Key?
     var items: [MediaItem] = []
@@ -740,6 +858,8 @@ private struct MediaTile: View {
     var source: SourceBadge.Style? = nil
     /// Bottom left: which iPhone it came from.
     var cameFrom: SourceBadge.Style? = nil
+    /// Top right: the folders it's also in.
+    var folders: [FolderCopies.Copy] = []
 
     var body: some View {
         ThumbnailView(url: item.url, bytes: item.bytes, cornerRadius: 6, showsName: false)
@@ -752,6 +872,9 @@ private struct MediaTile: View {
                         .foregroundStyle(.white)
                         .padding(6)
                 }
+            }
+            .overlay(alignment: .topTrailing) {
+                if !folders.isEmpty { FolderMark(folders: folders).padding(6) }
             }
             .overlay(alignment: .bottom) {
                 if item.isVideo || source != nil || cameFrom != nil || pendingRemoval != nil {
@@ -782,6 +905,109 @@ private struct MediaTile: View {
             .modifier(SelectedOverlay(selected: selected))
             .contentShape(Rectangle())
             .help(item.name)
+    }
+}
+
+/// A subfolder on its folder's page: the newest item in it, its name, and how many items it holds.
+private struct FolderCard: View {
+    let folder: MediaLibrary.Folder
+    let cover: MediaItem?
+    var open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary)
+                    if let cover {
+                        ThumbnailView(url: cover.url, bytes: cover.bytes, cornerRadius: 10, showsName: false)
+                    }
+                }
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 28, height: 24)
+                        .background(Color.imago, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .shadow(color: .black.opacity(0.3), radius: 2)
+                        .padding(8)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.imago.opacity(hovering ? 0.8 : 0), lineWidth: 2)
+                }
+                Text(folder.name).font(.callout.weight(.semibold)).lineLimit(1)
+                Text("\(folder.count.formatted()) \(folder.count == 1 ? "item" : "items") · \(folder.bytes.bytes)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Open “\(folder.name)”. Drop photos here to put them in it.")
+    }
+}
+
+/// That an iPhone item is also in folders: a folder in a dark capsule, with how many when it's in
+/// more than one. Clicking it shows the file in Finder (a menu of them when there are several).
+struct FolderMark: View {
+    let folders: [FolderCopies.Copy]
+
+    var body: some View {
+        Group {
+            if folders.count == 1 {
+                Button { Self.reveal(folders[0]) } label: { capsule }
+                    .buttonStyle(.plain)
+            } else {
+                Menu {
+                    ForEach(folders, id: \.self) { copy in
+                        Button("Show in “\(Self.name(copy.folder))”") { Self.reveal(copy) }
+                    }
+                } label: { capsule }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+            }
+        }
+        .help(Self.help(folders))
+        .accessibilityLabel(folders.count == 1 ? "Show the copy in Finder" : "Show a copy in Finder")
+    }
+
+    private var capsule: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "folder.fill").font(.system(size: 9, weight: .semibold))
+            if folders.count > 1 {
+                Text(folders.count.formatted()).font(.system(size: 10, weight: .bold).monospacedDigit())
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 5)
+        .frame(height: 18)
+        .background(.black.opacity(0.55), in: Capsule())
+        .overlay(Capsule().strokeBorder(.white.opacity(0.85), lineWidth: 1))
+        .shadow(color: .black.opacity(0.3), radius: 1.5)
+        .contentShape(Capsule())
+    }
+
+    /// "Videos/tennis/2026" → "Videos › tennis › 2026".
+    static func name(_ folder: String) -> String {
+        folder.replacingOccurrences(of: "/", with: " › ")
+    }
+
+    static func reveal(_ copy: FolderCopies.Copy) {
+        NSWorkspace.shared.activateFileViewerSelecting([copy.url])
+    }
+
+    /// "Also in Videos › tennis › 2026. Click to show it in Finder."
+    static func help(_ folders: [FolderCopies.Copy]) -> String {
+        let names = folders.map { name($0.folder) }
+        return names.count == 1
+            ? "Also in \(names[0]). Click to show it in Finder."
+            : "Also in:\n" + names.joined(separator: "\n") + "\nClick to show one in Finder."
     }
 }
 
@@ -907,6 +1133,8 @@ private struct SelectionBar: View {
     let sources: String
     let removable: Int
     let folders: [String]
+    /// Copies of these in the folders, for Open Copy in Finder.
+    var copies: [URL] = []
     let canPutBack: Bool
     var move: (String?) -> Void
     var newFolder: () -> Void
@@ -935,6 +1163,13 @@ private struct SelectionBar: View {
             .help(transferMode == TransferMode.move.rawValue
                   ? "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)"
                   : "Copy into a folder (Copy | Move in the toolbar)")
+
+            if !copies.isEmpty {
+                Button { NSWorkspace.shared.activateFileViewerSelecting(copies) } label: {
+                    Label("Open Copy in Finder", systemImage: "folder.badge.gearshape")
+                }
+                .help(copies.count == 1 ? "Show the copy in a folder on the drive in Finder" : "Show the \(copies.count) copies in folders on the drive in Finder")
+            }
 
             if removable > 0 {
                 Button(action: removeFromPhone) {

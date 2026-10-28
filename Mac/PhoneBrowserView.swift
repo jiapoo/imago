@@ -580,7 +580,8 @@ struct PhoneGrid: View {
         let file = model.files[asset.id]
         return PhoneTile(asset: asset, url: file ?? server.previews[device.id]?[asset.id], thumbnailBytes: model.thumbnailBytes[asset.id] ?? 0,
                          selected: selection.selected.contains(asset.id),
-                         waiting: model.waiting.contains(asset.id), dimmed: isDeleting)
+                         waiting: model.waiting.contains(asset.id), dimmed: isDeleting,
+                         folders: library.inFolders["\(device.id)/\(asset.id)"] ?? [])
             .onTapGesture { click(asset) }
             .contextMenu { menu(for: asset) }
             .onAppear { if file == nil { server.requestPreview(asset.id, on: device) } }
@@ -615,6 +616,10 @@ struct PhoneGrid: View {
             Button("Open") { openViewer(on: asset) }
             OpenWithMenu(urls: targets.compactMap { model.files[$0.id] })
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.compactMap { model.files[$0.id] }) }
+            let copies = actions.folderCopies(targets)
+            if !copies.isEmpty {
+                Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
+            }
             Divider()
         }
         if isDeleting {
@@ -733,6 +738,8 @@ struct PhoneTile: View {
     var waiting = false
     var dimmed = false
     var badge: String? = nil
+    /// Folders its backup is in, or a copy of it.
+    var folders: [FolderCopies.Copy] = []
 
     var body: some View {
         Group {
@@ -745,6 +752,9 @@ struct PhoneTile: View {
         }
         .opacity(dimmed ? 0.55 : 1)
         .overlay(alignment: .bottom) { strip }
+        .overlay(alignment: .topTrailing) {
+            if !folders.isEmpty { FolderMark(folders: folders).padding(6) }
+        }
         .overlay(alignment: .topLeading) {
             HStack(spacing: 4) {
                 if let badge {
@@ -893,6 +903,11 @@ struct PhoneActions {
         })
     }
 
+    /// The copies of these in the folders (see `MediaLibrary.inFolders`).
+    func folderCopies(_ assets: [PhoneAsset]) -> [URL] {
+        assets.flatMap { library.inFolders["\(device.id)/\($0.id)"] ?? [] }.map(\.url)
+    }
+
     /// Every folder on the drive, by path.
     var folders: [String] {
         func flatten(_ folders: [MediaLibrary.Folder]) -> [String] { folders.flatMap { [$0.path] + flatten($0.children ?? []) } }
@@ -959,6 +974,13 @@ struct PhoneSelectionBar: View {
                 .help(transferMode == TransferMode.move.rawValue
                       ? "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)"
                       : "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)")
+                let copies = actions.folderCopies(selected)
+                if !copies.isEmpty {
+                    Button { NSWorkspace.shared.activateFileViewerSelecting(copies) } label: {
+                        Label("Open Copy in Finder", systemImage: "folder.badge.gearshape")
+                    }
+                    .help(copies.count == 1 ? "Show the copy in a folder on the drive in Finder" : "Show the \(copies.count) copies in folders on the drive in Finder")
+                }
                 if let album {
                     Button { actions.request(.removeFromAlbum(album), selected) } label: {
                         Label("Remove from Album", systemImage: "rectangle.stack.badge.minus")

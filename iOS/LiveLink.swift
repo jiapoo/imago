@@ -1,6 +1,7 @@
 import Foundation
 import ImagoKit
 import Observation
+import Photos
 
 /// While Imago is open, keeps a connection to the Mac so changes made there arrive right away
 /// (protocol version 5), and answers the Mac's requests for previews of photos it hasn't backed up
@@ -17,6 +18,9 @@ final class LiveLink {
     private let client: BackupClient
     private var task: Task<Void, Never>?
     private var peer: PeerConnection?
+    /// Sends the library list after a change, a moment after the last one (see `scheduleLibraryList`).
+    private var librarySend: Task<Void, Never>?
+    private var watcher: LibraryWatcher?
 
     init(client: BackupClient) {
         self.client = client
@@ -35,6 +39,7 @@ final class LiveLink {
         client.sendReportsNow = nil
         client.requestRestoreNow = nil
         client.restoresInterrupted()
+        stopWatching()
         state = .off
     }
 
@@ -57,6 +62,7 @@ final class LiveLink {
             client.sendReportsNow = nil
             client.requestRestoreNow = nil
             client.restoresInterrupted()
+            stopWatching()
             peer = nil
             if Task.isCancelled { break }
             state = .connecting
@@ -73,8 +79,10 @@ final class LiveLink {
         defer { peer.cancel() }
         self.peer = peer
         try await peer.send(.control(.live))
-        client.sendReportsNow = { reports in
+        client.sendReportsNow = { [weak self] reports in
             Task { try? await peer.send(.control(.changeReport(reports))) }
+            // What was done changed the library: the Mac sees it without a backup.
+            self?.scheduleLibraryList()
         }
         client.requestRestoreNow = { change in
             Task { try? await peer.send(.control(.restoreRequest(change.id))) }
@@ -84,6 +92,10 @@ final class LiveLink {
         state = .connected
         log.info("Live link connected")
         client.resumeWaitingRestores()
+        // Whatever happened in Photos while Imago was away (deleted, favorited, added to an album)
+        // reaches the Mac now, and anything that happens while it's open, a moment after.
+        watcher = LibraryWatcher { [weak self] in self?.scheduleLibraryList() }
+        scheduleLibraryList(after: .zero)
 
         while let frame = try await replies.next(isolation: #isolation) {
             switch frame {
@@ -103,10 +115,66 @@ final class LiveLink {
                 await client.finishRestore(await restore.finish(changeID, missing: missing))
             case .control(.unavailable(let reason)):
                 throw BackupClient.ClientError.refused(reason)
+            case .control(.need):
+                break // The library list's answer; the files come at the next backup.
             default:
                 break
             }
         }
+    }
+}
+
+extension LiveLink {
+    /// Sends the library list to the Mac `delay` after the last call, so a burst of changes (a review,
+    /// edits in Photos) goes as one. The Mac updates what's on this iPhone, and what was deleted on
+    /// it, as at a backup; the files themselves still come at a backup.
+    fileprivate func scheduleLibraryList(after delay: Duration = .seconds(2)) {
+        guard let peer else { return }
+        librarySend?.cancel()
+        librarySend = Task {
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, PHPhotoLibrary.authorizationStatus(for: .readWrite).canRead else { return }
+            let (manifest, albums) = await Task.detached(priority: .utility) {
+                (PhotoLibrary.scan(), PhotoLibrary.albumTitles())
+            }.value
+            guard !Task.isCancelled else { return }
+            do {
+                for start in stride(from: 0, to: manifest.count, by: 500) {
+                    try await peer.send(.control(.manifest(Array(manifest[start..<min(start + 500, manifest.count)]))))
+                }
+                try await peer.send(.control(.manifestEnd(albums: albums)))
+                log.info("Sent the library list (\(manifest.count) items) over the live link")
+            } catch {
+                log.info("Couldn't send the library list: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    fileprivate func stopWatching() {
+        librarySend?.cancel()
+        librarySend = nil
+        watcher = nil
+    }
+}
+
+private extension PHAuthorizationStatus {
+    var canRead: Bool { self == .authorized || self == .limited }
+}
+
+/// Calls `changed` on the main actor whenever the Photos library changes, while it's kept.
+private final class LibraryWatcher: NSObject, PHPhotoLibraryChangeObserver, @unchecked Sendable {
+    private let changed: @MainActor () -> Void
+
+    init(changed: @escaping @MainActor () -> Void) {
+        self.changed = changed
+        super.init()
+        PHPhotoLibrary.shared().register(self)
+    }
+
+    deinit { PHPhotoLibrary.shared().unregisterChangeObserver(self) }
+
+    func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor in changed() }
     }
 }
 

@@ -23,6 +23,8 @@ struct MediaItem: Identifiable, Hashable, Sendable {
     /// Where it was taken, when the iPhone knew.
     var latitude: Double? = nil
     var longitude: Double? = nil
+    /// An iPhone item's shown file, as it arrived: to find copies of it in the folders.
+    var original: FolderCopies.Fingerprint? = nil
 }
 
 /// An item in Recently Deleted, and where Put Back returns it.
@@ -170,6 +172,10 @@ final class MediaLibrary {
     private var loadedRevision: Int?
     /// A full re-read of the library after work that already updated what's on screen; see `refreshQuietly`.
     private var quietRefresh: Task<Void, Never>?
+    /// For each iPhone item (by ID), the folders it's in: its own backup moved into one, or the same
+    /// file copied into it. See `findFolderCopies`.
+    private(set) var inFolders: [String: [FolderCopies.Copy]] = [:]
+    private var folderCopySearch: Task<Void, Never>?
     /// Each iPhone's library list as last read, and what it was read from (the list's date and how many
     /// files were stored). Reading a big one takes a while, and most reloads (a move, a put-back) don't
     /// change it.
@@ -219,7 +225,8 @@ final class MediaLibrary {
                     bytes: entry.files.reduce(0) { $0 + $1.size },
                     folder: Self.folderPath(of: display.url, in: foldersURL, reserved: reserved),
                     deviceID: device.id, assetID: entry.assetID,
-                    latitude: entry.metadata.location?.latitude, longitude: entry.metadata.location?.longitude
+                    latitude: entry.metadata.location?.latitude, longitude: entry.metadata.location?.longitude,
+                    original: .init(size: display.size, sha256: display.sha256)
                 )
                 if Self.isInside(display.url, trashURL) {
                     item.folder = nil
@@ -290,6 +297,7 @@ final class MediaLibrary {
         folders = Self.tree(folderPaths, items: items)
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
         state = .ready
+        findFolderCopies(server)
 
         // Deleted on an iPhone: note when each was first seen missing, and after its days, move it to
         // Recently Deleted (where it gets the same days again before it's gone for good).
@@ -979,6 +987,24 @@ final class MediaLibrary {
         await server.refreshSummaries()
     }
 
+    /// Works out, in the background, which iPhone items are also in the folders (`inFolders`).
+    /// Files are read only when an iPhone item has the same size, and each one only once: what it
+    /// holds is kept in `.photobackup/folder-hashes.json` until the file changes.
+    func findFolderCopies(_ server: BackupServer) {
+        folderCopySearch?.cancel()
+        let phone = items.filter { $0.deviceID != nil }
+        let files = items.filter { $0.deviceID == nil && $0.folder != nil }
+        let cacheURL = server.location.url.appending(path: ".photobackup/folder-hashes.json")
+        folderCopySearch = Task { [weak self] in
+            let found = await Task.detached(priority: .utility) {
+                FolderCopies.find(phone: phone, files: files, cacheURL: cacheURL)
+            }.value
+            guard !Task.isCancelled, let self, found != self.inFolders else { return }
+            self.inFolders = found
+            self.revision += 1
+        }
+    }
+
     /// Reads the whole library again in the background, to catch what the quick updates can't know
     /// (a new folder's count, a file's numbered name). Several in a row become one.
     func refreshQuietly(_ server: BackupServer) {
@@ -1195,5 +1221,67 @@ extension Array {
     /// The elements in runs of `size`.
     func chunked(_ size: Int) -> [ArraySlice<Element>] {
         stride(from: 0, to: count, by: size).map { self[$0..<Swift.min($0 + size, count)] }
+    }
+}
+
+/// Finds the folders an iPhone item is in: where its backup was moved, and where an identical file
+/// was copied (Copy | Move, Finder, AirDrop).
+enum FolderCopies {
+    struct Fingerprint: Hashable, Sendable {
+        var size: UInt64
+        var sha256: String
+    }
+
+    /// One place an item is in: the folder ("Videos/tennis") and the file there.
+    struct Copy: Hashable, Sendable {
+        var folder: String
+        var url: URL
+    }
+
+    /// A folder file's content, as last read.
+    private struct Known: Codable {
+        var size: UInt64
+        var modified: Date
+        var sha256: String
+    }
+
+    static func find(phone: [MediaItem], files: [MediaItem], cacheURL: URL) -> [String: [Copy]] {
+        var found: [String: [Copy]] = [:]
+        var bySHA: [String: [String]] = [:]
+        var sizes: Set<UInt64> = []
+        for item in phone {
+            if let folder = item.folder { found[item.id, default: []].append(Copy(folder: folder, url: item.url)) }
+            if let original = item.original {
+                bySHA[original.sha256, default: []].append(item.id)
+                sizes.insert(original.size)
+            }
+        }
+        var cache = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode([String: Known].self, from: $0) } ?? [:]
+        var changed = false
+        for file in files {
+            guard let folder = file.folder, sizes.contains(file.bytes) else { continue }
+            if Task.isCancelled { break }
+            let modified = (try? file.url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let sha: String
+            if let known = cache[file.url.path], known.size == file.bytes, known.modified == modified {
+                sha = known.sha256
+            } else {
+                guard let read = try? FileHasher.sha256(of: file.url) else { continue }
+                sha = read
+                cache[file.url.path] = Known(size: file.bytes, modified: modified, sha256: read)
+                changed = true
+            }
+            for id in bySHA[sha] ?? [] {
+                found[id, default: []].append(Copy(folder: folder, url: file.url))
+            }
+        }
+        // Forget files that are gone.
+        let present = Set(files.map(\.url.path))
+        if cache.keys.contains(where: { !present.contains($0) }) {
+            cache = cache.filter { present.contains($0.key) }
+            changed = true
+        }
+        if changed, let data = try? JSONEncoder().encode(cache) { try? data.write(to: cacheURL, options: .atomic) }
+        return found.mapValues { $0.sorted { ($0.folder, $0.url.lastPathComponent) < ($1.folder, $1.url.lastPathComponent) } }
     }
 }

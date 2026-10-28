@@ -51,7 +51,7 @@ struct MainView: View {
                 case .large:
                     BrowserView(scope: .large)
                 case .folder(let path):
-                    BrowserView(scope: .folder(path))
+                    BrowserView(scope: .folder(path), openFolder: { selection = .folder($0) })
                 case .trash:
                     BrowserView(scope: .trash)
                 case .storage:

@@ -344,6 +344,8 @@ final class BackupServer {
                     try await peer.send(.control(.welcome(serverName: serverName)))
 
                 case .control(.manifest(let entries)):
+                    // At a backup, and over the live link after something changed on the iPhone: then
+                    // only the list is wanted, not the files (the iPhone ignores the answer).
                     guard let store else { peer.cancel(); break }
                     manifest += entries
                     let needs = await store.resumePoints(for: entries)
@@ -381,7 +383,9 @@ final class BackupServer {
                     manifest = []
                     let pending = sendable(await store.changeQueue().pending, to: device.id)
                     try await peer.send(.control(.changes(pending)))
-                    if !pending.isEmpty {
+                    // Over the live link the list comes after each change on the iPhone, and the
+                    // changes went when it connected: no need to say so again.
+                    if !pending.isEmpty, !isLive {
                         addLog("Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review", symbol: "iphone.and.arrow.forward")
                     }
                     libraryChanged(device.id)

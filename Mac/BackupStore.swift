@@ -41,6 +41,7 @@ actor BackupStore {
             var kind: ResourceKind
             var url: URL
             var size: UInt64
+            var sha256: String
         }
 
         var assetID: String
@@ -320,7 +321,7 @@ actor BackupStore {
             guard let metadata = index.assets[assetID]?.metadata else { return nil }
             let files = keys.compactMap { key -> CatalogEntry.File? in
                 guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
-                return .init(kind: kind, url: url(of: stored.relativePath), size: stored.size)
+                return .init(kind: kind, url: url(of: stored.relativePath), size: stored.size, sha256: stored.sha256)
             }
             return CatalogEntry(assetID: assetID, metadata: metadata, files: files)
         }
