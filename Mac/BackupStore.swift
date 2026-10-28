@@ -211,6 +211,11 @@ actor BackupStore {
     }
 
     /// Closes open partial files and writes the index. Call when a session ends.
+    /// Saves the index if anything changed since it was last saved.
+    func saveIndexIfChanged() {
+        if unsavedChanges > 0 { try? saveIndex() }
+    }
+
     func flush() {
         for file in inFlight.values { try? file.handle.close() }
         inFlight.removeAll()
@@ -227,6 +232,15 @@ actor BackupStore {
         summary.lastBackup = index.lastBackupByDevice.values.max()
         summary.lastReceived = index.resources.values.map(\.storedAt).filter { $0 != .distantPast }.max()
         return summary
+    }
+
+    /// The file an asset shows as, where it is now (see `CatalogEntry.display`).
+    func displayFile(of assetID: String) -> URL? {
+        let files = (resourcesByAsset(only: [assetID])[assetID] ?? []).compactMap { key -> (kind: ResourceKind, url: URL)? in
+            guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
+            return (kind, url(of: stored.relativePath))
+        }
+        return (files.first { $0.kind == .photo || $0.kind == .video } ?? files.first { $0.kind == .fullSizePhoto || $0.kind == .fullSizeVideo })?.url
     }
 
     /// How many files are stored: with the library list's date, tells whether `phoneLibrary()` would
@@ -314,9 +328,11 @@ actor BackupStore {
 
     /// Moves assets' files and sidecars into `directory`, or back into the dated folders when it's nil.
     /// The index follows them, so the phone isn't asked for them again.
-    func move(_ assetIDs: [String], to directory: URL?) throws {
+    /// With `saving` off, the index is saved later (`saveIndexIfChanged`): saving it after every item
+    /// of a big move would take longer than the moves.
+    func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true) throws {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
-        defer { try? saveIndex() }
+        defer { if saving { try? saveIndex() } else { unsavedChanges += 1 } }
         for (assetID, keys) in byAsset {
             guard let metadata = index.assets[assetID]?.metadata else { continue }
             let target = directory.map(relativePath(of:))

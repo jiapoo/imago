@@ -474,14 +474,7 @@ extension BrowserView {
     private var toolbar: some ToolbarContent {
         if !viewer.isOpen {
             ToolbarItemGroup(placement: .principal) {
-                Picker("Show", selection: $kind) {
-                    Label("All", systemImage: "square.grid.2x2").tag(MediaLibrary.Kind.all)
-                    Label("Photos", systemImage: "photo").tag(MediaLibrary.Kind.photos)
-                    Label("Videos", systemImage: "video").tag(MediaLibrary.Kind.videos)
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.titleOnly)
-                .help("Show photos, videos or both")
+                KindPicker(selection: $kind)
 
                 if showsSource {
                     SourcePicker(selection: $sourceRaw)

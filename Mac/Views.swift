@@ -83,6 +83,19 @@ struct MainView: View {
             // the middle of the page, above everything. Quick work never shows it.
             .overlay { ActivityOverlay(activity: library.activity) }
             .toolbar {
+                // On every page, the viewer too: what Edit › Undo and Redo do, named in their help.
+                ToolbarItemGroup(placement: .navigation) {
+                    Button { Task { await history.undo() } } label: {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(!history.canUndo)
+                    .help(history.canUndo ? "\(history.undoTitle) (⌘Z)" : "Nothing to undo")
+                    Button { Task { await history.redo() } } label: {
+                        Label("Redo", systemImage: "arrow.uturn.forward")
+                    }
+                    .disabled(!history.canRedo)
+                    .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : "Nothing to redo")
+                }
                 if !viewer.isOpen {
                     if pageHasPhotos {
                         ToolbarItem(placement: .primaryAction) { transferPicker }
@@ -203,11 +216,11 @@ private struct ActivityCard: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            ActivityRing(fraction: activity.total > 0 ? activity.fraction : nil)
+            ActivityRing(fraction: activity.total > 0 && !activity.finishing ? activity.fraction : nil)
                 .frame(width: 76, height: 76)
             VStack(spacing: 4) {
                 Text(activity.title).font(.headline)
-                if activity.total > 1 {
+                if activity.total > 1, !activity.finishing {
                     Text("\(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())")
                         .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                         .contentTransition(.numericText())

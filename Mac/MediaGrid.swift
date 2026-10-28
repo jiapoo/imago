@@ -538,6 +538,33 @@ struct TileSizeSlider: View {
 
 // MARK: - Show
 
+/// All | Photos | Videos, in a page's toolbar.
+struct KindPicker: View {
+    @Binding var selection: MediaLibrary.Kind
+
+    var body: some View {
+        Picker("Show", selection: $selection) {
+            Label("All", systemImage: "square.grid.2x2").tag(MediaLibrary.Kind.all)
+            Label("Photos", systemImage: "photo").tag(MediaLibrary.Kind.photos)
+            Label("Videos", systemImage: "video").tag(MediaLibrary.Kind.videos)
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.titleOnly)
+        .help("Show photos, videos or both")
+    }
+}
+
+extension MediaLibrary.Kind {
+    /// Whether something that is (or isn't) a video belongs.
+    func includes(isVideo: Bool) -> Bool {
+        switch self {
+        case .all: true
+        case .photos: !isVideo
+        case .videos: isVideo
+        }
+    }
+}
+
 /// What a library view shows: on all iPhones (the default), on one, or everything on the backup drive.
 struct SourcePicker: View {
     @Environment(BackupServer.self) private var server

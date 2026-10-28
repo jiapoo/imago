@@ -127,6 +127,8 @@ final class MediaLibrary {
         var total: Int
         /// For one big file: bytes so far, and its size.
         var bytes: (done: UInt64, total: UInt64)?
+        /// The work is done and the library is catching up: no way to tell how far, so the ring just turns.
+        var finishing = false
 
         var fraction: Double {
             guard total > 0 else { return 0 }
@@ -136,7 +138,7 @@ final class MediaLibrary {
 
         static func == (a: Activity, b: Activity) -> Bool {
             a.title == b.title && a.detail == b.detail && a.done == b.done && a.total == b.total
-                && a.bytes?.done == b.bytes?.done && a.bytes?.total == b.bytes?.total
+                && a.bytes?.done == b.bytes?.done && a.bytes?.total == b.bytes?.total && a.finishing == b.finishing
         }
     }
 
@@ -166,6 +168,8 @@ final class MediaLibrary {
     var error: String?
 
     private var loadedRevision: Int?
+    /// A full re-read of the library after work that already updated what's on screen; see `refreshQuietly`.
+    private var quietRefresh: Task<Void, Never>?
     /// Each iPhone's library list as last read, and what it was read from (the list's date and how many
     /// files were stored). Reading a big one takes a while, and most reloads (a move, a put-back) don't
     /// change it.
@@ -601,7 +605,13 @@ final class MediaLibrary {
         let trashURL = server.trashURL
         activity = Activity(title: "Deleting for good", done: 0, total: items.count)
         defer { activity = nil }
-        await perform(server) {
+        await perform(server, quietly: true) {
+            defer {
+                let gone = Set(items.map(\.id))
+                trash.removeAll { gone.contains($0.id) }
+                selection.subtract(gone)
+                revision += 1
+            }
             for (deviceID, assets) in Dictionary(grouping: items.map(\.item).filter { $0.deviceID != nil }, by: { $0.deviceID! }) {
                 guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
                 for batch in assets.chunked(25) {
@@ -677,6 +687,8 @@ final class MediaLibrary {
         }
         // Each moved item as it was, and how to find it now.
         var moved: [(was: MediaItem, now: ItemRef)] = []
+        // Where each one went, to show at once (see `showMoves`).
+        var landed: [(was: MediaItem, from: Place, to: Place, url: URL)] = []
         if let to = wanted.first?.to {
             let title = switch to {
             case .trash: "Deleting"
@@ -693,23 +705,31 @@ final class MediaLibrary {
                 Thumbnails.shared.carryOver(from: was.url, to: now.url, bytes: was.bytes)
             }
         }
-        await perform(server) {
+        await perform(server, quietly: true) {
+            defer { showMoves(landed, server: server) }
             let phoneMoves = wanted.filter { $0.item.deviceID != nil }
             for (key, group) in Dictionary(grouping: phoneMoves, by: { "\($0.item.deviceID!)|\(String(describing: $0.to))" }) {
                 guard let deviceID = key.split(separator: "|").first.map(String.init),
                       let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device),
                       let to = group.first?.to else { continue }
                 if let target = directory(to) { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
-                // In batches, so the progress panel moves (and a cross-drive move shows each step).
-                for batch in group.chunked(25) {
-                    activity?.detail = batch.first?.item.name
-                    try await store.move(batch.compactMap(\.item.assetID), to: directory(to))
-                    for move in batch {
-                        done.append((Self.ref(move.item), move.from))
-                        moved.append((move.item, Self.ref(move.item)))
+                // One at a time, so the ring moves with each item; the index is saved once at the end.
+                for move in group {
+                    activity?.detail = move.item.name
+                    do {
+                        try await store.move([move.item.assetID].compactMap { $0 }, to: directory(to), saving: false)
+                    } catch {
+                        await store.saveIndexIfChanged()
+                        throw error
                     }
-                    activity?.done += batch.count
+                    done.append((Self.ref(move.item), move.from))
+                    moved.append((move.item, Self.ref(move.item)))
+                    if let assetID = move.item.assetID, let url = await store.displayFile(of: assetID) {
+                        landed.append((move.item, move.from, to, url))
+                    }
+                    activity?.done += 1
                 }
+                await store.saveIndexIfChanged()
             }
             for move in wanted where move.item.deviceID == nil {
                 guard let target = directory(move.to) else { continue }
@@ -720,6 +740,7 @@ final class MediaLibrary {
                 activity?.done += 1
                 done.append((.file(destination.lexicallyStandardized), move.from))
                 moved.append((move.item, .file(destination.lexicallyStandardized)))
+                landed.append((move.item, move.from, move.to, destination.lexicallyStandardized))
                 if move.to == .trash { deleted[TrashManifest.key(forFile: destination)] = .init(deletedAt: .now, from: move.from) }
                 if move.from == .trash { restored.append(TrashManifest.key(forFile: move.item.url)) }
             }
@@ -761,9 +782,21 @@ final class MediaLibrary {
             // One asset at a time, so the progress panel moves; reading a big video takes a while.
             for (assetID, assetFiles) in files {
                 activity?.detail = assetFiles.first?.url.lastPathComponent
-                let matches = await Task.detached(priority: .userInitiated) {
-                    !assetFiles.isEmpty && assetFiles.allSatisfy { (try? FileHasher.sha256(of: $0.url)) == $0.sha256 }
+                // A big video takes a while to read: the ring follows its bytes.
+                let size = assetFiles.reduce(UInt64(0)) { $0 + ((try? $1.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0) }
+                activity?.bytes = size > 64 << 20 ? (0, size) : nil
+                let matches = await Task.detached(priority: .userInitiated) { [weak self] in
+                    var before: UInt64 = 0
+                    return !assetFiles.isEmpty && assetFiles.allSatisfy { file in
+                        let sum = try? FileHasher.sha256(of: file.url) { read in
+                            let done = before + read
+                            Task { @MainActor in if self?.activity?.bytes != nil { self?.activity?.bytes = (done, size) } }
+                        }
+                        before += (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0
+                        return sum == file.sha256
+                    }
                 }.value
+                activity?.bytes = nil
                 if matches { verified.insert(assetID) }
                 activity?.done += 1
             }
@@ -926,15 +959,92 @@ final class MediaLibrary {
 
     // MARK: Helpers
 
-    private func perform(_ server: BackupServer, _ work: () async throws -> Void) async {
+    /// Does file work, then reads the library again. `quietly`: the work already updated what's on
+    /// screen, so the re-read (every item, every folder on the drive) happens in the background.
+    private func perform(_ server: BackupServer, quietly: Bool = false, _ work: () async throws -> Void) async {
         do {
             try await work()
         } catch {
             self.error = error.localizedDescription
         }
+        if quietly {
+            refreshQuietly(server)
+            return
+        }
         activity?.detail = "Updating the library"
+        activity?.finishing = true
         await load(from: server, force: true)
         await server.refreshSummaries()
+    }
+
+    /// Reads the whole library again in the background, to catch what the quick updates can't know
+    /// (a new folder's count, a file's numbered name). Several in a row become one.
+    func refreshQuietly(_ server: BackupServer) {
+        quietRefresh?.cancel()
+        quietRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            await load(from: server, force: true)
+            await server.refreshSummaries()
+        }
+    }
+
+    /// Shows moved items where they went, straight away: in their new folder, in Recently Deleted, or
+    /// back out of it. The quiet re-read afterwards confirms it.
+    private func showMoves(_ landed: [(was: MediaItem, from: Place, to: Place, url: URL)], server: BackupServer) {
+        guard !landed.isEmpty else { return }
+        let foldersURL = server.foldersURL
+        let reserved = server.reservedFolderNames
+        let oldIDs = Set(landed.map(\.was.id))
+        items.removeAll { oldIDs.contains($0.id) }
+        trash.removeAll { oldIDs.contains($0.id) }
+        var added: [MediaItem] = []
+        for move in landed {
+            var item = move.was
+            item.url = move.url
+            // A file from elsewhere is known by its path.
+            if item.deviceID == nil { item.id = move.url.path }
+            if move.to == .trash {
+                item.folder = nil
+                trash.insert(TrashedItem(item: item, deletedAt: .now, originalPlace: move.from), at: 0)
+            } else {
+                item.folder = Self.folderPath(of: move.url, in: foldersURL, reserved: reserved)
+                added.append(item)
+            }
+        }
+        if !added.isEmpty {
+            items.append(contentsOf: added)
+            items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        }
+        selection.subtract(oldIDs.subtracting(added.map(\.id)))
+        folders = Self.tree(Self.paths(of: folders), items: items)
+        revision += 1
+    }
+
+    /// Shows files just copied into folders, straight away; the quiet re-read afterwards confirms it.
+    func showCopies(_ urls: [URL], server: BackupServer) {
+        guard !urls.isEmpty else { return }
+        let foldersURL = server.foldersURL
+        let reserved = server.reservedFolderNames
+        items.append(contentsOf: urls.map { Self.fileItem($0.lexicallyStandardized, in: foldersURL, reserved: reserved) })
+        items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        folders = Self.tree(Self.paths(of: folders), items: items)
+        revision += 1
+    }
+
+    /// Takes files that were just removed (an undone copy) off the page, then re-reads quietly.
+    func hideRemoved(_ urls: [URL], server: BackupServer) {
+        let gone = Set(urls.map { $0.lexicallyStandardized.path })
+        items.removeAll { $0.deviceID == nil && gone.contains($0.url.lexicallyStandardized.path) }
+        selection.subtract(gone)
+        folders = Self.tree(Self.paths(of: folders), items: items)
+        revision += 1
+        refreshQuietly(server)
+    }
+
+    /// Every folder's path in a tree, parents first.
+    private static func paths(of folders: [Folder]) -> [String] {
+        folders.flatMap { [$0.path] + paths(of: $0.children ?? []) }
     }
 
     nonisolated private static func isInside(_ url: URL, _ directory: URL) -> Bool {

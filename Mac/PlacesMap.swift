@@ -186,12 +186,13 @@ struct LibraryPlacesView: View {
     @Environment(BackupServer.self) private var server
     @Environment(MediaLibrary.self) private var library
     @AppStorage(MediaLibrary.Source.key) private var sourceRaw = MediaLibrary.Source.phones.raw
+    @State private var kind: MediaLibrary.Kind = .all
     /// The group listed beside the map, by item ID.
     @State private var group: [String]?
 
     var body: some View {
         let located = library.filter(library.items, by: MediaLibrary.Source(raw: sourceRaw))
-            .filter { $0.latitude != nil && $0.longitude != nil }
+            .filter { $0.latitude != nil && $0.longitude != nil && kind.includes(isVideo: $0.isVideo) }
         HStack(spacing: 0) {
             PlacesMap(pins: located.map { item in
                 MapPin(id: item.id, coordinate: CLLocationCoordinate2D(latitude: item.latitude!, longitude: item.longitude!),
@@ -207,9 +208,13 @@ struct LibraryPlacesView: View {
         .animation(.snappy(duration: 0.25), value: group == nil)
         .navigationTitle("Places")
         .toolbar {
-            ToolbarItem(placement: .principal) { SourcePicker(selection: $sourceRaw) }
+            ToolbarItemGroup(placement: .principal) {
+                KindPicker(selection: $kind)
+                SourcePicker(selection: $sourceRaw)
+            }
         }
         .onChange(of: sourceRaw) { group = nil }
+        .onChange(of: kind) { group = nil }
         .task(id: server.catalogRevision) { await library.load(from: server) }
     }
 }
@@ -222,11 +227,13 @@ struct PhonePlacesView: View {
     @Environment(BackupServer.self) private var server
     let model: PhoneLibraryModel
     let device: PairedDevice
+    /// All, Photos or Videos, from the page's toolbar.
+    var kind: MediaLibrary.Kind = .all
     @State private var group: [String]?
 
     var body: some View {
         let previews = server.previews[device.id] ?? [:]
-        let located = model.assets.filter { $0.metadata.location != nil }
+        let located = model.assets.filter { $0.metadata.location != nil && kind.includes(isVideo: $0.isVideo) }
         HStack(spacing: 0) {
             PlacesMap(pins: located.map { asset in
                 MapPin(id: asset.id,
@@ -243,6 +250,7 @@ struct PhonePlacesView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: group == nil)
+        .onChange(of: kind) { group = nil }
     }
 }
 

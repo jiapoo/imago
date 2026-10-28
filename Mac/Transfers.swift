@@ -189,11 +189,13 @@ extension MediaLibrary {
             if copied { copies.append(target) }
             activity?.done = index + 1
         }
-        await load(from: server, force: true)
+        // The copies show at once; the full re-read happens in the background.
+        showCopies(copies, server: server)
+        refreshQuietly(server)
         guard !copies.isEmpty else { return nil }
         return FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
-            await self?.load(from: server, force: true)
+            self?.hideRemoved(copies, server: server)
             return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyIn(files, to: path, server: server) }
         }
     }

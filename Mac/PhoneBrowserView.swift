@@ -26,6 +26,8 @@ struct PhoneBrowserView: View {
     /// What's selected in the sidebar: one section, or several albums (⌘- or ⇧-click) to act on.
     @State private var sidebarSelection: Set<PhoneSection> = [.library]
     @State private var zoom: LibraryZoom = .all
+    /// Places: All, Photos or Videos.
+    @State private var placesKind: MediaLibrary.Kind = .all
     @AppStorage("phoneTileSize") private var tileSize = 150.0
     /// Select mode, as in Photos on the iPhone: a click adds an item to the selection or takes it out.
     @State private var selecting = false
@@ -121,6 +123,9 @@ struct PhoneBrowserView: View {
     private var toolbar: some ToolbarContent {
         if model.state == .ready, !viewer.isOpen {
             ToolbarItemGroup(placement: .principal) {
+                if section == .places {
+                    KindPicker(selection: $placesKind)
+                }
                 if section == .library {
                     Picker("Show", selection: $zoom) {
                         ForEach(LibraryZoom.allCases) { Text($0.title).tag($0) }
@@ -240,7 +245,7 @@ struct PhoneBrowserView: View {
         case .library:
             LibraryView(model: model, device: device, zoom: $zoom)
         case .places:
-            PhonePlacesView(model: model, device: device)
+            PhonePlacesView(model: model, device: device, kind: placesKind)
         case .onThisDay:
             PhoneGrid(model: model, device: device, assets: onThisDay,
                       empty: ("Nothing on this day", "calendar.badge.clock",
