@@ -135,7 +135,8 @@ struct BrowserView: View {
         MediaTile(
             item: item,
             selected: library.selection.contains(item.id),
-            pendingRemoval: library.pendingRemoval.contains(item.id),
+            pendingRemoval: library.pendingRemoval.contains(item.id)
+                ? item.deviceID.map { SourceBadge.Style(.phone($0), server: server, waiting: true) } : nil,
             badge: badge(for: item),
             source: source(of: item),
             cameFrom: cameFrom(item)
@@ -645,7 +646,8 @@ private final class GridCache {
 private struct MediaTile: View {
     let item: MediaItem
     let selected: Bool
-    let pendingRemoval: Bool
+    /// Still on its iPhone, waiting to be deleted there: the iPhone's dot, with a clock.
+    let pendingRemoval: SourceBadge.Style?
     /// Top left: days left in Recently Deleted, or the size in Large Files.
     var badge: String? = nil
     /// Bottom right: which iPhone it's on, or that it's only on the drive.
@@ -666,7 +668,7 @@ private struct MediaTile: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if item.isVideo || source != nil || cameFrom != nil || pendingRemoval {
+                if item.isVideo || source != nil || cameFrom != nil || pendingRemoval != nil {
                     HStack(spacing: 5) {
                         if let cameFrom { SourceBadge(style: cameFrom) }
                         if item.isVideo {
@@ -676,8 +678,8 @@ private struct MediaTile: View {
                             }
                         }
                         Spacer(minLength: 0)
-                        if pendingRemoval {
-                            Image(systemName: "iphone.slash").help("Waiting to be removed from the iPhone")
+                        if let pendingRemoval {
+                            SourceBadge(style: pendingRemoval)
                         } else if let source {
                             SourceBadge(style: source)
                         }
@@ -705,15 +707,19 @@ struct SourceBadge: View {
         var initial: String?
         var color: Color
         var help: String
+        /// Still on the iPhone, but waiting to be deleted there: a small clock on the dot.
+        var waiting = false
 
         /// `cameFrom`: the iPhone it came from, rather than one it's on (in Recently Deleted).
-        @MainActor init(_ origin: MediaLibrary.Origin, server: BackupServer, cameFrom: Bool = false) {
+        /// `waiting`: on the iPhone until it deletes it, as asked.
+        @MainActor init(_ origin: MediaLibrary.Origin, server: BackupServer, cameFrom: Bool = false, waiting: Bool = false) {
             switch origin {
             case .phone(let id):
                 let name = server.devices.first { $0.id == id }?.name ?? "an iPhone"
                 initial = name.first.map { String($0).uppercased() } ?? "?"
                 color = server.color(of: id)
-                help = cameFrom ? "From \(name)" : "On \(name)"
+                help = cameFrom ? "From \(name)" : waiting ? "On \(name) · waiting to be deleted there" : "On \(name)"
+                self.waiting = waiting
             case .drive:
                 initial = nil
                 color = .black.opacity(0.55)
@@ -736,6 +742,17 @@ struct SourceBadge: View {
         .foregroundStyle(style.color.ink)
         .frame(width: 18, height: 18)
         .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.2))
+        .overlay(alignment: .bottomTrailing) {
+            if style.waiting {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 11, height: 11)
+                    .background(.black.opacity(0.75), in: Circle())
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 1))
+                    .offset(x: 4, y: 3)
+            }
+        }
         .shadow(color: .black.opacity(0.3), radius: 1.5)
         .help(style.help)
     }

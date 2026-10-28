@@ -115,7 +115,8 @@ today's date in earlier years; **Large Files** shows the biggest first. On these
 on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone has a color: right-click it in the
 sidebar, or open its page's **…** menu, to pick one of the bright colors, or **More Colors…** for a palette
 of 32 and any custom color. On these pages a tile's bottom-right corner says where it
-is now: a dot in the iPhone's color with its initial, or a drive for what's only on the drive. In a Folder
+is now: a dot in the iPhone's color with its initial, or a drive for what's only on the drive. A small clock on
+the dot means it's still on that iPhone, waiting to be deleted there. In a Folder
 and in Recently Deleted, everything is on the drive, so the bottom-left corner says which iPhone it came
 from instead (a drive: not from an iPhone).
 Info and the selection bar say it in words. Each iPhone's Photos page has its
