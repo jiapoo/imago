@@ -69,6 +69,9 @@ struct DeviceView: View {
 
     // MARK: Hero
 
+    /// The iPhone's own color.
+    private var tint: Color { server.color(of: device.id) }
+
     private var hero: some View {
         let session = server.session(for: device)
         return HStack(alignment: .center, spacing: 22) {
@@ -98,11 +101,12 @@ struct DeviceView: View {
                         .font(.headline)
                         .padding(.horizontal, 16).padding(.vertical, 9)
                         .background(.white, in: Capsule())
-                        .foregroundStyle(Color.imago)
+                        .foregroundStyle(tint)
                 }
                 .buttonStyle(.plain)
                 Menu {
                     Button("Rename…") { newName = device.name; renaming = true }
+                    DeviceColorMenu(device: device)
                     Button("Show Folder in Finder") { server.revealInFinder(server.folderURL(for: device)) }
                         .disabled(!server.location.isAvailable)
                     Divider()
@@ -124,14 +128,14 @@ struct DeviceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(LinearGradient(colors: [Color.imago, Color.imago.mix(with: .black, by: 0.35)],
+                .fill(LinearGradient(colors: [tint, tint.mix(with: .black, by: 0.35)],
                                      startPoint: .topLeading, endPoint: .bottomTrailing))
                 .overlay(alignment: .topTrailing) {
                     // A soft glow, for depth.
                     Circle().fill(.white.opacity(0.10)).frame(width: 260).blur(radius: 40).offset(x: 60, y: -110)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .shadow(color: Color.imago.opacity(0.25), radius: 18, y: 8)
+                .shadow(color: tint.opacity(0.25), radius: 18, y: 8)
         }
     }
 

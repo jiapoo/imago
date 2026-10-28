@@ -111,9 +111,11 @@ card per iPhone, shortcuts into the library, the backup drive and recent activit
 **Places** shows them on a map where they were taken (grouped by area; click a group to list its
 photos beside the map, and zoom to split a group, to copy, move, delete or open them there); **On This Day** shows what was taken on
 today's date in earlier years; **Large Files** shows the biggest first. On these four, **Show** picks what's
-on all iPhones (the default), on one iPhone, or everything on the drive. A tile's bottom-right corner says where it is now: a
-dot in the iPhone's color with its initial, or a drive for what's only on the drive. In a Folder and in
-Recently Deleted, the bottom-left corner says which iPhone it came from (a drive: not from an iPhone).
+on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone has a color (right-click it in the
+sidebar, or its page's **…** menu, to change it). On these pages a tile's bottom-right corner says where it
+is now: a dot in the iPhone's color with its initial, or a drive for what's only on the drive. In a Folder
+and in Recently Deleted, everything is on the drive, so the bottom-left corner says which iPhone it came
+from instead (a drive: not from an iPhone).
 Info and the selection bar say it in words. Each iPhone's Photos page has its
 own Places and On This Day.
 **Folders** are real folders at the top of the backup drive, next to the iPhones' folders (nested as deep

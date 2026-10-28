@@ -129,19 +129,20 @@ struct BrowserView: View {
         .tileFrame(item.id, in: tileFrames)
     }
 
-    /// Bottom right: which iPhone (or the drive) its item is on now. Not in Recently Deleted or
-    /// Deleted on iPhone, where nothing is on an iPhone.
+    /// Bottom right: which iPhone (or the drive) its item is on now. Not in a Folder, Recently Deleted
+    /// or Deleted on iPhone, where everything is on the drive.
     private func source(of item: MediaItem) -> SourceBadge.Style? {
         switch scope {
         case .deletedOnPhone, .trash: nil
-        default: SourceBadge.Style(library.origin(of: item), devices: server.devices)
+        case .folder: nil // Everything in a Folder is on the drive.
+        default: SourceBadge.Style(library.origin(of: item), server: server)
         }
     }
 
     /// Bottom left, in a Folder and Recently Deleted: which iPhone it came from, wherever it is now.
     private func cameFrom(_ item: MediaItem) -> SourceBadge.Style? {
         switch scope {
-        case .folder, .trash: SourceBadge.Style(item.deviceID.map { .phone($0) } ?? .drive, devices: server.devices, cameFrom: true)
+        case .folder, .trash: SourceBadge.Style(item.deviceID.map { .phone($0) } ?? .drive, server: server, cameFrom: true)
         default: nil
         }
     }
@@ -656,13 +657,12 @@ struct SourceBadge: View {
         var help: String
 
         /// `cameFrom`: the iPhone it came from, rather than one it's on (in Recently Deleted).
-        init(_ origin: MediaLibrary.Origin, devices: [PairedDevice], cameFrom: Bool = false) {
+        @MainActor init(_ origin: MediaLibrary.Origin, server: BackupServer, cameFrom: Bool = false) {
             switch origin {
             case .phone(let id):
-                let index = devices.firstIndex { $0.id == id }
-                let name = index.map { devices[$0].name } ?? "an iPhone"
+                let name = server.devices.first { $0.id == id }?.name ?? "an iPhone"
                 initial = name.first.map { String($0).uppercased() } ?? "?"
-                color = SourceBadge.color(index ?? 0)
+                color = server.color(of: id)
                 help = cameFrom ? "From \(name)" : "On \(name)"
             case .drive:
                 initial = nil
@@ -688,12 +688,6 @@ struct SourceBadge: View {
         .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.2))
         .shadow(color: .black.opacity(0.3), radius: 1.5)
         .help(style.help)
-    }
-
-    /// One color per iPhone, in the order they were paired: Imago's red first.
-    static func color(_ index: Int) -> Color {
-        let colors: [Color] = [.imago, .blue, .green, .orange, .purple, .teal, .pink, .indigo]
-        return colors[index % colors.count]
     }
 
     /// For the selection bar: "On 007's iPhone", "3 on 007's iPhone, 2 only on the drive".

@@ -186,7 +186,6 @@ struct LibraryPlacesView: View {
                        thumbnail: item.url, thumbnailBytes: item.bytes, date: item.date)
             }) { group = $0 }
             if let group {
-                Divider()
                 PlacePanel(count: library.items(in: .items(group)).count, close: { self.group = nil }) {
                     BrowserView(scope: .items(group), embedded: true)
                 }
@@ -225,7 +224,6 @@ struct PhonePlacesView: View {
             }) { group = $0 }
             if let group {
                 let assets = group.compactMap(model.asset)
-                Divider()
                 PlacePanel(count: assets.count, close: { self.group = nil }) {
                     PhoneGrid(model: model, device: device, assets: assets, empty: ("Nothing here", "map", nil))
                 }
@@ -236,13 +234,39 @@ struct PhonePlacesView: View {
     }
 }
 
-/// Beside the map: how many photos are at the place, and their grid.
+/// Beside the map: how many photos are at the place, and their grid. Drag its left edge to resize it.
 private struct PlacePanel<Content: View>: View {
     let count: Int
     let close: () -> Void
     @ViewBuilder var content: Content
+    @AppStorage("placePanelWidth") private var width = 520.0
+    /// The width when a resize began.
+    @State private var startWidth: Double?
 
     var body: some View {
+        HStack(spacing: 0) {
+            Divider()
+                .overlay {
+                    // A wider strip than the line, to grab.
+                    Color.clear
+                        .frame(width: 9)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+                        }
+                        .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .onChanged { drag in
+                                let start = startWidth ?? width
+                                startWidth = start
+                                width = min(max(start - drag.translation.width, 320), 1000)
+                            }
+                            .onEnded { _ in startWidth = nil })
+                }
+            panel
+        }
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             HStack {
                 Label(count == 1 ? "1 photo here" : "\(count.formatted()) photos here", systemImage: "mappin.and.ellipse")
@@ -259,6 +283,6 @@ private struct PlacePanel<Content: View>: View {
             Divider()
             content
         }
-        .frame(width: 520)
+        .frame(width: width)
     }
 }

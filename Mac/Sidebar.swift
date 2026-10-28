@@ -236,7 +236,7 @@ struct PhoneRow: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22)
-                .background(Color.imago.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(server.color(of: device.id).gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentTransition(.symbolEffect(.replace))
             Text(device.name).lineLimit(1)
             Spacer(minLength: 0)
@@ -246,6 +246,7 @@ struct PhoneRow: View {
             library.drop(urls, onto: .phoneFolder, server: server, history: history)
         } isTargeted: { targeted = $0 }
         .help(help)
+        .contextMenu { DeviceColorMenu(device: device) }
     }
 
     /// Backing up: a spinner. Otherwise a light: green while Imago is open on it, orange when a
@@ -266,6 +267,36 @@ struct PhoneRow: View {
         if server.liveDevices.contains(device.id) { return "Imago is open on \(device.name)" }
         if server.summaries[device.id]?.isPartial == true { return "The last backup didn't finish" }
         return device.name
+    }
+}
+
+/// Picks an iPhone's color: its row in the sidebar, its page, and its mark on tiles.
+struct DeviceColorMenu: View {
+    @Environment(BackupServer.self) private var server
+    let device: PairedDevice
+
+    var body: some View {
+        let current = server.colorIndex(of: device.id)
+        Menu("Color") {
+            ForEach(PairedDevice.colors.indices, id: \.self) { index in
+                Toggle(isOn: Binding(get: { index == current }, set: { _ in server.setColor(index, for: device) })) {
+                    Label {
+                        Text(PairedDevice.colors[index].name)
+                    } icon: {
+                        Image(nsImage: Self.swatch(PairedDevice.colors[index].color))
+                    }
+                }
+            }
+        }
+    }
+
+    /// A round swatch: menus draw SF Symbols in the text color, so the color needs an image of its own.
+    private static func swatch(_ color: Color) -> NSImage {
+        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            NSColor(color).setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
     }
 }
 

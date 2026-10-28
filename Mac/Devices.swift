@@ -1,5 +1,6 @@
 import Foundation
 import ImagoKit
+import SwiftUI
 
 /// A paired iPhone. Its key lives in the Keychain; this record is not secret.
 struct PairedDevice: Codable, Identifiable, Hashable {
@@ -9,6 +10,14 @@ struct PairedDevice: Codable, Identifiable, Hashable {
     /// Folder under the backup location. Fixed at pairing so renaming the phone never moves files.
     var folder: String
     var pairedAt: Date
+    /// Its color in the sidebar and on tiles, from `colors`. Nil: by the order it was paired.
+    var colorIndex: Int? = nil
+
+    /// The colors an iPhone can have: Imago's red first.
+    static let colors: [(name: String, color: Color)] = [
+        ("Red", .imago), ("Blue", .blue), ("Green", .green), ("Orange", .orange),
+        ("Purple", .purple), ("Teal", .teal), ("Pink", .pink), ("Indigo", .indigo), ("Brown", .brown), ("Graphite", .gray),
+    ]
 }
 
 enum DeviceRegistry {

@@ -162,7 +162,7 @@ private struct PhoneCard: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
-                        .background(Color.imago.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(server.color(of: device.id).gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(device.name).font(.headline).lineLimit(1)
                         Text(status(summary)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
