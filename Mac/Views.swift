@@ -83,7 +83,11 @@ struct MainView: View {
             // the middle of the page, above everything. Quick work never shows it.
             .overlay { ActivityOverlay(activity: library.activity) }
             .toolbar {
-                // On every page, the viewer too: what Edit › Undo and Redo do, named in their help.
+                // On every page, the viewer too: what Edit › Undo and Redo do, named in their help. In a
+                // group of their own, apart from the viewer's Back.
+                if #available(macOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .navigation)
+                }
                 ToolbarItemGroup(placement: .navigation) {
                     Button { Task { await history.undo() } } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
@@ -95,6 +99,9 @@ struct MainView: View {
                     }
                     .disabled(!history.canRedo)
                     .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : "Nothing to redo")
+                }
+                if #available(macOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .navigation)
                 }
                 if !viewer.isOpen {
                     if pageHasPhotos {

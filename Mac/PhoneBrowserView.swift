@@ -260,7 +260,7 @@ struct PhoneBrowserView: View {
                       empty: ("“\(album)” is empty", "rectangle.stack", "Select photos anywhere and choose Add to Album."))
         case .duplicates:
             GroupsView(model: model, device: device, groups: model.duplicates,
-                       explanation: "Exact copies: the original files are byte-for-byte the same. The copy marked Keep is a favorite, in more albums, or the oldest.",
+                       explanation: "Exact copies: the original files are byte-for-byte the same. The copy marked Keep is the largest, which has an edit or a Live Photo's video with it; among copies of the same size, a favorite, in more albums, or the oldest.",
                        emptyTitle: "No duplicates")
         case .similar:
             SimilarView(model: model, device: device)

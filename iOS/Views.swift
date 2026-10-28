@@ -4,22 +4,22 @@ import VisionKit
 
 struct ContentView: View {
     @Environment(BackupClient.self) private var client
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingPairing = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 16) {
                     if client.credential == nil {
                         WelcomeCard { showingPairing = true }
                     } else {
                         StatusHero()
                         if !client.macChanges.isEmpty { MacChangesCard() }
                     }
-                    LibraryCard()
+                    StorageCard()
                     if client.credential != nil {
-                        OvernightCard()
-                        MacChangesSettingCard()
+                        SettingsCard()
                         MacCard()
                     }
                 }
@@ -34,10 +34,14 @@ struct ContentView: View {
                 .ignoresSafeArea()
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Imago")
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingPairing) { PairingSheet() }
             .task { await client.refreshCounts() }
             .refreshable { await client.refreshCounts() }
+            // Back from Settings, the photo-access prompt or another app: the library may have changed.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await client.refreshCounts() } }
+            }
         }
     }
 }
@@ -178,25 +182,25 @@ struct ProgressRing: View {
             Circle()
                 .fill(tint.opacity(0.08))
             Circle()
-                .stroke(tint.opacity(0.15), lineWidth: 14)
+                .stroke(tint.opacity(0.15), lineWidth: 12)
             Circle()
                 .trim(from: 0, to: progress ?? 0.28)
                 .stroke(
                     // A full ring gets a solid color so the gradient's start and end don't meet at a seam.
                     progress == 1 ? AnyShapeStyle(tint) : AnyShapeStyle(AngularGradient(colors: [tint.opacity(0.55), tint], center: .center)),
-                    style: StrokeStyle(lineWidth: 14, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 12, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
                 .rotationEffect(.degrees(progress == nil && spin ? 360 : 0))
                 .animation(progress == nil ? .linear(duration: 1.1).repeatForever(autoreverses: false) : .smooth, value: spin)
                 .animation(.smooth, value: progress)
             Image(systemName: symbol)
-                .font(.system(size: 46, weight: .semibold))
+                .font(.system(size: 38, weight: .semibold))
                 .foregroundStyle(tint)
                 .symbolEffect(.pulse, isActive: busy)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .frame(width: 168, height: 168)
+        .frame(width: 132, height: 132)
         .onAppear { spin = true }
     }
 }
@@ -246,154 +250,258 @@ struct WelcomeCard: View {
 
 // MARK: - Cards
 
-struct LibraryCard: View {
+/// What photos and videos take up on this iPhone, and how much space is free.
+struct StorageCard: View {
     @Environment(BackupClient.self) private var client
 
     var body: some View {
-        @Bindable var client = client
+        let storage = client.storage
         VStack(alignment: .leading, spacing: 16) {
-            Text("This iPhone").font(.headline)
-            HStack(spacing: 12) {
-                CountTile(value: client.photoCount, label: "Photos", symbol: "photo.fill", tint: .blue)
-                CountTile(value: client.videoCount, label: "Videos", symbol: "video.fill", tint: .pink)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("iPhone Storage").font(.headline)
+                    if let storage, storage.totalBytes > 0 {
+                        Text("\(byteText(storage.totalBytes - storage.freeBytes)) of \(byteText(storage.totalBytes)) used")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if let storage, storage.totalBytes > 0 {
+                    Text("\(byteText(storage.freeBytes)) free")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .contentTransition(.numericText())
+                }
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Name on your Mac").font(.caption).foregroundStyle(.secondary)
-                TextField("iPhone", text: $client.deviceName)
-                    .font(.body.weight(.medium))
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .submitLabel(.done)
+
+            VStack(alignment: .leading, spacing: 8) {
+                StorageBar(storage: storage)
+                HStack(spacing: 14) {
+                    LegendDot(tint: .blue, title: "Photos")
+                    LegendDot(tint: .pink, title: "Videos")
+                    LegendDot(tint: Color(.systemGray3), title: "Other")
+                    LegendDot(tint: Color(.tertiarySystemFill), title: "Free")
+                }
+            }
+
+            VStack(spacing: 0) {
+                StorageRow(symbol: "square.stack.fill", tint: .indigo, title: "All",
+                           count: client.photoCount + client.videoCount, bytes: storage.map { $0.photoBytes + $0.videoBytes })
+                Divider().padding(.leading, 50)
+                StorageRow(symbol: "photo.fill", tint: .blue, title: "Photos",
+                           count: client.photoCount, bytes: storage?.photoBytes)
+                Divider().padding(.leading, 50)
+                StorageRow(symbol: "video.fill", tint: .pink, title: "Videos",
+                           count: client.videoCount, bytes: storage?.videoBytes)
             }
         }
         .card()
+        .animation(.smooth, value: storage)
     }
 }
 
-struct CountTile: View {
-    let value: Int
-    let label: String
-    let symbol: String
-    let tint: Color
+/// The disk as one capsule: photos, then videos, then everything else, with the free space left empty.
+struct StorageBar: View {
+    let storage: BackupClient.Storage?
 
     var body: some View {
-        HStack(spacing: 12) {
+        GeometryReader { geometry in
+            HStack(spacing: 2) {
+                if let storage, storage.totalBytes > 0 {
+                    segment(storage.photoBytes, of: storage, width: geometry.size.width, tint: .blue)
+                    segment(storage.videoBytes, of: storage, width: geometry.size.width, tint: .pink)
+                    segment(storage.otherBytes, of: storage, width: geometry.size.width, tint: Color(.systemGray3))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: 14)
+        .background(Color(.tertiarySystemFill))
+        .clipShape(Capsule())
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private func segment(_ part: Int64, of storage: BackupClient.Storage, width: CGFloat, tint: Color) -> some View {
+        Rectangle()
+            .fill(tint.gradient)
+            .frame(width: part > 0 ? max(width * CGFloat(part) / CGFloat(storage.totalBytes), 3) : 0)
+    }
+
+    private var accessibilityText: String {
+        guard let storage, storage.totalBytes > 0 else { return "Measuring storage" }
+        return "Photos \(byteText(storage.photoBytes)), videos \(byteText(storage.videoBytes)), other \(byteText(storage.otherBytes)), \(byteText(storage.freeBytes)) free"
+    }
+}
+
+struct StorageRow: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let count: Int
+    /// Nil until the library has been measured.
+    let bytes: Int64?
+
+    var body: some View {
+        HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
                 .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value.formatted())
-                    .font(.title3.weight(.semibold).monospacedDigit())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.body.weight(.medium))
+                Text("\(count.formatted()) \(count == 1 ? "item" : "items")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
-                Text(label).font(.caption).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
+            Spacer()
+            if let bytes {
+                Text(byteText(bytes))
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .contentTransition(.numericText())
+            } else {
+                ProgressView().controlSize(.small)
+            }
         }
-        .padding(12)
-        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.vertical, 8)
     }
 }
 
-struct OvernightCard: View {
+struct LegendDot: View {
+    let tint: Color
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(tint).frame(width: 8, height: 8)
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// "12.4 GB", as Settings writes sizes.
+func byteText(_ count: Int64) -> String {
+    count == 0 ? "0 KB" : count.formatted(.byteCount(style: .file))
+}
+
+/// The two switches, as rows in one card.
+struct SettingsCard: View {
     @Environment(BackupClient.self) private var client
 
     var body: some View {
         @Bindable var client = client
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle(isOn: $client.overnightBackup) {
-                Label {
-                    Text("Back up overnight").font(.headline)
-                } icon: {
-                    Image(systemName: "moon.stars.fill").foregroundStyle(.indigo)
-                }
-            }
-            .tint(.indigo)
-            Text("While your iPhone is charging and on Wi-Fi, usually at night. iOS chooses the exact time. Don't swipe Imago away in the app switcher, or iOS won't run it.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            if client.overnightBackup {
-                Label(lastRunText, systemImage: "clock")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
+        VStack(spacing: 0) {
+            SettingRow(symbol: "moon.stars.fill", tint: .indigo, title: "Back up overnight", isOn: $client.overnightBackup,
+                       note: client.overnightBackup ? "While charging on Wi-Fi. \(lastRunText)" : "While charging on Wi-Fi, when iOS allows.")
+            Divider().padding(.leading, 50)
+            SettingRow(symbol: "arrow.down.left.arrow.up.right", tint: .orange, title: "Apply changes from Mac", isOn: $client.applyRightAway,
+                       note: client.applyRightAway ? "Favorites and albums right away. Deletions always ask first." : "Changes wait here for you to review them.")
         }
         .card()
     }
 
     private var lastRunText: String {
-        guard let date = client.lastAutomaticRun else { return "Hasn't run yet" }
-        return "Last ran \(date.formatted(.relative(presentation: .named)))"
+        guard let date = client.lastAutomaticRun else { return "Hasn't run yet." }
+        return "Last ran \(date.formatted(.relative(presentation: .named)))."
     }
 }
 
-/// Whether changes the Mac asks for are made as they arrive, and whether the Mac is connected now.
-struct MacChangesSettingCard: View {
-    @Environment(BackupClient.self) private var client
-    @Environment(LiveLink.self) private var live
+struct SettingRow: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    @Binding var isOn: Bool
+    let note: String
 
     var body: some View {
-        @Bindable var client = client
-        let mac = client.credential?.serverName ?? "your Mac"
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle(isOn: $client.applyRightAway) {
-                Label {
-                    Text("Apply changes from \(mac)").font(.headline)
-                } icon: {
-                    Image(systemName: "desktopcomputer.and.arrow.down").foregroundStyle(.orange)
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.body.weight(.medium))
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .tint(.orange)
-            Text(client.applyRightAway
-                 ? "While Imago is open, favorites and albums you change on \(mac) are made here right away. Deletions still ask you first, and go to Recently Deleted."
-                 : "Changes from \(mac) wait here until you review them.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Label(liveText(mac), systemImage: live.state == .connected ? "dot.radiowaves.left.and.right" : "wifi.slash")
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(live.state == .connected ? .green : .secondary)
         }
-        .card()
-    }
-
-    private func liveText(_ mac: String) -> String {
-        switch live.state {
-        case .connected: "Connected to \(mac)"
-        case .connecting: "Looking for \(mac)…"
-        case .off: "Not connected"
-        }
+        .tint(tint)
+        .padding(.vertical, 8)
     }
 }
 
+/// The paired Mac, whether it's connected now, and the name this iPhone has there.
 struct MacCard: View {
     @Environment(BackupClient.self) private var client
+    @Environment(LiveLink.self) private var live
     @State private var confirmingUnpair = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "desktopcomputer")
-                .font(.title2)
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(client.credential?.serverName ?? "Mac").font(.headline)
-                Text("Paired · backs up on the same Wi-Fi")
-                    .font(.footnote).foregroundStyle(.secondary)
+        @Bindable var client = client
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                Image(systemName: "desktopcomputer")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(client.credential?.serverName ?? "Mac").font(.headline)
+                    HStack(spacing: 6) {
+                        Circle().fill(statusColor).frame(width: 7, height: 7)
+                        Text(statusText).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Menu {
+                    Button("Unpair", systemImage: "xmark.circle", role: .destructive) { confirmingUnpair = true }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, height: 34)
+                        .background(Color(.tertiarySystemFill), in: Circle())
+                }
             }
-            Spacer()
-            Menu {
-                Button("Unpair", systemImage: "xmark.circle", role: .destructive) { confirmingUnpair = true }
-            } label: {
-                Image(systemName: "ellipsis.circle").font(.title2).foregroundStyle(.secondary)
+            HStack {
+                Text("Name on Mac").foregroundStyle(.secondary)
+                TextField("iPhone", text: $client.deviceName)
+                    .multilineTextAlignment(.trailing)
+                    .font(.body.weight(.medium))
+                    .submitLabel(.done)
             }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .card()
         .confirmationDialog("Unpair from \(client.credential?.serverName ?? "Mac")?", isPresented: $confirmingUnpair, titleVisibility: .visible) {
             Button("Unpair", role: .destructive) { client.unpair() }
         } message: {
             Text("Photos already on the Mac stay there. You can pair again anytime.")
+        }
+    }
+
+    private var statusColor: Color {
+        switch live.state {
+        case .connected: .green
+        case .connecting: .orange
+        case .off: Color(.systemGray3)
+        }
+    }
+
+    private var statusText: String {
+        switch live.state {
+        case .connected: "Connected"
+        case .connecting: "Looking for it…"
+        case .off: "Not connected · backs up on the same Wi-Fi"
         }
     }
 }

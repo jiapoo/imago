@@ -54,7 +54,7 @@ public enum Cleanup {
         Dictionary(grouping: assets.filter { $0.originalSHA256 != nil }, by: { $0.originalSHA256! })
             .values
             .filter { $0.count > 1 }
-            .map { Group(assets: sortedByDate($0), keep: bestToKeep($0)) }
+            .map { Group(assets: sortedByDate($0), keep: largestToKeep($0)) }
             .sorted { $0.reclaimableBytes > $1.reclaimableBytes }
     }
 
@@ -150,6 +150,13 @@ public enum Cleanup {
             if pixelsA != pixelsB { return pixelsA < pixelsB }
             return (a.metadata.creationDate ?? .distantFuture) > (b.metadata.creationDate ?? .distantFuture)
         }!
+    }
+
+    /// For copies of one original: the one taking the most space, which has the most with it (an
+    /// edit, a Live Photo's video), so deleting the smaller ones loses nothing. Same size: `bestToKeep`.
+    public static func largestToKeep(_ assets: [PhoneAsset]) -> PhoneAsset {
+        let largest = assets.map(\.bytes).max() ?? 0
+        return bestToKeep(assets.filter { $0.bytes == largest })
     }
 
     static func sortedByDate(_ assets: [PhoneAsset]) -> [PhoneAsset] {

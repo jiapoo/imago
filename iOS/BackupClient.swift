@@ -88,6 +88,22 @@ final class BackupClient {
     private(set) var isPairing = false
     private(set) var photoCount = 0
     private(set) var videoCount = 0
+    /// What photos and videos take up, and the iPhone's free space. Kept across launches so the page
+    /// shows the last numbers at once while new ones are measured.
+    private(set) var storage: Storage? {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(storage), forKey: "storage") }
+    }
+    private var measuring: Task<Void, Never>?
+
+    struct Storage: Codable, Equatable {
+        var photoBytes: Int64
+        var videoBytes: Int64
+        var freeBytes: Int64
+        var totalBytes: Int64
+
+        /// Apps, the system and everything else.
+        var otherBytes: Int64 { max(totalBytes - freeBytes - photoBytes - videoBytes, 0) }
+    }
     private(set) var lastBackup: Date? {
         didSet { UserDefaults.standard.set(lastBackup, forKey: "lastBackup") }
     }
@@ -163,6 +179,7 @@ final class BackupClient {
         deviceName = UserDefaults.standard.string(forKey: "deviceName") ?? Self.systemDeviceName
         overnightBackup = UserDefaults.standard.object(forKey: "overnightBackup") as? Bool ?? true
         applyRightAway = UserDefaults.standard.object(forKey: "applyRightAway") as? Bool ?? true
+        storage = UserDefaults.standard.data(forKey: "storage").flatMap { try? JSONDecoder().decode(Storage.self, from: $0) }
         if let data = UserDefaults.standard.data(forKey: "unfinishedBackup") {
             unfinished = try? JSONDecoder().decode(Progress.self, from: data)
         }
@@ -182,10 +199,41 @@ final class BackupClient {
     // MARK: Library
 
     func refreshCounts() async {
+        // Free space shows even before Imago may read the library.
+        defer { measureStorage() }
         guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .authorized
                 || PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited else { return }
         photoCount = PHAsset.fetchAssets(with: .image, options: nil).count
         videoCount = PHAsset.fetchAssets(with: .video, options: nil).count
+    }
+
+    /// Free space now, then the library's size in the background. A measure already running is left to finish.
+    private func measureStorage() {
+        let disk = Self.diskSpace()
+        if let disk, var known = storage {
+            known.freeBytes = disk.free
+            known.totalBytes = disk.total
+            storage = known
+        }
+        guard measuring == nil else { return }
+        measuring = Task {
+            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            let readable = status == .authorized || status == .limited
+            let sizes = await Task.detached(priority: .utility) { readable ? PhotoLibrary.sizes() : (photos: 0, videos: 0) }.value
+            let disk = Self.diskSpace() ?? disk
+            storage = Storage(photoBytes: sizes.photos, videoBytes: sizes.videos,
+                              freeBytes: disk?.free ?? 0, totalBytes: disk?.total ?? 0)
+            measuring = nil
+        }
+    }
+
+    /// The space Settings shows as available, which counts what iOS can clear on its own.
+    private static func diskSpace() -> (free: Int64, total: Int64)? {
+        let values = try? URL(filePath: NSHomeDirectory()).resourceValues(forKeys: [
+            .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
+        ])
+        guard let free = values?.volumeAvailableCapacityForImportantUsage, let total = values?.volumeTotalCapacity else { return nil }
+        return (free, Int64(total))
     }
 
     // MARK: Pairing

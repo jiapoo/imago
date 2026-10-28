@@ -33,6 +33,28 @@ enum PhotoLibrary {
         return entries
     }
 
+    /// What photos and videos take up on this iPhone: the size of every file of each, originals and
+    /// edits alike, as Settings › iPhone Storage counts them. Reads no file data, but asks Photos
+    /// about every file, so on a large library it takes a few seconds: call it off the main thread.
+    static func sizes() -> (photos: Int64, videos: Int64) {
+        var photos: Int64 = 0
+        var videos: Int64 = 0
+        let options = PHFetchOptions()
+        options.includeAssetSourceTypes = [.typeUserLibrary, .typeiTunesSynced]
+        PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
+            let bytes = PHAssetResource.assetResources(for: asset).reduce(Int64(0)) { $0 + fileSize(of: $1) }
+            if asset.mediaType == .video { videos += bytes } else { photos += bytes }
+        }
+        return (photos, videos)
+    }
+
+    /// Photos doesn't publish a resource's size, but every resource has had it under this key since
+    /// iOS 10. Checked first so a future iOS without it reads as 0 instead of crashing.
+    private static func fileSize(of resource: PHAssetResource) -> Int64 {
+        guard resource.responds(to: NSSelectorFromString("fileSize")) else { return 0 }
+        return (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0
+    }
+
     /// Writes one resource to a temporary file, downloading the original from iCloud if needed.
     /// `progress` gets 0...1 while the original downloads from iCloud; it isn't called for files already on the iPhone.
     static func export(_ key: ResourceKey, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {

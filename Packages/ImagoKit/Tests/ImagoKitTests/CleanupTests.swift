@@ -28,6 +28,15 @@ private func asset(
         #expect(groups[0].reclaimableBytes == 1_000)
     }
 
+    @Test func exactDuplicatesKeepTheLargest() {
+        let groups = Cleanup.exactDuplicates([
+            asset("a", sha: "x", bytes: 900, favorite: true), asset("b", at: 5, sha: "x", bytes: 2_000), asset("c", at: 9, sha: "x", bytes: 1_500),
+        ])
+        #expect(groups[0].keep.id == "b")
+        #expect(Set(groups[0].extras.map(\.id)) == ["a", "c"])
+        #expect(groups[0].reclaimableBytes == 2_400)
+    }
+
     @Test func keeperPrefersScoreThenAlbumsThenOldest() {
         let a = asset("a", at: 0), b = asset("b", at: 10, albums: ["Trip"]), c = asset("c", at: 20)
         #expect(Cleanup.bestToKeep([a, b, c]).id == "b")
