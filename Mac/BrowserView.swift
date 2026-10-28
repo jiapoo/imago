@@ -29,6 +29,8 @@ struct BrowserView: View {
     @State private var deletingNow: [TrashedItem]?
     /// Items to ask their iPhone to remove, while the confirmation is up.
     @State private var removing: [MediaItem]?
+    /// The item the grid scrolls to next (the banner's Show).
+    @State private var scrollTarget: MediaItem.ID?
     @State private var naming: FolderNaming?
     /// Deleted on iPhone: the Delete All confirmation is up.
     @State private var confirmingDeleteAll = false
@@ -90,6 +92,7 @@ struct BrowserView: View {
     }
 
     private func grid(_ items: [MediaItem]) -> some View {
+        ScrollViewReader { proxy in
         ScrollView {
           VStack(spacing: 0) {
             if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
@@ -129,6 +132,22 @@ struct BrowserView: View {
             return library.drop(urls, onto: .folder(path), server: server, history: history)
         }
         .modifier(PinchToResize(size: $tileSize))
+        .onChange(of: scrollTarget) { _, target in
+            guard let target else { return }
+            // After the grid has redrawn for a changed filter.
+            DispatchQueue.main.async { withAnimation { proxy.scrollTo(target, anchor: .center) } }
+            scrollTarget = nil
+        }
+        }
+    }
+
+    /// Selects these items and scrolls to the first, showing all kinds if the filter hid it.
+    private func show(_ targets: [MediaItem]) {
+        guard let first = targets.first else { return }
+        if !shown.ids.contains(first.id) { kind = .all }
+        library.selection = Set(targets.map(\.id))
+        anchor = first.id
+        scrollTarget = first.id
     }
 
     private func tile(_ item: MediaItem, in items: [MediaItem]) -> some View {
@@ -252,12 +271,17 @@ struct BrowserView: View {
                     .frame(width: 36, height: 36)
                     .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(removable.count == 1 ? "1 item here is still on your \(phones)" : "\(removable.count.formatted()) items here are still on your \(phones)")
+                    Text(removable.count == 1 ? "1 item here is also still on your \(phones)" : "\(removable.count.formatted()) items here are also still on your \(phones)")
                         .font(.headline)
-                    Text("Remove them there to free \(removable.reduce(0) { $0 + $1.bytes }.bytes). They stay on this drive.")
+                    Text(removable.count == 1
+                         ? "Removing it from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backup on this drive stays."
+                         : "Removing them from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backups on this drive stay.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button(removable.count == 1 ? "Show It" : "Show Them") { show(removable) }
+                    .controlSize(.large)
+                    .help("Select \(removable.count == 1 ? "it" : "them") in the grid")
                 Button("Remove from \(phones)…") { removing = removable }
                     .controlSize(.large)
             }
