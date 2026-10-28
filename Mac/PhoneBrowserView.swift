@@ -70,6 +70,10 @@ struct PhoneBrowserView: View {
             server.loadPreviews(for: device)
             await model.load(from: server)
         }
+        // Files beside its backups that the iPhone doesn't have: an edited copy, for one.
+        .task(id: library.revision) {
+            model.setUnsynced(library.notSynced(on: device) + library.sending(to: device).filter { $0.folder == nil })
+        }
         .onChange(of: section) {
             selecting = false
             if !sidebarSelection.contains(section) { sidebarSelection = [section] }
@@ -370,19 +374,19 @@ private struct LibraryView: View {
                 zoom = .all
             }
         case .all:
-            PhoneGrid(model: model, device: device, assets: model.assets, scrollTarget: $dayTarget,
+            PhoneGrid(model: model, device: device, assets: model.libraryAssets, scrollTarget: $dayTarget,
                       empty: ("No photos", "photo.on.rectangle", nil))
         }
     }
 
     private var years: [Period] {
-        Cleanup.byYear(model.assets).reversed().map { year in
+        Cleanup.byYear(model.libraryAssets).reversed().map { year in
             Period(id: year.id, year: year.year, title: year.year.map(String.init) ?? "No Date", assets: year.assets.reversed())
         }
     }
 
     private var months: [Period] {
-        Cleanup.byMonth(model.assets).reversed().map { month in
+        Cleanup.byMonth(model.libraryAssets).reversed().map { month in
             let title: String = if let year = month.year, let number = month.month,
                                    let date = Calendar.current.date(from: DateComponents(year: year, month: number)) {
                 date.formatted(.dateTime.month(.wide).year())
@@ -637,11 +641,21 @@ struct PhoneGrid: View {
                 Button("Remove from “\(album)”") { actions.request(.removeFromAlbum(album), targets) }
             }
             Divider()
-            Button("Delete from iPhone…", role: .destructive) {
-                selection.selected = Set(targets.map(\.id))
-                confirmingDelete = true
+            if targets.contains(where: { !$0.isUnsynced }) {
+                Button("Delete from iPhone…", role: .destructive) {
+                    selection.selected = Set(targets.filter { !$0.isUnsynced }.map(\.id))
+                    confirmingDelete = true
+                }
+                .disabled(actions.deletable(targets).isEmpty)
             }
-            .disabled(actions.deletable(targets).isEmpty)
+            let notSynced = targets.filter(\.isUnsynced)
+            if !notSynced.isEmpty {
+                Button(notSynced.count == 1 ? "Move Not Synced File to Recently Deleted" : "Move \(notSynced.count) Not Synced Files to Recently Deleted",
+                       role: .destructive) {
+                    let items = actions.libraryItems(notSynced)
+                    Task { history.record(await library.trash(items, server: server)) }
+                }
+            }
         }
     }
 
@@ -689,8 +703,26 @@ struct PhoneGrid: View {
             isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
             toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },
             sourceFrame: asset.id == selection.anchor ? anchorFrame : nil,
+            // Edits are saved as a new file beside the backup, as in Library. The iPhone's photo stays
+            // as it is.
+            saveEdit: { [library, server, history] index, copy in
+                guard let item = model.asset(ids[index]).flatMap({ actions.libraryItems([$0]).first }) else { return nil }
+                let path = library.editedCopyFolder(for: item, server: server)
+                guard let step = await library.copyIn([copy], to: path, server: server) else { return nil }
+                history.record(step)
+                return FolderMark.name(path)
+            },
+            // Only the backed-up file: a preview is too small to edit.
+            canEdit: { model.files[ids[$0]] != nil },
             deleteTitle: "Delete from iPhone (the backup goes to Recently Deleted on this Mac)",
             delete: { [library, server, history] index in
+                if let file = model.asset(ids[index]), file.isUnsynced {
+                    // Not on the iPhone: only the file here goes, to Recently Deleted.
+                    let items = library.items.filter { $0.url.path == file.id.dropFirst(PhoneAsset.unsyncedPrefix.count) }
+                    guard let step = await library.trash(items, server: server) else { return false }
+                    history.record(step)
+                    return true
+                }
                 let id = "\(device.id)/\(ids[index])"
                 // Its backup may be in Recently Deleted already: it's still deleted from the iPhone.
                 let items = (library.items + library.trash.map(\.item)).filter { $0.id == id }
@@ -757,6 +789,16 @@ struct PhoneTile: View {
         }
         .overlay(alignment: .topLeading) {
             HStack(spacing: 4) {
+                if asset.isUnsynced {
+                    // On this Mac only, beside the iPhone's backups: not on the iPhone (yet).
+                    Label("Not synced", systemImage: "iphone.slash")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.black.opacity(0.6), in: Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                        .foregroundStyle(.white)
+                        .help("Only on this Mac, next to \(asset.metadata.originalFilename)'s backup. It isn't on the iPhone.")
+                }
                 if let badge {
                     Text(badge)
                         .font(.caption2.weight(.bold))
@@ -792,7 +834,11 @@ struct PhoneTile: View {
                     Image(systemName: "externaldrive.badge.xmark").help("Not fully backed up yet")
                 }
                 if asset.isVideo {
-                    Text(Duration.seconds(asset.metadata.duration).formatted(.time(pattern: .minuteSecond)))
+                    if asset.metadata.duration > 0 {
+                        Text(Duration.seconds(asset.metadata.duration).formatted(.time(pattern: .minuteSecond)))
+                    } else {
+                        Image(systemName: "play.fill").imageScale(.small)
+                    }
                 }
             }
             .font(.caption.weight(.semibold).monospacedDigit())
@@ -821,6 +867,9 @@ struct PhoneActions {
     /// takes it back instead of queuing its opposite. Recorded for undo: the opposite change, which
     /// takes this one back while it's still waiting.
     func request(_ action: LibraryChange.Action, _ assets: [PhoneAsset]) {
+        // Files the iPhone doesn't have can't be changed on it.
+        let assets = assets.filter { !$0.isUnsynced }
+        guard !assets.isEmpty else { return }
         history.record(step(action, ids: assets.map(\.id)))
     }
 
@@ -869,9 +918,11 @@ struct PhoneActions {
     /// The library's items for these assets: their backed-up files. With `includingDeleted`, also ones
     /// whose backup is in Recently Deleted.
     func libraryItems(_ assets: [PhoneAsset], includingDeleted: Bool = false) -> [MediaItem] {
-        let ids = Set(assets.map { "\(device.id)/\($0.id)" })
+        // A file the iPhone doesn't have is known by its path.
+        let ids = Set(assets.filter { !$0.isUnsynced }.map { "\(device.id)/\($0.id)" })
+        let paths = Set(assets.filter(\.isUnsynced).map { String($0.id.dropFirst(PhoneAsset.unsyncedPrefix.count)) })
         let items = includingDeleted ? library.items + library.trash.map(\.item) : library.items
-        return items.filter { ids.contains($0.id) }
+        return items.filter { ids.contains($0.id) || paths.contains($0.url.path) }
     }
 
     /// Copies their backed-up files into a folder on the drive, or moves them there and removes them
@@ -888,7 +939,7 @@ struct PhoneActions {
 
     /// The ones that can be deleted from the phone: only what's fully on this Mac.
     func deletable(_ assets: [PhoneAsset]) -> [PhoneAsset] {
-        assets.filter(\.isBackedUp)
+        assets.filter { $0.isBackedUp && !$0.isUnsynced }
     }
 
     func keep(_ assets: [PhoneAsset]) {
@@ -942,7 +993,11 @@ struct PhoneSelectionBar: View {
                     Label("Keep on iPhone", systemImage: "arrow.uturn.backward")
                 }
             } else {
-                let allFavorites = selected.allSatisfy(\.metadata.isFavorite)
+                // Files the iPhone doesn't have can be moved or put in Recently Deleted, not changed on it.
+                let onPhone = selected.filter { !$0.isUnsynced }
+                let notSynced = selected.filter(\.isUnsynced)
+                let allFavorites = onPhone.allSatisfy(\.metadata.isFavorite)
+                if !onPhone.isEmpty {
                 Button { actions.toggleFavorite(selected) } label: {
                     Label(allFavorites ? "Unfavorite" : "Favorite", systemImage: allFavorites ? "heart.slash" : "heart")
                 }
@@ -958,6 +1013,7 @@ struct PhoneSelectionBar: View {
                 }
                 .menuStyle(.button)
                 .fixedSize()
+                }
                 Menu {
                     ForEach(actions.folders, id: \.self) { path in
                         Button(path) { actions.transfer(selected, toFolder: path) }
@@ -970,7 +1026,7 @@ struct PhoneSelectionBar: View {
                 }
                 .menuStyle(.button)
                 .fixedSize()
-                .disabled(deletable.isEmpty)
+                .disabled(deletable.isEmpty && notSynced.isEmpty)
                 .help(transferMode == TransferMode.move.rawValue
                       ? "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)"
                       : "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)")
@@ -986,11 +1042,22 @@ struct PhoneSelectionBar: View {
                         Label("Remove from Album", systemImage: "rectangle.stack.badge.minus")
                     }
                 }
-                Button(role: .destructive) { confirmingDelete = true } label: {
-                    Label("Delete", systemImage: "trash")
+                if !onPhone.isEmpty {
+                    Button(role: .destructive) { confirmingDelete = true } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .disabled(deletable.isEmpty)
+                    .help(deletable.isEmpty ? "Only items fully backed up on this Mac can be deleted from the iPhone" : "Delete from the iPhone")
+                } else {
+                    Button(role: .destructive) {
+                        let items = actions.libraryItems(notSynced)
+                        Task { actions.history.record(await actions.library.trash(items, server: actions.server)) }
+                        clear()
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                    .help("Move to Recently Deleted on this Mac. These aren't on the iPhone.")
                 }
-                .disabled(deletable.isEmpty)
-                .help(deletable.isEmpty ? "Only items fully backed up on this Mac can be deleted from the iPhone" : "Delete from the iPhone")
             }
         }
     }

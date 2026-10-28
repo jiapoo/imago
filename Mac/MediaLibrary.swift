@@ -176,6 +176,8 @@ final class MediaLibrary {
     /// file copied into it. See `findFolderCopies`.
     private(set) var inFolders: [String: [FolderCopies.Copy]] = [:]
     private var folderCopySearch: Task<Void, Never>?
+    /// Not synced files being handed to an iPhone, so they're sent once.
+    private var sendingPaths: Set<String> = []
     /// Each iPhone's library list as last read, and what it was read from (the list's date and how many
     /// files were stored). Reading a big one takes a while, and most reloads (a move, a put-back) don't
     /// change it.
@@ -258,10 +260,12 @@ final class MediaLibrary {
         // Files in Folders or Recently Deleted that no phone's index knows: added another way, or moved
         // there in Finder. Listing them reads the drive, which can take a while on a slow one, so it's
         // off the main thread.
+        // An iPhone's own folder too: an edited copy saved beside its original.
+        let phoneFolders = server.devices.map { foldersURL.appending(path: $0.folder, directoryHint: .isDirectory) }
         let (unknown, folderPaths) = await Task.detached(priority: .userInitiated) {
             let paths = Self.folderPaths(in: foldersURL, reserved: reserved)
             let tops = paths.filter { !$0.contains("/") }.map { foldersURL.appending(path: $0, directoryHint: .isDirectory) }
-            return ((tops.flatMap(Self.mediaFiles(in:)) + Self.mediaFiles(in: trashURL)).filter { !known.contains($0) }, paths)
+            return (((tops + phoneFolders).flatMap(Self.mediaFiles(in:)) + Self.mediaFiles(in: trashURL)).filter { !known.contains($0) }, paths)
         }.value
         var relinked = false
         for url in unknown {
@@ -298,6 +302,9 @@ final class MediaLibrary {
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
         state = .ready
         findFolderCopies(server)
+        // Sent and now the iPhone's (or gone): no longer waiting to be sent.
+        sendingPaths.formIntersection(server.devices.flatMap { notSynced(on: $0) }.map(\.url.path))
+        sendNotSynced(server)
 
         // Deleted on an iPhone: note when each was first seen missing, and after its days, move it to
         // Recently Deleted (where it gets the same days again before it's gone for good).
@@ -562,7 +569,9 @@ final class MediaLibrary {
     func deletedOnPhone(_ deviceID: String) -> [MediaItem] {
         guard let phone = onPhone[deviceID] else { return [] }
         return items.filter { item in
-            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil } == true && !kept.contains(item.id)
+            // Not files from the Mac on their way to it (`BackupServer.send`): they were never on it.
+            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil && !$0.hasPrefix("mac-") } == true
+                && !kept.contains(item.id)
         }
     }
 
@@ -987,6 +996,32 @@ final class MediaLibrary {
         await server.refreshSummaries()
     }
 
+    /// Files beside an iPhone's backups that it doesn't have (an edited copy saved next to its
+    /// original): "Not synced" until they go to it.
+    func notSynced(on device: PairedDevice) -> [MediaItem] {
+        let folder = device.folder
+        return items.filter { item in
+            item.deviceID == nil && (item.folder == folder || item.folder?.hasPrefix(folder + "/") == true)
+        }
+    }
+
+    /// Files from the Mac on their way to an iPhone (adopted, the iPhone hasn't answered yet).
+    func sending(to device: PairedDevice) -> [MediaItem] {
+        items.filter { $0.deviceID == device.id && $0.assetID?.hasPrefix("mac-") == true }
+    }
+
+    /// Sends Not synced files to each iPhone with Imago open on it: an edit made here goes to the
+    /// iPhone straight away. Ones not connected get theirs when they connect.
+    func sendNotSynced(_ server: BackupServer) {
+        for device in server.devices where server.liveDevices.contains(device.id) {
+            let waiting = notSynced(on: device).filter { !sendingPaths.contains($0.url.path) && !server.declinedAdds.contains($0.url.path) }
+            guard !waiting.isEmpty else { continue }
+            // Kept until a reload shows them as the iPhone's: until then they still look Not synced.
+            sendingPaths.formUnion(waiting.map(\.url.path))
+            Task { await server.send(waiting, to: device) }
+        }
+    }
+
     /// Works out, in the background, which iPhone items are also in the folders (`inFolders`).
     /// Files are read only when an iPhone item has the same size, and each one only once: what it
     /// holds is kept in `.photobackup/folder-hashes.json` until the file changes.
@@ -1023,6 +1058,7 @@ final class MediaLibrary {
         guard !landed.isEmpty else { return }
         let foldersURL = server.foldersURL
         let reserved = server.reservedFolderNames
+        let phoneFolders = Set(server.devices.map(\.folder))
         let oldIDs = Set(landed.map(\.was.id))
         items.removeAll { oldIDs.contains($0.id) }
         trash.removeAll { oldIDs.contains($0.id) }
@@ -1036,7 +1072,9 @@ final class MediaLibrary {
                 item.folder = nil
                 trash.insert(TrashedItem(item: item, deletedAt: .now, originalPlace: move.from), at: 0)
             } else {
+                // A file beside an iPhone's backups (Not synced) is known by where it is there too.
                 item.folder = Self.folderPath(of: move.url, in: foldersURL, reserved: reserved)
+                    ?? (item.deviceID == nil ? Self.phoneFolderPath(of: move.url, in: foldersURL, phoneFolders: phoneFolders) : nil)
                 added.append(item)
             }
         }
@@ -1058,6 +1096,7 @@ final class MediaLibrary {
         items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         folders = Self.tree(Self.paths(of: folders), items: items)
         revision += 1
+        sendNotSynced(server)
     }
 
     /// Takes files that were just removed (an undone copy) off the page, then re-reads quietly.
@@ -1089,6 +1128,21 @@ final class MediaLibrary {
         guard parts.count > base.count + 1, Array(parts.prefix(base.count)) == base,
               !reserved.contains(parts[base.count]), !parts[base.count].hasPrefix(".") else { return nil }
         return parts[base.count..<(parts.count - 1)].joined(separator: "/")
+    }
+
+    /// A file added to an iPhone's own folder (an edited copy beside its original): where it is, as a
+    /// path from the top of the backup location ("007/2026/10"), so moving it and undoing find their way.
+    nonisolated private static func phoneFolderPath(of url: URL, in root: URL, phoneFolders: Set<String>) -> String? {
+        let base = root.lexicallyStandardized.pathComponents
+        let parts = url.lexicallyStandardized.pathComponents
+        guard parts.count > base.count + 1, Array(parts.prefix(base.count)) == base, phoneFolders.contains(parts[base.count]) else { return nil }
+        return parts[base.count..<(parts.count - 1)].joined(separator: "/")
+    }
+
+    /// Where an edited copy of `item` goes: beside it, in its folder or its iPhone's folder.
+    func editedCopyFolder(for item: MediaItem, server: BackupServer) -> String {
+        item.folder ?? Self.phoneFolderPath(of: item.url, in: server.foldersURL, phoneFolders: Set(server.devices.map(\.folder)))
+            ?? server.editedFolder
     }
 
     /// Every one of the user's folders, as paths from the top of the backup location, parents before
@@ -1156,7 +1210,8 @@ final class MediaLibrary {
         return MediaItem(
             id: url.path, url: url, name: url.lastPathComponent, date: values?.creationDate,
             isVideo: values?.contentType?.conforms(to: .movie) ?? false, duration: 0,
-            bytes: UInt64(values?.fileSize ?? 0), folder: folder ?? folderPath(of: url, in: foldersURL, reserved: reserved)
+            bytes: UInt64(values?.fileSize ?? 0),
+            folder: folder ?? folderPath(of: url, in: foldersURL, reserved: reserved) ?? phoneFolderPath(of: url, in: foldersURL, phoneFolders: reserved)
         )
     }
 
@@ -1283,5 +1338,14 @@ enum FolderCopies {
         }
         if changed, let data = try? JSONEncoder().encode(cache) { try? data.write(to: cacheURL, options: .atomic) }
         return found.mapValues { $0.sorted { ($0.folder, $0.url.lastPathComponent) < ($1.folder, $1.url.lastPathComponent) } }
+    }
+}
+
+extension BackupServer {
+    /// The folder for edited copies of iPhone backups: "Edited", unless an iPhone has that name.
+    var editedFolder: String {
+        var name = "Edited", n = 2
+        while reservedFolderNames.contains(name) { name = "Edited \(n)"; n += 1 }
+        return name
     }
 }

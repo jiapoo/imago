@@ -78,6 +78,8 @@ struct MainView: View {
             }
             // A fresh view per sidebar item, so the last page's title and toolbar don't linger.
             .id(selection)
+            // An iPhone that connects gets its Not synced files.
+            .onChange(of: server.liveDevices) { library.sendNotSynced(server) }
             // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
             .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -85,7 +87,9 @@ struct MainView: View {
             .mediaViewerOverlay()
             // What's under way (copying a big video, moving hundreds, the library catching up): a ring in
             // the middle of the page, above everything. Quick work never shows it.
-            .overlay { ActivityOverlay(activity: library.activity) }
+            // An undo or redo that takes a while (putting many back, the library catching up) turns the
+            // ring too, with what it's doing.
+            .overlay { ActivityOverlay(activity: library.activity ?? history.running.map { .init(title: $0, done: 0, total: 0, finishing: true) }) }
             .toolbar {
                 // On every page, the viewer too: what Edit › Undo and Redo do, named in their help. In a
                 // group of their own, apart from the viewer's Back.

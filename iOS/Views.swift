@@ -40,10 +40,25 @@ struct ContentView: View {
             .refreshable { await client.refreshCounts() }
             // Back from Settings, the photo-access prompt or another app: the library may have changed.
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await client.refreshCounts() } }
+                if phase == .active {
+                    Task { await client.refreshCounts() }
+                    client.askToAdd()
+                }
+            }
+            .alert(addTitle, isPresented: Binding(get: { !client.addPrompt.isEmpty }, set: { if !$0 { client.answerAdd(nil) } })) {
+                Button("Add") { client.answerAdd(true) }
+                Button("Don't Add", role: .destructive) { client.answerAdd(false) }
+                Button("Not Now", role: .cancel) { client.answerAdd(nil) }
+            } message: {
+                Text("\(client.credential?.serverName ?? "Your Mac") has \(addCount == 1 ? "a photo or video" : "photos or videos") this iPhone doesn't, such as an edit made there. Add \(addCount == 1 ? "it" : "them") to Photos?")
             }
         }
     }
+}
+
+extension ContentView {
+    private var addCount: Int { client.addPrompt.reduce(0) { $0 + $1.assetIDs.count } }
+    private var addTitle: String { addCount == 1 ? "Add 1 item from your Mac?" : "Add \(addCount) items from your Mac?" }
 }
 
 extension View {

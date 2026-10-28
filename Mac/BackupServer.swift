@@ -401,7 +401,19 @@ final class BackupServer {
                         }
                         addLog("\(device.name) \(verb): \(done.change.summary)", symbol: done.report.outcome == .applied ? "checkmark.circle" : "xmark.circle")
                     }
-                    let declined = recorded.filter { $0.report.outcome == .declined }.map(\.change)
+                    // Files from the Mac the phone couldn't add: plain files here again, Not synced.
+                    let adds = recorded.filter(\.change.addsFromMac)
+                    let added = Set(adds.compactMap(\.report.restored).flatMap(\.keys))
+                    let notAdded = Set(adds.flatMap(\.change.assetIDs)).subtracting(added)
+                    if !notAdded.isEmpty {
+                        // Turned down on the iPhone: not offered again by itself, only if sent by hand.
+                        let refused = Set(adds.filter { $0.report.outcome == .declined }.flatMap(\.change.assetIDs)).intersection(notAdded)
+                        let files = await store.storedFiles(of: Array(refused))
+                        declinedAdds.formUnion(files.values.flatMap { $0.map(\.url.path) })
+                        try? await store.unadopt(notAdded)
+                        catalogRevision += 1
+                    }
+                    let declined = recorded.filter { $0.report.outcome == .declined && !$0.change.addsFromMac }.map(\.change)
                     if !declined.isEmpty { MacNotifications.declined(declined, on: device.name) }
                     libraryChanged(device.id)
                     // Put back under new IDs: the library reads the files' new names.
@@ -543,11 +555,51 @@ final class BackupServer {
         enqueue(LibraryChange(action: .restore, assetIDs: assetIDs), on: device, store: store)
     }
 
+    /// Not synced files an iPhone said no to: they wait until sent by hand.
+    var declinedAdds: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "declinedAdds") ?? []) {
+        didSet { UserDefaults.standard.set(Array(declinedAdds), forKey: "declinedAdds") }
+    }
+
+    /// Sends files on the drive that an iPhone doesn't have (an edited copy, a file from Finder) to
+    /// add to its Photos library. Each becomes one of its assets here first (`BackupStore.adopt`), then
+    /// goes like a put-back; an iPhone with this version adds it without asking. Returns how many went.
+    @discardableResult
+    func send(_ items: [MediaItem], to device: PairedDevice) async -> Int {
+        guard let store = store(for: device) else { return 0 }
+        var ids: [String] = []
+        for item in items where item.deviceID == nil {
+            let metadata = AssetMetadata(
+                assetID: "", originalFilename: item.name, creationDate: item.date, modificationDate: nil,
+                mediaType: item.isVideo ? "video" : "image", pixelWidth: 0, pixelHeight: 0, duration: item.duration,
+                isFavorite: false,
+                location: item.latitude.flatMap { lat in item.longitude.map { .init(latitude: lat, longitude: $0, altitude: 0) } },
+                albums: []
+            )
+            do {
+                ids.append(try await store.adopt(item.url, metadata: metadata, kind: item.isVideo ? .video : .photo))
+                declinedAdds.remove(item.url.path)
+            } catch BackupStore.AdoptError.alreadyThere {
+                continue
+            } catch {
+                addLog("Couldn't send \(item.name) to \(device.name): \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            }
+        }
+        guard !ids.isEmpty else { return 0 }
+        enqueue(LibraryChange(action: .restore, assetIDs: ids, isNew: true), on: device, store: store)
+        catalogRevision += 1
+        return ids.count
+    }
+
     /// Takes assets out of waiting put-backs.
     func withdrawRestore(_ assetIDs: Set<String>, on device: PairedDevice) {
         guard let store = store(for: device) else { return }
         Task {
             try? await store.withdraw(assetIDs, from: .restore)
+            // Files from the Mac taken back before they went: plain files here again.
+            if assetIDs.contains(where: { $0.hasPrefix("mac-") }) {
+                try? await store.unadopt(assetIDs)
+                catalogRevision += 1
+            }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
         }
@@ -614,7 +666,12 @@ final class BackupServer {
     func cancelChange(_ id: UUID, on device: PairedDevice) {
         guard let store = store(for: device) else { return }
         Task {
+            let change = await store.changeQueue().pending.first { $0.id == id }
             try? await store.cancelChange(id)
+            if let change, change.addsFromMac {
+                try? await store.unadopt(Set(change.assetIDs))
+                catalogRevision += 1
+            }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
         }
@@ -634,6 +691,10 @@ final class BackupServer {
         guard let store = store(for: device) else { return }
         Task {
             try? await store.cancelChange(change.id)
+            if change.addsFromMac {
+                try? await store.unadopt(Set(change.assetIDs))
+                catalogRevision += 1
+            }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
         }

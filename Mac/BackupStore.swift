@@ -474,6 +474,55 @@ actor BackupStore {
         }
     }
 
+    /// Takes a file on the drive that this phone doesn't have (an edited copy beside its original, a
+    /// file from Finder) as one of its assets, under an ID of the Mac's own, so it goes to the phone the
+    /// way a put-back does. The phone's answer gives it the ID Photos made (`rekey`), and its next
+    /// backup finds the file stored. The file stays where it is. Returns the ID.
+    func adopt(_ file: URL, metadata: AssetMetadata, kind: ResourceKind) throws -> String {
+        let path = relativePath(of: file)
+        // Already one of its assets (sent before, or on its way): never twice.
+        if let existing = index.resources.values.first(where: { url(of: $0.relativePath) == url(of: path) }) {
+            throw AdoptError.alreadyThere(existing.assetID)
+        }
+        let assetID = "mac-" + UUID().uuidString
+        var metadata = metadata
+        metadata.assetID = assetID
+        let sha256 = try FileHasher.sha256(of: file)
+        let size = UInt64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        let key = ResourceKey(assetID: assetID, kind: kind, revision: "original").description
+        index.assets[assetID] = AssetRecord(metadata: metadata, sidecar: nil)
+        index.resources[key] = StoredResource(assetID: assetID, relativePath: path, sha256: sha256, size: size, storedAt: .now)
+        try settleSidecar(of: assetID, keys: [key], in: (path as NSString).deletingLastPathComponent)
+        try saveIndex()
+        return assetID
+    }
+
+    enum AdoptError: LocalizedError {
+        case alreadyThere(String)
+        var errorDescription: String? { "It's already on its way to the iPhone, or on it." }
+    }
+
+    /// Takes assets out of the index without touching their files: copies of one file that went to
+    /// the phone more than once. Their sidecars go.
+    func forget(_ assetIDs: Set<String>) throws {
+        for assetID in assetIDs {
+            if let sidecar = index.assets[assetID]?.sidecar { try? fileManager.removeItem(at: root.appending(path: sidecar)) }
+            index.assets[assetID] = nil
+            for (key, stored) in index.resources where stored.assetID == assetID { index.resources[key] = nil }
+        }
+        try saveIndex()
+    }
+
+    /// The phone couldn't add an adopted file: it's a plain file on the drive again, as before `adopt`.
+    func unadopt(_ assetIDs: Set<String>) throws {
+        for assetID in assetIDs where assetID.hasPrefix("mac-") {
+            if let sidecar = index.assets[assetID]?.sidecar { try? fileManager.removeItem(at: root.appending(path: sidecar)) }
+            index.assets[assetID] = nil
+            for (key, stored) in index.resources where stored.assetID == assetID { index.resources[key] = nil }
+        }
+        try saveIndex()
+    }
+
     /// The phone put assets back under new IDs (old → new): their files, records and sidecars take the
     /// new ID, so the phone's next backup finds them stored and doesn't send them again.
     func rekey(_ ids: [String: String]) throws {

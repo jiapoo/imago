@@ -43,6 +43,8 @@ final class MediaViewerHost {
         /// Files an edited copy of the item at this index (a new file; the original is never changed).
         /// Returns where it went ("Tennis"), or nil when it couldn't. Nil where editing doesn't apply.
         var saveEdit: ((Int, URL) async -> String?)? = nil
+        /// Whether the item at this index can be edited: not a preview of one that isn't backed up yet.
+        var canEdit: (Int) -> Bool = { _ in true }
         /// The delete button's help, e.g. "Move to Recently Deleted"; nil where there's nothing to delete.
         var deleteTitle: String? = nil
         /// Deletes the item at this index. Returns whether it went, so the viewer moves to the next one.
@@ -361,7 +363,7 @@ private struct ViewerToolbar: ToolbarContent {
                 Label("Info", systemImage: host.showingInfo ? "info.circle.fill" : "info.circle")
             }
             .help("Show details")
-            if request.saveEdit != nil {
+            if request.saveEdit != nil, request.canEdit(index) {
                 Button { host.editing = true } label: {
                     Label("Edit", systemImage: "slider.horizontal.3")
                 }

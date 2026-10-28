@@ -37,15 +37,24 @@ public struct LibraryChange: Codable, Sendable, Hashable, Identifiable {
     /// Version 7: 2 when the Mac asks again after the user said no on the phone (nil: the first time).
     /// A change goes round once more at most: if it's turned down again, that's the answer.
     public var round: Int?
+    /// For a `restore`: files from the Mac the phone never had (an edit made there, a file added in
+    /// Finder), not ones deleted on it. A phone that knows this adds them right away, as it does
+    /// favorites; an older one shows them as put-backs to review.
+    public var isNew: Bool?
 
-    public init(id: UUID = UUID(), action: Action, assetIDs: [String], bytes: UInt64? = nil, createdAt: Date = .now, round: Int? = nil) {
+    public init(id: UUID = UUID(), action: Action, assetIDs: [String], bytes: UInt64? = nil, createdAt: Date = .now, round: Int? = nil,
+                isNew: Bool? = nil) {
         self.id = id
         self.action = action
         self.assetIDs = assetIDs
         self.bytes = bytes
         self.createdAt = createdAt
         self.round = round
+        self.isNew = isNew
     }
+
+    /// Files from the Mac to add to the phone's library (see `isNew`).
+    public var addsFromMac: Bool { action == .restore && isNew == true }
 
     /// Asked a second time, after the user said no.
     public var isAskedAgain: Bool { (round ?? 1) > 1 }
@@ -89,7 +98,7 @@ extension LibraryChange {
         case .removeFromAlbum(let album): return "Remove \(items) from “\(album)”"
         case .setFavorite(let on): return on ? "Favorite \(items)" : "Unfavorite \(items)"
         case .deleteAlbum(let album): return "Delete album “\(album)”"
-        case .restore: return "Put back \(items)"
+        case .restore: return isNew == true ? "Add \(items) from the Mac" : "Put back \(items)"
         }
     }
 
@@ -101,7 +110,7 @@ extension LibraryChange {
         case .removeFromAlbum: "rectangle.stack.badge.minus"
         case .setFavorite(let on): on ? "heart.fill" : "heart.slash"
         case .deleteAlbum: "rectangle.stack.badge.minus"
-        case .restore: "arrow.uturn.backward.circle"
+        case .restore: isNew == true ? "plus.square.on.square" : "arrow.uturn.backward.circle"
         }
     }
 }

@@ -207,6 +207,12 @@ struct BrowserView: View {
         }
     }
 
+    /// Adds files that didn't come from an iPhone to one's Photos library.
+    private func sendToPhone(_ items: [MediaItem], _ device: PairedDevice) {
+        let files = items.filter { $0.deviceID == nil }
+        Task { await server.send(files, to: device) }
+    }
+
     /// Top right: the folders an iPhone item is also in. In a folder, not that one (or one inside it).
     private func otherFolders(holding item: MediaItem) -> [FolderCopies.Copy] {
         let all = library.inFolders[item.id] ?? []
@@ -275,6 +281,8 @@ struct BrowserView: View {
                     removable: library.removable(selected).count,
                     folders: otherFolders,
                     copies: selected.flatMap(otherFolders(holding:)).map(\.url),
+                    sendable: selected.contains { $0.deviceID == nil } ? server.devices : [],
+                    send: { device in sendToPhone(selected, device) },
                     canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
                     move: { folder in moveSelected(selected, to: folder) },
                     newFolder: { naming = .newFolder(moving: selected) },
@@ -720,6 +728,13 @@ extension BrowserView {
         if !copies.isEmpty {
             Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
         }
+        if !isTrash, targets.contains(where: { $0.deviceID == nil }), !server.devices.isEmpty {
+            Menu("Send to iPhone") {
+                ForEach(server.devices) { device in
+                    Button("Send to \(device.name)") { sendToPhone(targets, device) }
+                }
+            }
+        }
         Divider()
         if isTrash {
             Button("Put Back") { putBack(targets) }
@@ -766,13 +781,6 @@ extension BrowserView {
         anchor = selection.anchor
     }
 
-    /// The folder for edited copies of iPhone backups: "Edited", unless an iPhone has that name.
-    private static func editedFolder(_ server: BackupServer) -> String {
-        var name = "Edited", n = 2
-        while server.reservedFolderNames.contains(name) { name = "Edited \(n)"; n += 1 }
-        return name
-    }
-
     /// Opens the viewer on `item`, stepping through this grid.
     private func openViewer(on item: MediaItem?) {
         guard let item else { return }
@@ -811,12 +819,11 @@ extension BrowserView {
             },
             sourceFrame: item.id == anchor ? anchorFrame : nil,
             saveEdit: isTrash ? nil : { [library, server, history] index, copy in
-                // Beside the original in its folder; a backup in an iPhone's own folder is listed from
-                // that iPhone's index, so its copy goes to a folder of its own instead.
-                let path = items[index].folder ?? Self.editedFolder(server)
+                // Beside the original: in its folder, or its iPhone's own dated folder.
+                let path = library.editedCopyFolder(for: items[index], server: server)
                 guard let step = await library.copyIn([copy], to: path, server: server) else { return nil }
                 history.record(step)
-                return path.isEmpty ? server.location.url.lastPathComponent : path
+                return path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path)
             },
             deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone too; the backup goes to Recently Deleted)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
@@ -1135,6 +1142,9 @@ private struct SelectionBar: View {
     let folders: [String]
     /// Copies of these in the folders, for Open Copy in Finder.
     var copies: [URL] = []
+    /// iPhones these can be sent to (files not from an iPhone); none hides Send to iPhone.
+    var sendable: [PairedDevice] = []
+    var send: (PairedDevice) -> Void = { _ in }
     let canPutBack: Bool
     var move: (String?) -> Void
     var newFolder: () -> Void
@@ -1163,6 +1173,19 @@ private struct SelectionBar: View {
             .help(transferMode == TransferMode.move.rawValue
                   ? "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)"
                   : "Copy into a folder (Copy | Move in the toolbar)")
+
+            if !sendable.isEmpty {
+                Menu {
+                    ForEach(sendable) { device in
+                        Button("Send to \(device.name)") { send(device) }
+                    }
+                } label: {
+                    Label("Send to iPhone", systemImage: "iphone.and.arrow.forward")
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .help("Add to the iPhone's Photos library. It goes now if Imago is open on the iPhone, otherwise when it next connects.")
+            }
 
             if !copies.isEmpty {
                 Button { NSWorkspace.shared.activateFileViewerSelecting(copies) } label: {

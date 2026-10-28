@@ -687,6 +687,30 @@ final class BackupClient {
             notifiedChangeIDs = Array((notifiedChangeIDs + fresh.map(\.id)).suffix(500))
         }
         scheduleAutoApply()
+        askToAdd()
+    }
+
+    /// Files from the Mac waiting for the user's yes, while the question is up.
+    var addPrompt: [LibraryChange] = []
+    /// Asked about already this session; "Not Now" leaves them in the review.
+    private var askedToAdd: Set<UUID> = []
+
+    /// Asks whether to add files the Mac sent (an edit made there), with Imago on screen.
+    func askToAdd() {
+        guard UIApplication.shared.applicationState == .active, addPrompt.isEmpty else { return }
+        let adds = macChanges.filter { $0.addsFromMac && !askedToAdd.contains($0.id) }
+        guard !adds.isEmpty else { return }
+        askedToAdd.formUnion(adds.map(\.id))
+        addPrompt = adds
+    }
+
+    /// The answer to `addPrompt`: add them, say no (the Mac doesn't offer them again by itself), or
+    /// leave them for later in the review.
+    func answerAdd(_ answer: Bool?) {
+        let adds = addPrompt
+        addPrompt = []
+        guard let answer else { return }
+        Task { await review(approve: answer ? adds : [], decline: answer ? [] : adds) }
     }
 
     /// Changes the user has already been notified about.
@@ -706,9 +730,11 @@ final class BackupClient {
             defer { autoApply = nil }
             // Changes made together on the Mac arrive one after another; wait a moment so deletions go in one prompt.
             try? await Task.sleep(for: .seconds(1.5))
-            // Putting photos back adds to the library: always the user's call, in the review.
-            while applyRightAway, UIApplication.shared.applicationState == .active, macChanges.contains(where: { $0.action != .restore }) {
-                let batch = macChanges.filter { $0.action != .restore }
+            // Adding to the library is always the user's call: put-backs in the review, files from the
+            // Mac in a question of their own (`addPrompt`), as iOS asks before deleting.
+            func automatic(_ change: LibraryChange) -> Bool { change.action != .restore }
+            while applyRightAway, UIApplication.shared.applicationState == .active, macChanges.contains(where: automatic) {
+                let batch = macChanges.filter(automatic)
                 await review(approve: batch, decline: [])
                 // Stop if nothing was handled (e.g. a review was already running); more may have arrived meanwhile.
                 if macChanges.allSatisfy(batch.contains) { break }

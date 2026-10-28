@@ -33,6 +33,8 @@ final class FileHistory {
     private(set) var redoStack: [Step] = []
     /// An undo or redo is running; another waits for it.
     private(set) var isBusy = false
+    /// What's being undone or redone, for the progress ring: "Undoing Delete".
+    private(set) var running: String?
 
     var canUndo: Bool { !undoStack.isEmpty && !isBusy }
     var canRedo: Bool { !redoStack.isEmpty && !isBusy }
@@ -50,14 +52,16 @@ final class FileHistory {
     func undo() async {
         guard canUndo, let step = undoStack.popLast() else { return }
         isBusy = true
-        defer { isBusy = false }
+        running = "Undoing \(step.name)"
+        defer { isBusy = false; running = nil }
         if let redo = await step.run() { redoStack.append(redo) }
     }
 
     func redo() async {
         guard canRedo, let step = redoStack.popLast() else { return }
         isBusy = true
-        defer { isBusy = false }
+        running = "Redoing \(step.name)"
+        defer { isBusy = false; running = nil }
         if let undo = await step.run() { undoStack.append(undo) }
     }
 }

@@ -43,6 +43,13 @@ final class PhoneLibraryModel {
     private(set) var assets: [PhoneAsset] = []
     /// Waiting to be deleted, newest first.
     private(set) var deleting: [PhoneAsset] = []
+    /// Files in this iPhone's folder on the drive that the iPhone doesn't have, such as an edited copy
+    /// saved beside its original. Shown in the library marked Not synced; nothing is asked of the iPhone.
+    private(set) var unsynced: [PhoneAsset] = []
+    /// `assets` with `unsynced` among them, newest first: what the library's grids show.
+    private(set) var libraryAssets: [PhoneAsset] = []
+    private var unsyncedFiles: [String: URL] = [:]
+    private var unsyncedByID: [String: PhoneAsset] = [:]
     /// Assets with any change waiting.
     private(set) var waiting: Set<String> = []
     /// The phone's albums and the ones waiting changes will create, sorted.
@@ -88,7 +95,26 @@ final class PhoneLibraryModel {
 
     /// The asset as shown, with waiting changes made.
     func asset(_ id: String) -> PhoneAsset? {
-        shownByID[id]
+        shownByID[id] ?? unsyncedByID[id]
+    }
+
+    /// Takes the drive's files in this iPhone's folder that aren't its backups (see `unsynced`).
+    func setUnsynced(_ items: [MediaItem]) {
+        let assets = items.map(PhoneAsset.unsynced)
+        guard assets != unsynced else { return }
+        for id in unsyncedFiles.keys { files[id] = nil }
+        unsynced = assets
+        unsyncedByID = Dictionary(assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        unsyncedFiles = Dictionary(items.map { (PhoneAsset.unsyncedPrefix + $0.url.path, $0.url) }, uniquingKeysWith: { a, _ in a })
+        files.merge(unsyncedFiles) { _, new in new }
+        mergeLibraryAssets()
+        revision += 1
+    }
+
+    private func mergeLibraryAssets() {
+        libraryAssets = unsynced.isEmpty ? assets : (assets + unsynced).sorted {
+            ($0.metadata.creationDate ?? .distantPast) > ($1.metadata.creationDate ?? .distantPast)
+        }
     }
 
     /// The assets as they were on the phone, for asking it to change them.
@@ -132,7 +158,7 @@ final class PhoneLibraryModel {
         if library.takenAt != takenAt { similar = nil }
         self.library = library
         takenAt = library.takenAt
-        files = library.files
+        files = library.files.merging(unsyncedFiles) { _, new in new }
         thumbnailBytes = library.thumbnailBytes
         base = library.assets
         baseByID = Dictionary(base.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -147,6 +173,7 @@ final class PhoneLibraryModel {
         shownByID = Dictionary(effective.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let newestFirst = effective.reversed()
         assets = newestFirst.filter { !deletingIDs.contains($0.id) }
+        mergeLibraryAssets()
         deleting = newestFirst.filter { deletingIDs.contains($0.id) }
         waiting = PendingChanges.touched(pending)
 
@@ -227,5 +254,23 @@ private enum LocalCopy {
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? encoder.encode(contents).write(to: url, options: .atomic)
         }
+    }
+}
+
+extension PhoneAsset {
+    static let unsyncedPrefix = "unsynced:"
+
+    /// A file on the drive that isn't on the iPhone (see `PhoneLibraryModel.unsynced`).
+    var isUnsynced: Bool { id.hasPrefix(Self.unsyncedPrefix) }
+
+    static func unsynced(_ item: MediaItem) -> PhoneAsset {
+        PhoneAsset(
+            metadata: AssetMetadata(
+                assetID: unsyncedPrefix + item.url.path, originalFilename: item.name, creationDate: item.date,
+                modificationDate: nil, mediaType: item.isVideo ? "video" : "image", pixelWidth: 0, pixelHeight: 0,
+                duration: item.duration, isFavorite: false, location: nil, albums: []
+            ),
+            originalSHA256: nil, bytes: item.bytes, isBackedUp: true
+        )
     }
 }
