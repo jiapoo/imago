@@ -569,6 +569,7 @@ extension MediaLibrary.Kind {
 struct SourcePicker: View {
     @Environment(BackupServer.self) private var server
     @Binding var selection: String
+    var everything = "Everything on the Drive"
 
     var body: some View {
         Picker("Show", selection: $selection) {
@@ -577,7 +578,7 @@ struct SourcePicker: View {
                 Text("On \(device.name)").tag(MediaLibrary.Source.phone(device.id).raw)
             }
             Divider()
-            Text("Everything on the Drive").tag(MediaLibrary.Source.drive.raw)
+            Text(everything).tag(MediaLibrary.Source.drive.raw)
         }
         .fixedSize()
         .help("Show what's on your iPhones (as of their last backup), on one of them, or everything on the backup drive")

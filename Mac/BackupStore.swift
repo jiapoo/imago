@@ -333,6 +333,10 @@ actor BackupStore {
     func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true) throws {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
         defer { if saving { try? saveIndex() } else { unsavedChanges += 1 } }
+        // Two assets can share one file (the iPhone had the same video twice, and the backup kept one
+        // copy). A file another asset still uses is copied, not moved, so that asset keeps its file.
+        var users: [URL: Int] = [:]
+        for stored in index.resources.values { users[url(of: stored.relativePath), default: 0] += 1 }
         for (assetID, keys) in byAsset {
             guard let metadata = index.assets[assetID]?.metadata else { continue }
             let target = directory.map(relativePath(of:))
@@ -342,14 +346,26 @@ actor BackupStore {
                 let source = url(of: stored.relativePath)
                 let wanted = target + "/" + source.lastPathComponent
                 guard url(of: wanted) != source else { continue }
-                let path = uniquePath(wanted, sha256: stored.sha256)
-                let destination = root.appending(path: path)
+                let shared = users[source, default: 0] > 1
+                let path = uniquePath(wanted, sha256: stored.sha256) { users[$0, default: 0] > 0 }
+                let destination = url(of: path)
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.removeItem(at: source)   // identical file already there
+                    // An identical file nothing else uses is already there.
+                    if !shared, fileManager.fileExists(atPath: source.path) { try fileManager.removeItem(at: source) }
+                } else if !fileManager.fileExists(atPath: source.path) {
+                    // Its file left with an asset it shared it with (an earlier move): copy that one.
+                    guard let twin = index.resources.values.lazy.filter({ $0.sha256 == stored.sha256 }).map({ self.url(of: $0.relativePath) })
+                        .first(where: { $0 != source && self.fileManager.fileExists(atPath: $0.path) })
+                    else { throw CocoaError(.fileNoSuchFile, userInfo: [NSFilePathErrorKey: source.path]) }
+                    try fileManager.copyItem(at: twin, to: destination)
+                } else if shared {
+                    try fileManager.copyItem(at: source, to: destination)
                 } else {
                     try fileManager.moveItem(at: source, to: destination)
                 }
+                users[source, default: 1] -= 1
+                users[destination, default: 0] += 1
                 index.resources[key]?.relativePath = path
             }
             try settleSidecar(of: assetID, keys: keys, in: target)
@@ -365,12 +381,15 @@ actor BackupStore {
             try? prepareStateDirectory()
             try? JSONEncoder().encode(skipped).write(to: skipURL, options: .atomic)
         }
+        // A file another asset shares (the same video twice on the iPhone) stays for that asset.
+        let leaving = Set(byAsset.values.joined())
+        let kept = Set(index.resources.filter { !leaving.contains($0.key) }.map { url(of: $0.value.relativePath) })
         for (assetID, keys) in byAsset {
             let sidecar = index.assets[assetID]?.sidecar ?? locateSidecar(of: assetID, keys: keys)
             for key in keys {
                 guard let stored = index.resources[key] else { continue }
                 let file = url(of: stored.relativePath)
-                if fileManager.fileExists(atPath: file.path) { try fileManager.removeItem(at: file) }
+                if !kept.contains(file), fileManager.fileExists(atPath: file.path) { try fileManager.removeItem(at: file) }
                 index.resources[key] = nil
                 skipped.insert(key)
             }
@@ -610,11 +629,12 @@ actor BackupStore {
     }
 
     /// Picks "name (2).ext" if a different file already has this name.
-    private func uniquePath(_ path: String, sha256: String) -> String {
+    /// `taken`: a file there that's identical but already some asset's doesn't count as free.
+    private func uniquePath(_ path: String, sha256: String, taken: (URL) -> Bool = { _ in false }) -> String {
         var candidate = path
         var n = 2
         while fileManager.fileExists(atPath: root.appending(path: candidate).path),
-              (try? FileHasher.sha256(of: root.appending(path: candidate))) != sha256 {
+              taken(url(of: candidate)) || (try? FileHasher.sha256(of: root.appending(path: candidate))) != sha256 {
             candidate = LibraryLayout.numbered(path, n)
             n += 1
         }

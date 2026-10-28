@@ -20,6 +20,10 @@ struct BrowserView: View {
     /// Large Files: only items still on an iPhone.
     /// Library, On This Day and Large Files: on the iPhones (all, or one), or everything on the drive.
     @AppStorage(MediaLibrary.Source.key) private var sourceRaw = MediaLibrary.Source.phones.raw
+    /// Folders filter on their own: what's in a folder is on the drive, so they show all of it unless asked.
+    @AppStorage(MediaLibrary.Source.folderKey) private var folderSourceRaw = MediaLibrary.Source.drive.raw
+    /// Recently Deleted too, on its own.
+    @AppStorage(MediaLibrary.Source.trashKey) private var trashSourceRaw = MediaLibrary.Source.drive.raw
     @AppStorage("browserTileSize") private var tileSize = 150.0
     @State private var anchor: MediaItem.ID?
     /// Where the anchor's thumbnail is, for the viewer to grow out of.
@@ -42,10 +46,10 @@ struct BrowserView: View {
     /// What the grid shows, worked out once per change to the library or the filters, not on every
     /// redraw: selecting redraws the page, and the library can have tens of thousands of items.
     private var shown: GridCache {
-        let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? sourceRaw : "")
+        let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? source.raw : "")
         if cache.key != key {
             let items = library.items(in: scope, kind: kind)
-            cache.items = showsSource ? library.filter(items, by: MediaLibrary.Source(raw: sourceRaw)) : items
+            cache.items = showsSource ? library.filter(items, by: source) : items
             cache.days = isFlat ? [] : Day.group(cache.items)
             cache.ids = Set(cache.items.map(\.id))
             cache.key = key
@@ -62,9 +66,16 @@ struct BrowserView: View {
     /// Pages with the Show menu (on the iPhones, or everything on the drive).
     private var showsSource: Bool {
         switch scope {
-        case .all, .large, .onThisDay: true
+        case .all, .large, .onThisDay, .folder, .trash: true
         default: false
         }
+    }
+    private var sourceName: String {
+        if case .phone(let id) = source { server.devices.first { $0.id == id }?.name ?? "that iPhone" } else { "your iPhones" }
+    }
+    private var isFolder: Bool { if case .folder = scope { true } else { false } }
+    private var source: MediaLibrary.Source {
+        MediaLibrary.Source(raw: isFolder ? folderSourceRaw : isTrash ? trashSourceRaw : sourceRaw)
     }
     /// Large Files and Recently Deleted keep their own order (by size; by when deleted), so they aren't
     /// split into days: out of date order, one day would turn up in several places.
@@ -315,8 +326,8 @@ struct BrowserView: View {
     /// Deleted on iPhone: what these are, and what to do with them.
     private var deletedOnPhoneBanner: some View {
         Label(server.trashDays > 0
-              ? "Backed up here, but deleted on the iPhone since. Delete them here too, keep the backups, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each)."
-              : "Backed up here, but deleted on the iPhone since. Delete them here too, keep the backups, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide.",
+              ? "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each)."
+              : "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide.",
               systemImage: "iphone.slash")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -501,7 +512,11 @@ extension BrowserView {
             ToolbarItemGroup(placement: .principal) {
                 KindPicker(selection: $kind)
 
-                if showsSource {
+                if isFolder {
+                    SourcePicker(selection: $folderSourceRaw, everything: "Everything in the Folder")
+                } else if isTrash {
+                    SourcePicker(selection: $trashSourceRaw, everything: "Everything in Recently Deleted")
+                } else if showsSource {
                     SourcePicker(selection: $sourceRaw)
                 }
             }
@@ -551,10 +566,20 @@ extension BrowserView {
             case .all:
                 ContentUnavailableView("No photos yet", systemImage: "photo.on.rectangle.angled",
                                        description: Text("Photos and videos appear here as your iPhones back up."))
+            case .folder(let path) where source != .drive && !library.items(in: scope).isEmpty:
+                ContentUnavailableView(
+                    "Nothing here is on \(sourceName)", systemImage: "iphone.slash",
+                    description: Text("“\((path as NSString).lastPathComponent)” has \(library.items(in: scope).count.formatted()) items on the drive. Show Everything in the Folder to see them.")
+                )
             case .folder(let path):
                 ContentUnavailableView(
                     "“\((path as NSString).lastPathComponent)” is empty", systemImage: "folder",
                     description: Text("Select photos or videos and choose Move To, or drag them onto this folder in the sidebar or the Files panel.")
+                )
+            case .trash where source != .drive && !library.trash.isEmpty:
+                ContentUnavailableView(
+                    "Nothing here is on \(sourceName)", systemImage: "iphone.slash",
+                    description: Text("Recently Deleted has \(library.trash.count.formatted()) items. Show Everything in Recently Deleted to see them.")
                 )
             case .trash:
                 ContentUnavailableView("Recently Deleted is empty", systemImage: "trash",

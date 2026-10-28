@@ -193,7 +193,7 @@ enum MacNotifications {
     static func deletedOnPhone(_ count: Int, on phone: String) {
         post(id: "deleted-\(phone)",
              title: count == 1 ? "1 item was deleted on \(phone)" : "\(count) items were deleted on \(phone)",
-             body: "The backups are still on your Mac. Open Imago to delete them here too, keep them, or put them back on \(phone).")
+             body: "The backups are still on your Mac. Open Imago to delete them from your Mac too, keep them on your Mac, or put them back on \(phone).")
     }
 
     private static func post(id: String, title: String, body: String) {
@@ -249,18 +249,22 @@ struct DecisionsCard: View {
         let isDelete = decline.change.action == .delete
         return row(
             device: decline.device, symbol: decline.change.symbol,
-            title: "\(phone) said no: \(decline.change.summary.lowercasedFirst)",
+            title: isDelete
+                ? (decline.change.assetIDs.count == 1 ? "\(phone) kept 1 item you deleted" : "\(phone) kept \(decline.change.assetIDs.count.formatted()) items you deleted")
+                : "\(phone) said no: \(decline.change.summary.lowercasedFirst)",
             detail: isDelete
-                ? "They're still on \(phone); their backups are in Recently Deleted on this Mac. Keep them here too, or ask \(phone) once more."
+                ? "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone). The \(decline.change.assetIDs.count == 1 ? "backup is" : "backups are") in Recently Deleted on this Mac: restore \(decline.change.assetIDs.count == 1 ? "it" : "them"), or ask \(phone) again."
                 : "Ask \(phone) once more, or leave it as it is."
                     + (decline.change.isAskedAgain ? " This was the second time it was asked." : "")
         ) {
             if isDelete {
-                Button("Keep Here Too") { Task { history.record(await library.keepHereToo(decline, server: server)) } }
+                Button(decline.change.assetIDs.count == 1 ? "Restore Backup" : "Restore Backups") {
+                    Task { history.record(await library.keepHereToo(decline, server: server)) }
+                }
                     .buttonStyle(.borderedProminent)
-                    .help("Put the backups back where they were: the photos stay on \(phone) and here")
+                    .help("Take the backups out of Recently Deleted on this Mac and put them back where they were. They stay on \(phone) too.")
                 Menu("More") {
-                    Button("Ask \(phone) Again") { Task { await library.askAgain(decline, server: server) } }
+                    Button("Ask \(phone) to Delete Again") { Task { await library.askAgain(decline, server: server) } }
                     Button("Leave in Recently Deleted") { Task { await library.leaveAsIs(decline, server: server) } }
                 }
                 .fixedSize()
@@ -281,8 +285,8 @@ struct DecisionsCard: View {
         ) {
             Button("Review") { openDeleted(device) }
             Menu("Decide") {
-                Button("Delete Here Too") { Task { history.record(await library.trash(items, server: server)) } }
-                Button("Keep the Backups") { Task { history.record(await library.keepBackups(items, server: server)) } }
+                Button("Delete from This Mac Too") { Task { history.record(await library.trash(items, server: server)) } }
+                Button("Keep the Backups on This Mac") { Task { history.record(await library.keepBackups(items, server: server)) } }
                 Button("Put Back on \(device.name)") { Task { history.record(await library.putBackOnPhone(items, server: server)) } }
             }
             .fixedSize()

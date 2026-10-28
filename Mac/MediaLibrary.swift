@@ -506,6 +506,8 @@ final class MediaLibrary {
         case drive
 
         static let key = "librarySource"
+        static let folderKey = "folderSource"
+        static let trashKey = "trashSource"
 
         init(raw: String) {
             if raw == "drive" { self = .drive } else if raw.hasPrefix("phone:") { self = .phone(String(raw.dropFirst(6))) } else { self = .phones }

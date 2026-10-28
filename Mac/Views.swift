@@ -27,6 +27,8 @@ struct MainView: View {
     @Environment(FileHistory.self) private var history
     @State private var selection: SidebarItem? = .home
     @State private var showingAddPhone = false
+    /// The toolbar bell's list of what needs an answer.
+    @State private var showingDecisions = false
     @State private var naming: FolderNaming?
     @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
     /// Move was picked: the alert explaining it is up.
@@ -109,6 +111,19 @@ struct MainView: View {
                     if pageHasPhotos {
                         ToolbarItem(placement: .primaryAction) { transferPicker }
                     }
+                    // On every page while something waits for an answer: what the iPhones said no to,
+                    // and what was deleted on them.
+                    if decisionCount > 0 {
+                        // In a group of its own, apart from each page's buttons.
+                        if #available(macOS 26.0, *) {
+                            ToolbarSpacer(.fixed, placement: .primaryAction)
+                            ToolbarItem(placement: .primaryAction) { decisionsBell }
+                                .sharedBackgroundVisibility(.visible)
+                            ToolbarSpacer(.fixed, placement: .primaryAction)
+                        } else {
+                            ToolbarItem(placement: .primaryAction) { decisionsBell }
+                        }
+                    }
                 }
             }
         }
@@ -149,6 +164,44 @@ struct MainView: View {
     }
 
     /// Pages of photos and videos, where Copy | Move applies. Not Home, Storage or an iPhone's own page.
+    /// How many things wait for an answer: each change an iPhone said no to, and each iPhone with
+    /// photos deleted on it whose backups are still here.
+    private var decisionCount: Int {
+        library.declines.count + server.devices.count { device in
+            library.deletedOnPhone(device.id).contains { !library.restoring.contains($0.id) }
+        }
+    }
+
+    private var decisionsBell: some View {
+        Button { showingDecisions.toggle() } label: {
+            // The count beside the bell, not on it: a toolbar button clips what sticks out.
+            HStack(spacing: 4) {
+                Image(systemName: "bell.fill")
+                Text(decisionCount.formatted())
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 17, minHeight: 17)
+                    .background(.red, in: Capsule())
+            }
+            .padding(.horizontal, 2)
+            .accessibilityLabel("Needs Your Answer")
+        }
+        .help(decisionCount == 1 ? "1 thing needs your answer" : "\(decisionCount) things need your answer")
+        .popover(isPresented: $showingDecisions, arrowEdge: .bottom) {
+            ScrollView {
+                DecisionsCard(devices: server.devices) { device in
+                    showingDecisions = false
+                    selection = .deletedOnPhone(device.id)
+                }
+                .padding(12)
+            }
+            .frame(width: 640)
+            .frame(maxHeight: 520)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var pageHasPhotos: Bool {
         switch selection ?? .home {
         case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay: true
