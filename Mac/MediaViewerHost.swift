@@ -1,5 +1,6 @@
 import AppKit
 import AreteMedia
+import CoreLocation
 import SwiftUI
 
 /// The in-app viewer (AreteMedia's `MediaViewer`, embedded). A photo or video opened from any grid
@@ -30,6 +31,8 @@ final class MediaViewerHost {
         var date: (Int) -> Date?
         /// Shown instead when there's no date.
         var name: (Int) -> String
+        /// Where it was taken, named over the date in the toolbar's title; nil when not known.
+        var coordinate: (Int) -> CLLocationCoordinate2D? = { _ in nil }
         var info: (Int) -> [InfoRow]
         /// Whether it's a favorite on the iPhone; nil where favorites don't apply.
         var isFavorite: ((Int) -> Bool)? = nil
@@ -344,18 +347,14 @@ private struct ViewerToolbar: ToolbarContent {
             }
             .help("Back to the grid (Esc)")
         }
-        ToolbarItem(placement: .principal) {
-            VStack(spacing: 0) {
-                Text(request.date(index)?.formatted(date: .long, time: .standard) ?? request.name(index))
-                    .font(.headline)
-                    .lineLimit(1)
-                if host.shown.count > 1 {
-                    Text("\(host.position + 1) of \(host.shown.count.formatted())")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-            }
+        let title = ViewerTitle(date: request.date(index), name: request.name(index), coordinate: request.coordinate(index),
+                                position: host.shown.count > 1 ? "\(host.position + 1) of \(host.shown.count.formatted())" : nil)
+        // Two lines don't fit in a toolbar button's glass capsule: plain text over the bar, as in Photos.
+        if #available(macOS 26.0, *) {
+            ToolbarItem(placement: .principal) { title }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .principal) { title }
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { host.showingInfo.toggle() } label: {
@@ -413,5 +412,93 @@ private struct InfoPanel: View {
             .padding(18)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+/// The viewer's title, like Photos: where it was taken on top, when below in a smaller font
+/// ("Yesterday  3:41 PM"). Without a place, the day on top and the time below. A long place gives way
+/// to a shorter name for the area (see `PlaceNames`), then shrinks a little, and only then trails off;
+/// the pointer shows the full place.
+private struct ViewerTitle: View {
+    let date: Date?
+    let name: String
+    let coordinate: CLLocationCoordinate2D?
+    /// "3 of 120", in the tooltip.
+    let position: String?
+
+    @State private var place: PlaceNames.Place?
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(place?.short ?? date.map { Self.day($0) } ?? name)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .truncationMode(.tail)
+            if let date {
+                Text(place == nil ? Self.time(date) : "\(Self.day(date))  \(Self.time(date))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: 300)
+        .help([place?.full, position].compactMap(\.self).joined(separator: "\n"))
+        .task(id: coordinate.map { "\($0.latitude),\($0.longitude)" }) {
+            place = nil
+            guard let coordinate else { return }
+            place = await PlaceNames.place(at: coordinate)
+        }
+    }
+
+    /// Today, Yesterday, the weekday within the last week, otherwise the date.
+    static func day(_ date: Date, now: Date = .now) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? .max
+        return (0..<7).contains(days) ? date.formatted(.dateTime.weekday(.wide)) : date.formatted(date: .long, time: .omitted)
+    }
+
+    static func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+}
+
+/// Place names for coordinates, looked up once each (the geocoder is rate-limited) and kept while the
+/// app runs. Nearby coordinates share an answer.
+@MainActor
+enum PlaceNames {
+    struct Place: Sendable {
+        /// For the title: short enough for one line, like Photos ("Golden Gate Park", "Nanshan").
+        var short: String
+        /// For the tooltip.
+        var full: String
+    }
+
+    private static var cache: [String: Place?] = [:]
+
+    static func place(at coordinate: CLLocationCoordinate2D) async -> Place? {
+        // About 100 m.
+        let key = String(format: "%.3f,%.3f", coordinate.latitude, coordinate.longitude)
+        if let cached = cache[key] { return cached }
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard let placemark = try? await CLGeocoder().reverseGeocodeLocation(location).first else {
+            return nil  // Offline or rate-limited: try again next time.
+        }
+        let place = Self.place(placemark)
+        cache[key] = place
+        return place
+    }
+
+    /// A long point of interest gives way to the district or town; anything after a comma (a street,
+    /// a region) is dropped.
+    private static func place(_ p: CLPlacemark) -> Place? {
+        let full = [p.areasOfInterest?.first, p.subLocality, p.locality, p.name].compactMap(\.self).first
+        let candidates = [p.areasOfInterest?.first, p.subLocality, p.locality, p.name, p.administrativeArea]
+            .compactMap { $0?.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } }
+            .filter { !$0.isEmpty }
+        guard let short = candidates.first(where: { $0.count <= 28 }) ?? candidates.first else { return nil }
+        // The full name with the town, when the title shows less: "Shenzhen Bay Sports Center, Nanshan, Shenzhen".
+        let parts = [full, p.subLocality, p.locality].compactMap(\.self).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        return Place(short: short, full: parts.joined(separator: ", "))
     }
 }

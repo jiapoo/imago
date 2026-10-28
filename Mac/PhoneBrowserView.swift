@@ -1,3 +1,4 @@
+import CoreLocation
 import ImagoKit
 import SwiftUI
 
@@ -676,6 +677,9 @@ struct PhoneGrid: View {
             urls: urls, index: start, thumbnailBytes: bytes,
             date: { model.asset(ids[$0])?.metadata.creationDate },
             name: { model.asset(ids[$0])?.metadata.originalFilename ?? "" },
+            coordinate: { index in
+                model.asset(ids[index])?.metadata.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            },
             info: { model.asset(ids[$0]).map(Self.info) ?? [] },
             isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
             toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },

@@ -76,6 +76,8 @@ struct MainView: View {
             }
             // A fresh view per sidebar item, so the last page's title and toolbar don't linger.
             .id(selection)
+            // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
+            .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .mediaViewerOverlay()

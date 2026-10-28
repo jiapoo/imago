@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 import ImagoKit
 import SwiftUI
 
@@ -645,6 +646,10 @@ extension BrowserView {
             thumbnailBytes: Dictionary(items.map { ($0.url, $0.bytes) }, uniquingKeysWith: { a, _ in a }),
             date: { items[$0].date },
             name: { items[$0].name },
+            coordinate: { index in
+                guard let latitude = items[index].latitude, let longitude = items[index].longitude else { return nil }
+                return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+            },
             info: { index in
                 let item = items[index]
                 var rows = [MediaViewerHost.InfoRow(label: "Name", value: item.name)]
