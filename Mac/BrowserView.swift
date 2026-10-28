@@ -770,6 +770,8 @@ struct SourceBadge: View {
         var help: String
         /// Still on the iPhone, but waiting to be deleted there: a small clock on the dot.
         var waiting = false
+        /// Where it came from, not where it is: drawn as an outlined tag, not a dot.
+        var cameFrom = false
 
         /// `cameFrom`: the iPhone it came from, rather than one it's on (in Recently Deleted).
         /// `waiting`: on the iPhone until it deletes it, as asked.
@@ -781,10 +783,12 @@ struct SourceBadge: View {
                 color = server.color(of: id)
                 help = cameFrom ? "From \(name)" : waiting ? "On \(name) · waiting to be deleted there" : "On \(name)"
                 self.waiting = waiting
+                self.cameFrom = cameFrom
             case .drive:
                 initial = nil
                 color = .black.opacity(0.55)
                 help = cameFrom ? "Not from an iPhone" : "Only on the drive"
+                self.cameFrom = cameFrom
             }
         }
     }
@@ -792,6 +796,28 @@ struct SourceBadge: View {
     let style: Style
 
     var body: some View {
+        if style.cameFrom { origin } else { dot }
+    }
+
+    /// Where it came from: a dark tag with an iPhone outline and the initial, edged in the iPhone's
+    /// color. Unlike the filled dot (where it is now), it reads as a label, not a place.
+    private var origin: some View {
+        HStack(spacing: 2) {
+            Image(systemName: style.initial == nil ? "externaldrive" : "iphone")
+                .font(.system(size: 9, weight: .semibold))
+            if let initial = style.initial {
+                Text(initial).font(.system(size: 10, weight: .bold))
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 5)
+        .frame(height: 16)
+        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(style.initial == nil ? .white.opacity(0.7) : style.color, lineWidth: 1.5))
+        .help(style.help)
+    }
+
+    private var dot: some View {
         ZStack {
             Circle().fill(style.color)
             if let initial = style.initial {
