@@ -545,7 +545,6 @@ final class BackupServer {
         Task {
             try? await store.withdraw(assetIDs, from: .restore)
             libraryChanged(device.id)
-            catalogRevision += 1
             await pushChanges(to: device.id, from: store)
         }
     }
@@ -573,8 +572,9 @@ final class BackupServer {
             } catch {
                 addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
             }
+            // The library notes what it asked for itself (`MediaLibrary.restoring`, `pendingRemoval`):
+            // re-reading every item for one queued change would take seconds on a big library.
             libraryChanged(device.id)
-            catalogRevision += 1
             await pushChanges(to: device.id, from: store)
         }
     }

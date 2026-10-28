@@ -26,6 +26,8 @@ struct PlacesMap: View {
     @State private var position: MapCameraPosition = .automatic
     @State private var fitted = false
     @State private var region: MKCoordinateRegion?
+    /// Where the map looks from now, to keep the zoom when it moves to a group.
+    @State private var camera: MapCamera?
     @State private var groups: [Group] = []
 
     struct Group: Identifiable {
@@ -55,6 +57,7 @@ struct PlacesMap: View {
             // Only a real move: regrouping changes the annotations, which mustn't feed back into here.
             guard !Self.same(region, context.region) else { return }
             region = context.region
+            camera = context.camera
             regroup()
         }
         .onAppear {
@@ -122,10 +125,19 @@ struct PlacesMap: View {
         }
     }
 
-    /// Lists the group's photos beside the map. The map stays where it is; zoom in with the
-    /// trackpad or the zoom buttons to split the group.
+    /// Lists the group's photos beside the map, and centers the map on the group at the same zoom:
+    /// the panel narrows the map, which would otherwise leave the group off to one side or under the
+    /// edge. Zoom in with the trackpad or the zoom buttons to split the group.
     private func tap(_ group: Group) {
         select(group.pins.map(\.id))
+        let target = camera.map { MapCamera(centerCoordinate: group.coordinate, distance: $0.distance, heading: $0.heading, pitch: $0.pitch) }
+        withAnimation(.snappy(duration: 0.45)) {
+            if let target {
+                position = .camera(target)
+            } else if let span = region?.span {
+                position = .region(MKCoordinateRegion(center: group.coordinate, span: span))
+            }
+        }
     }
 }
 

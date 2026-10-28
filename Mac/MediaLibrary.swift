@@ -166,6 +166,10 @@ final class MediaLibrary {
     var error: String?
 
     private var loadedRevision: Int?
+    /// Each iPhone's library list as last read, and what it was read from (the list's date and how many
+    /// files were stored). Reading a big one takes a while, and most reloads (a move, a put-back) don't
+    /// change it.
+    private var phoneCache: [String: (stamp: String, assets: [String: PhoneAsset])] = [:]
 
     /// Items over this size show in Large Files.
     static let largeFileBytes: UInt64 = 20_000_000
@@ -223,8 +227,13 @@ final class MediaLibrary {
             }
             // After the catalog, which finds the sidecars of records that didn't know theirs.
             await store.hideOlderSidecars()
-            if let library = await store.phoneLibrary() {
-                phones[device.id] = Dictionary(library.assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            let stamp = "\(await store.snapshotModified()?.timeIntervalSince1970 ?? 0)|\(await store.resourceCount())"
+            if let cached = phoneCache[device.id], cached.stamp == stamp {
+                phones[device.id] = cached.assets
+            } else if let library = await store.phoneLibrary() {
+                let assets = Dictionary(library.assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+                phones[device.id] = assets
+                phoneCache[device.id] = (stamp, assets)
             }
             let queue = await store.changeQueue()
             for change in queue.pending {
@@ -318,24 +327,28 @@ final class MediaLibrary {
     func keepHereToo(_ decline: Decline, server: BackupServer) async -> FileHistory.Step? {
         let ids = Set(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
         let back = trash.filter { ids.contains($0.id) }
-        let step = back.isEmpty ? nil : await putBack(back, server: server)
+        // Settled first, so the question goes at once; Put Back's own reload is the only one.
         await server.resolve(decline.change, as: .kept, on: decline.device)
-        await load(from: server, force: true)
-        return step
+        declines.removeAll { $0.id == decline.id }
+        return back.isEmpty ? nil : await putBack(back, server: server)
     }
 
     /// Settles a turned-down change as it is: for a deletion, the backups stay in Recently Deleted and
     /// the photos stay on the iPhone; for anything else, it's just noted.
     func leaveAsIs(_ decline: Decline, server: BackupServer) async {
         await server.resolve(decline.change, as: decline.change.action == .delete ? .leftDeleted : .dismissed, on: decline.device)
-        await load(from: server, force: true)
+        declines.removeAll { $0.id == decline.id }
     }
 
     /// Asks the iPhone once more. If it says no again, the backups are kept (see `settleFinalAnswers`).
     func askAgain(_ decline: Decline, server: BackupServer) async {
         server.askAgain(decline.change, on: decline.device)
         await server.resolve(decline.change, as: .askedAgain, on: decline.device)
-        await load(from: server, force: true)
+        declines.removeAll { $0.id == decline.id }
+        if decline.change.action == .delete {
+            pendingRemoval.formUnion(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
+            revision += 1
+        }
     }
 
     /// Keeps the backups of items deleted on their iPhone, on purpose: they leave Deleted on iPhone and
@@ -919,6 +932,7 @@ final class MediaLibrary {
         } catch {
             self.error = error.localizedDescription
         }
+        activity?.detail = "Updating the library"
         await load(from: server, force: true)
         await server.refreshSummaries()
     }

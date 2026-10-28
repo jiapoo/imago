@@ -79,15 +79,9 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .mediaViewerOverlay()
-            // What's under way (copying a big video, moving hundreds): above everything, bottom right.
-            .overlay(alignment: .bottomTrailing) {
-                if let activity = library.activity {
-                    ActivityPanel(activity: activity)
-                        .padding(20)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .animation(.snappy(duration: 0.25), value: library.activity == nil)
+            // What's under way (copying a big video, moving hundreds, the library catching up): a ring in
+            // the middle of the page, above everything. Quick work never shows it.
+            .overlay { ActivityOverlay(activity: library.activity) }
             .toolbar {
                 if !viewer.isOpen {
                     if pageHasPhotos {
@@ -174,40 +168,102 @@ struct MainView: View {
 }
 
 /// What's under way, while it lasts: what, how far (a bar), and the file being worked on.
-struct ActivityPanel: View {
+/// Long work in the middle of the page: a ring that fills as it goes and keeps turning while it works,
+/// with what it's doing beneath. It appears only once the work has taken a moment, and fades.
+struct ActivityOverlay: View {
+    let activity: MediaLibrary.Activity?
+    @State private var shown: MediaLibrary.Activity?
+
+    var body: some View {
+        ZStack {
+            if let shown {
+                ActivityCard(activity: shown)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.3), value: shown == nil)
+        .allowsHitTesting(false)
+        .task(id: activity == nil) {
+            guard activity != nil else {
+                shown = nil
+                return
+            }
+            // Quick work (a move of a few items) would only flash.
+            try? await Task.sleep(for: .milliseconds(450))
+            if !Task.isCancelled { shown = activity }
+        }
+        .onChange(of: activity) { _, now in
+            if shown != nil, let now { shown = now }
+        }
+    }
+}
+
+private struct ActivityCard: View {
     let activity: MediaLibrary.Activity
 
     var body: some View {
-        HStack(spacing: 14) {
-            ProgressView(value: activity.fraction)
-                .progressViewStyle(.circular)
-                .controlSize(.small)
-                .tint(.imago)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(activity.title).font(.headline)
-                    Spacer(minLength: 12)
-                    Text(activity.total > 1 ? "\(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())" : "")
+        VStack(spacing: 14) {
+            ActivityRing(fraction: activity.total > 0 ? activity.fraction : nil)
+                .frame(width: 76, height: 76)
+            VStack(spacing: 4) {
+                Text(activity.title).font(.headline)
+                if activity.total > 1 {
+                    Text("\(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())")
                         .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                        .contentTransition(.numericText())
                 }
-                ProgressView(value: activity.fraction).tint(.imago)
                 if let detail = activity.detail {
-                    HStack {
-                        Text(detail).lineLimit(1).truncationMode(.middle)
-                        Spacer(minLength: 8)
-                        if let bytes = activity.bytes {
-                            Text("\(bytes.done.bytes) of \(bytes.total.bytes)").monospacedDigit()
-                        }
-                    }
-                    .font(.caption).foregroundStyle(.secondary)
+                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                if let bytes = activity.bytes {
+                    Text("\(bytes.done.bytes) of \(bytes.total.bytes)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
                 }
             }
+            .multilineTextAlignment(.center)
         }
-        .padding(14)
-        .frame(width: 340)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
-        .shadow(color: .black.opacity(0.15), radius: 18, y: 6)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 24)
+        .frame(width: 280)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.primary.opacity(0.07)))
+        .shadow(color: .black.opacity(0.18), radius: 30, y: 12)
+        .animation(.snappy(duration: 0.25), value: activity.done)
+    }
+}
+
+/// A progress ring in Imago's red: the arc fills with `fraction`, and a bright comet keeps circling it
+/// so the ring never looks stuck. Without a fraction, the comet alone.
+struct ActivityRing: View {
+    var fraction: Double?
+    var lineWidth: CGFloat = 7
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let turn = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
+            ZStack {
+                Circle().stroke(Color.imago.opacity(0.12), lineWidth: lineWidth)
+                if let fraction {
+                    Circle()
+                        .trim(from: 0, to: max(0.02, fraction))
+                        .stroke(LinearGradient(colors: [Color.imago.mix(with: .white, by: 0.25), .imago], startPoint: .top, endPoint: .bottom),
+                                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.snappy(duration: 0.4), value: fraction)
+                }
+                Circle()
+                    .trim(from: 0, to: 0.22)
+                    .stroke(AngularGradient(colors: [Color.imago.opacity(0), Color.imago.opacity(fraction == nil ? 1 : 0.55)],
+                                            center: .center, startAngle: .degrees(0), endAngle: .degrees(79)),
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(turn * 360))
+                if let fraction {
+                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
+                        .contentTransition(.numericText())
+                }
+            }
+            .padding(lineWidth / 2)
+        }
     }
 }
 

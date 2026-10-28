@@ -229,6 +229,12 @@ actor BackupStore {
         return summary
     }
 
+    /// How many files are stored: with the library list's date, tells whether `phoneLibrary()` would
+    /// come out the same as last time.
+    func resourceCount() -> Int {
+        index.resources.count
+    }
+
     /// Every stored file, keyed by `ResourceKey.description`.
     func storedResources() -> [String: StoredResource] {
         index.resources
