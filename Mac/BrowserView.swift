@@ -603,6 +603,13 @@ extension BrowserView {
         anchor = selection.anchor
     }
 
+    /// The folder for edited copies of iPhone backups: "Edited", unless an iPhone has that name.
+    private static func editedFolder(_ server: BackupServer) -> String {
+        var name = "Edited", n = 2
+        while server.reservedFolderNames.contains(name) { name = "Edited \(n)"; n += 1 }
+        return name
+    }
+
     /// Opens the viewer on `item`, stepping through this grid.
     private func openViewer(on item: MediaItem?) {
         guard let item else { return }
@@ -632,6 +639,14 @@ extension BrowserView {
                 return rows
             },
             sourceFrame: item.id == anchor ? anchorFrame : nil,
+            saveEdit: isTrash ? nil : { [library, server, history] index, copy in
+                // Beside the original in its folder; a backup in an iPhone's own folder is listed from
+                // that iPhone's index, so its copy goes to a folder of its own instead.
+                let path = items[index].folder ?? Self.editedFolder(server)
+                guard let step = await library.copyIn([copy], to: path, server: server) else { return nil }
+                history.record(step)
+                return path.isEmpty ? server.location.url.lastPathComponent : path
+            },
             deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone too; the backup goes to Recently Deleted)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
                 let item = [items[index]]

@@ -8,7 +8,7 @@ Photos move over your Wi-Fi with encryption and never pass through a cloud servi
 | Path | What |
 |---|---|
 | `Packages/ImagoKit` | Shared code: wire protocol, framing, TLS-PSK networking, pairing, library layout, hashing. Has tests. |
-| `Packages/ImagoMedia` | The photo and video viewer: Arete's AreteMedia module, copied (see its `Package.swift`). |
+| `../arete-full-stack/arete-apple/Packages/AreteMedia` | The photo and video viewer and editor, one package shared with Arete. Imago needs the Arete checkout beside it. |
 | `Mac/` | Mac app: Bonjour listener, `BackupStore` (verified writes, sidecars, index), status, pairing QR, library grid, menu bar. |
 | `iOS/` | iPhone app: PhotoKit scan and export, upload client, QR pairing, background processing task. |
 | `project.yml` | XcodeGen spec. Generates `Imago.xcodeproj` (git-ignored). |
@@ -170,13 +170,18 @@ from Finder, and changes queued for an iPhone (while they're still waiting). Del
 undone, nor can a deletion the iPhone has already done.
 
 A double-click or Space opens it in Imago's viewer, inside the window like the Photos app (AreteMedia's
-`MediaViewer`, copied from Arete into `Packages/ImagoMedia`). The toolbar shows when it was taken and where
+`MediaViewer`, the package Imago shares with Arete). The toolbar shows when it was taken and where
 it is in the grid, with Info, Share and, for iPhone items, Favorite. It opens at once on the thumbnail and
 sharpens when the full photo is decoded; it grows out of its thumbnail and shrinks back into it, as in
 Photos. Pinch or double-click to zoom a photo. Videos have the native floating controls (as in Photos and
 QuickTime), start while their details load, and read ahead so a slow drive doesn't stutter; `,` and `.` step
 one frame. ← and → or a two-finger swipe move through the grid; Esc, the back button or Space on a photo go
-back. The trash button (⌘⌫ or Delete) deletes what's on screen and moves to the next. Playback is logged (Console, category "media") with when it started, stalls and dropped frames.
+back.
+
+**Edit** (⌘E) turns, flips and crops a photo or video and trims a video (AreteMedia's `MediaEditView`).
+The backup is never changed: Save as Copy writes a new file, "IMG_4821 (Edited).HEIC" (a video becomes
+a `.mov`), keeping when and where it was taken. It goes beside the original in its folder; for an item in an
+iPhone's own folder, into a folder named "Edited". ⌘Z removes the copy. The trash button (⌘⌫ or Delete) deletes what's on screen and moves to the next. Playback is logged (Console, category "media") with when it started, stalls and dropped frames.
 
 A backup drive that spins (most USB hard drives) stops after a few idle minutes, and waking it takes 10–25
 seconds. While Imago is the active app or a photo page is open, it keeps the drive spinning (macOS's disk-idle

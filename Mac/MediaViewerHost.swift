@@ -37,6 +37,9 @@ final class MediaViewerHost {
         /// Where the opened item's thumbnail is, in `space`: the viewer grows out of it and shrinks
         /// back into it. Nil to fade instead.
         var sourceFrame: CGRect? = nil
+        /// Files an edited copy of the item at this index (a new file; the original is never changed).
+        /// Returns where it went ("Tennis"), or nil when it couldn't. Nil where editing doesn't apply.
+        var saveEdit: ((Int, URL) async -> String?)? = nil
         /// The delete button's help, e.g. "Move to Recently Deleted"; nil where there's nothing to delete.
         var deleteTitle: String? = nil
         /// Deletes the item at this index. Returns whether it went, so the viewer moves to the next one.
@@ -60,6 +63,10 @@ final class MediaViewerHost {
     /// Where the item on screen is among those still shown.
     var position: Int { shown.firstIndex(of: index) ?? 0 }
     var showingInfo = false
+    /// The item on screen is open in the editor.
+    var editing = false
+    /// Said briefly over the viewer, e.g. where an edited copy went.
+    private(set) var notice: String?
     /// Closing: the viewer is shrinking back into its thumbnail.
     private(set) var isClosing = false
 
@@ -69,6 +76,7 @@ final class MediaViewerHost {
     func open(_ request: Request) {
         guard request.urls.indices.contains(request.index) else { return }
         isClosing = false
+        editing = false
         self.request = request
         index = request.index
         removed = []
@@ -84,6 +92,7 @@ final class MediaViewerHost {
 
     func finishClosing() {
         request = nil
+        editing = false
         isClosing = false
         Task { await Thumbnails.shared.holdBackgroundWork(false) }
     }
@@ -104,6 +113,22 @@ final class MediaViewerHost {
         }
         index = after[min(at, after.count - 1)]
         viewerRevision += 1
+    }
+
+    /// Files the editor's copy of the item on screen, then leaves the editor and says where it went.
+    func saveEdit(_ copy: URL) async -> Bool {
+        guard let save = request?.saveEdit, let place = await save(index, copy) else { return false }
+        editing = false
+        show("Saved a copy to “\(place)”")
+        return true
+    }
+
+    private func show(_ text: String) {
+        notice = text
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if notice == text { notice = nil }
+        }
     }
 
     /// The thumbnail to show for a file while it opens or closes.
@@ -188,13 +213,39 @@ private struct MediaViewerOverlay: ViewModifier {
                 }
             }
             .toolbar {
-                if let request = host.request, !host.isClosing {
+                // The editor has its own Cancel and Save as Copy.
+                if let request = host.request, !host.isClosing, !host.editing {
                     ViewerToolbar(request: request, host: host)
                 }
             }
     }
 
+    @ViewBuilder
     private func viewer(_ request: MediaViewerHost.Request) -> some View {
+        if host.editing, request.urls.indices.contains(host.index) {
+            // The editor takes the viewer's place, as in Photos; it saves a new file only.
+            MediaEditView(url: request.urls[host.index], accent: .imago,
+                          onCancel: { host.editing = false },
+                          onSave: { await host.saveEdit($0) })
+                .id(request.urls[host.index])
+                .transition(.opacity)
+        } else {
+            browsing(request)
+                .overlay(alignment: .bottom) {
+                    if let notice = host.notice {
+                        Text(notice)
+                            .font(.callout.weight(.medium))
+                            .padding(.horizontal, 16).padding(.vertical, 9)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(.bottom, 24)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: host.notice)
+        }
+    }
+
+    private func browsing(_ request: MediaViewerHost.Request) -> some View {
         HStack(spacing: 0) {
             let shown = host.shown
             MediaViewer(
@@ -311,6 +362,13 @@ private struct ViewerToolbar: ToolbarContent {
                 Label("Info", systemImage: host.showingInfo ? "info.circle.fill" : "info.circle")
             }
             .help("Show details")
+            if request.saveEdit != nil {
+                Button { host.editing = true } label: {
+                    Label("Edit", systemImage: "slider.horizontal.3")
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .help("Turn, flip, crop or trim a copy (⌘E). The original stays as it is.")
+            }
             if request.urls.indices.contains(index) {
                 ShareLink(item: request.urls[index]) {
                     Label("Share", systemImage: "square.and.arrow.up")

@@ -13,8 +13,9 @@ settings:
 packages:
   ImagoKit:
     path: Packages/ImagoKit
-  ImagoMedia:
-    path: Packages/ImagoMedia
+  # The photo and video viewer and editor, shared with Arete (one package, used by both apps).
+  AreteMedia:
+    path: ../arete-full-stack/arete-apple/Packages/AreteMedia
 targets:
   ImagoMac:
     type: application
@@ -23,7 +24,7 @@ targets:
     sources: [Mac]
     dependencies:
       - package: ImagoKit
-      - package: ImagoMedia
+      - package: AreteMedia
     info:
       path: Mac/Info.plist
       properties:
