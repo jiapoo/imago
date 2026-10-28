@@ -124,4 +124,25 @@ private func base(_ assets: [PhoneAsset]) -> [String: AssetMetadata] {
         let pending = [LibraryChange(action: .addToAlbum("New"), assetIDs: ["a"])]
         #expect(PendingChanges.queue(LibraryChange(action: .deleteAlbum("New"), assetIDs: []), onto: pending, base: base(assets)).isEmpty)
     }
+
+    /// Putting back is only for what's no longer on the phone; what is, is left out.
+    @Test func restoreLeavesOutWhatsOnThePhone() {
+        let onPhone = [asset("a")]
+        let queue = PendingChanges.queue(LibraryChange(action: .restore, assetIDs: ["a", "gone"]), onto: [], base: base(onPhone))
+        #expect(queue.count == 1)
+        #expect(queue[0].assetIDs == ["gone"])
+    }
+
+    /// Asked again keeps its round through the queue.
+    @Test func askedAgainKeepsItsRound() {
+        let queue = PendingChanges.queue(LibraryChange(action: .delete, assetIDs: ["a"], round: 2), onto: [], base: base([asset("a")]))
+        #expect(queue.first?.isAskedAgain == true)
+    }
+
+    @Test func withdrawTakesItemsOutOfAPutBack() {
+        let pending = [LibraryChange(action: .restore, assetIDs: ["a", "b"])]
+        let left = PendingChanges.withdraw(["a"], from: .restore, in: pending)
+        #expect(left.first?.assetIDs == ["b"])
+        #expect(PendingChanges.withdraw(["b"], from: .restore, in: left).isEmpty)
+    }
 }

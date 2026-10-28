@@ -1,4 +1,4 @@
-# Imago protocol, version 6
+# Imago protocol, version 7
 
 This is everything a server needs to accept backups from the Imago iPhone app:
 discovery, encryption, pairing, the messages, and how files are laid out on disk.
@@ -211,12 +211,19 @@ JSON conventions (Swift `Codable` output, which a parser on any platform reads f
 ```
 
 `action` is one of `{"delete":{}}`, `{"addToAlbum":{"_0":"<title>"}}`, `{"removeFromAlbum":{"_0":"<title>"}}`,
-`{"setFavorite":{"_0":true}}`, and from version 6 `{"deleteAlbum":{"_0":"<title>"}}` (its `assetIDs` is
-empty). `bytes` (deletions) is about how much space it frees. The server never sends a phone a change
-newer than the version it said hello with.
+`{"setFavorite":{"_0":true}}`, from version 6 `{"deleteAlbum":{"_0":"<title>"}}` (its `assetIDs` is
+empty), and from version 7 `{"restore":{}}` (put these backed-up assets back in the library, §6.3).
+`bytes` (deletions) is about how much space it frees. From version 7, `"round":2` marks a change the
+server asks for again after the user declined it; absent means the first time. The server never sends a
+phone a change newer than the version it said hello with.
 
 **ChangeReport**: `{"changeID":"<UUID>","outcome":"applied","assetCount":12,"date":"…","detail":"…"}`.
-`outcome` is `applied`, `declined` (by the user) or `failed` (with `detail`).
+`outcome` is `applied`, `declined` (by the user) or `failed` (with `detail`). From version 7 a `restore`
+report adds `"restored":{"<old assetID>":"<new assetID>", …}`: the identifiers the put-back assets got.
+
+**RestoreAsset** (version 7): `{"metadata": <AssetMetadata>, "files": [{"key": <ResourceKey>,
+"originalFilename":"IMG_4821.HEIC", "size":123, "sha256":"<hex>"}, …]}`, one asset of a put-back, with its
+originals only (`photo`, `video`, `pairedVideo`, `alternatePhoto`).
 
 **ResumePoint**: `{"key": <ResourceKey>, "offset": 1024}`, a file the server still needs and how
 many bytes of it the server already has.
@@ -243,6 +250,9 @@ many bytes of it the server already has.
 | `live` | phone → server | `{"live":{}}`, version 5: start a live session (§6.2) |
 | `thumbnailRequest` | server → phone | `{"thumbnailRequest":{"_0":["<assetID>", …]}}`, version 5 |
 | `thumbnails` | phone → server | `{"thumbnails":{"_0":[{"assetID":"…","jpeg":"<base64>"}, …]}}`, version 5; at most 360 px on the long side |
+| `restoreRequest` | phone → server | `{"restoreRequest":{"_0":"<change UUID>"}}`, version 7: send the files of this approved `restore` (§6.3) |
+| `restoreAsset` | server → phone | `{"restoreAsset":{"_0":<RestoreAsset>}}`, version 7; its files follow as chunks |
+| `restoreEnd` | server → phone | `{"restoreEnd":{"_0":"<change UUID>","missing":["<assetID>", …]}}`, version 7 |
 
 ## 6. A backup session
 
@@ -373,6 +383,37 @@ phone                                         server
   has already acted on it).
 - A live session isn't a backup: the server doesn't count it as one, doesn't record a backup time on
   `goodbye`, and doesn't hold off sleep for it. iOS closes it when the app leaves the screen.
+
+### 6.3 When the two sides disagree (version 7)
+
+Each side has the last word over its own copy: the phone over its library, the server over the backup.
+A disagreement goes round once more at most, and then it's settled; nothing bounces back and forth.
+
+- **The phone declines a change.** The server asks its user what to do with its own side: for a
+  deletion, keep the backups (they come back from wherever the server put them), leave them deleted
+  there, or ask again. Asking again queues the same change with `"round":2`; the phone shows it as asked
+  a second time. Declined again, the server keeps the backups without asking further.
+- **The user deletes photos on the phone itself.** The next library list (manifest) no longer has them.
+  The server asks its user: delete the backups too, keep them (settled: they're never moved or asked
+  about again), or put them back on the phone with a `restore` change. If the phone declines the
+  `restore`, the backups are kept, settled.
+- **Putting back.** The phone always shows a `restore` for review; it's never made without the user.
+  Once approved, over a live session:
+
+```
+phone                                         server
+  restoreRequest(change ID) ─────────────────▶
+       ◀──────────────────────── restoreAsset  an asset's details and files
+       ◀──────────────────────── chunk…        each file, keyed by the RestoreAsset's file keys
+       ◀──────────────────────── …             the next asset
+       ◀──────────────────────── restoreEnd    with the assets the server couldn't read
+  changeReport ──────────────────────────────▶   with `restored`: old → new asset IDs
+```
+
+  The phone checks each file against its `sha256`, then creates the asset from its files with its date,
+  location and favorite, and adds it to the albums it was in that still exist. The server gives the
+  stored files, records and sidecars the new IDs, so the next backup doesn't send them again. If the
+  connection drops, the phone asks again when it's back.
 - The server asks for previews of assets it has no backed-up copy of, as the user scrolls to them. It
   keeps them in its own cache, not in the backup folder, and stops using one once the real file arrives.
 
@@ -539,14 +580,16 @@ has them. Without this, the next backup would bring the file straight back.
 
 ## 8. Versioning and changes
 
-The server accepts versions 4 to 6; the phone sends 6. A version-4 phone backs up as before and never
-opens a live session; a version-5 phone is never sent `deleteAlbum`. Older versions are refused. From version 4, both sides
+The server accepts versions 4 to 7; the phone sends 7. A version-4 phone backs up as before and never
+opens a live session; a version-5 phone is never sent `deleteAlbum`, and a version-6 phone never `restore`. Older versions are refused. From version 4, both sides
 skip control messages whose names they don't know (§4) instead of dropping the connection. So a later
 message the other side can ignore can be added without a version bump, and a Windows server can lag
 behind the Mac by a release. A change the other side must understand still needs a new version.
 
 ## 9. History
 
+- **Version 7:** settling disagreements (§6.3): `round` on a change asked again; the `restore` change,
+  with `restoreRequest`, `restoreAsset` and `restoreEnd`, and `restored` in its report.
 - **Version 6:** the `deleteAlbum` change.
 - **Version 5:** live sessions (`live`), with `changes` pushed whenever the queue changes and
   `changeReport` sent as soon as the user acts; previews (`thumbnailRequest`, `thumbnails`).

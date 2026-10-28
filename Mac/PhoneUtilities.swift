@@ -1,5 +1,6 @@
 import ImagoKit
 import SwiftUI
+import UserNotifications
 
 // The phone browser's tools for freeing space, and the list of changes waiting for the phone.
 
@@ -173,3 +174,144 @@ struct QueueView: View {
         }
     }
 }
+
+/// Tells the user, in Notification Center, when an iPhone answered differently from what was asked
+/// here, or photos were deleted on an iPhone: things Imago wants a decision about.
+enum MacNotifications {
+    static func requestPermission() {
+        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
+    }
+
+    /// The iPhone turned down changes asked for here.
+    static func declined(_ changes: [LibraryChange], on phone: String) {
+        post(id: "declined-\(phone)",
+             title: changes.count == 1 ? "\(phone) said no to a change" : "\(phone) said no to \(changes.count) changes",
+             body: changes.prefix(3).map(\.summary).joined(separator: " · ") + ". Open Imago to decide what to keep.")
+    }
+
+    /// Photos and videos were deleted on the iPhone since its last backup.
+    static func deletedOnPhone(_ count: Int, on phone: String) {
+        post(id: "deleted-\(phone)",
+             title: count == 1 ? "1 item was deleted on \(phone)" : "\(count) items were deleted on \(phone)",
+             body: "The backups are still on your Mac. Open Imago to delete them here too, keep them, or put them back on \(phone).")
+    }
+
+    private static func post(id: String, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+    }
+}
+
+// MARK: - Decisions
+
+/// What the iPhones answered that needs a decision here: changes an iPhone said no to, and photos
+/// deleted on an iPhone whose backups are still here. On Home (every iPhone) and on an iPhone's page.
+struct DecisionsCard: View {
+    @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
+    let devices: [PairedDevice]
+    /// Opens an iPhone's Deleted on iPhone page.
+    var openDeleted: (PairedDevice) -> Void
+
+    var body: some View {
+        let ids = Set(devices.map(\.id))
+        let declines = library.declines.filter { ids.contains($0.device.id) }
+        let deleted = devices.compactMap { device -> (PairedDevice, [MediaItem])? in
+            let items = library.deletedOnPhone(device.id).filter { !library.restoring.contains($0.id) }
+            return items.isEmpty ? nil : (device, items)
+        }
+        if !declines.isEmpty || !deleted.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Label("Needs your answer", systemImage: "questionmark.bubble")
+                    .font(.headline)
+                    .padding(.bottom, 10)
+                ForEach(declines) { decline in
+                    Divider()
+                    declineRow(decline)
+                }
+                ForEach(deleted, id: \.0.id) { device, items in
+                    Divider()
+                    deletedRow(device, items)
+                }
+            }
+            .modernCard(padding: 18)
+        }
+    }
+
+    // MARK: Rows
+
+    private func declineRow(_ decline: MediaLibrary.Decline) -> some View {
+        let phone = decline.device.name
+        let isDelete = decline.change.action == .delete
+        return row(
+            device: decline.device, symbol: decline.change.symbol,
+            title: "\(phone) said no: \(decline.change.summary.lowercasedFirst)",
+            detail: isDelete
+                ? "They're still on \(phone); their backups are in Recently Deleted on this Mac. Keep them here too, or ask \(phone) once more."
+                : "Ask \(phone) once more, or leave it as it is."
+                    + (decline.change.isAskedAgain ? " This was the second time it was asked." : "")
+        ) {
+            if isDelete {
+                Button("Keep Here Too") { Task { history.record(await library.keepHereToo(decline, server: server)) } }
+                    .buttonStyle(.borderedProminent)
+                    .help("Put the backups back where they were: the photos stay on \(phone) and here")
+                Menu("More") {
+                    Button("Ask \(phone) Again") { Task { await library.askAgain(decline, server: server) } }
+                    Button("Leave in Recently Deleted") { Task { await library.leaveAsIs(decline, server: server) } }
+                }
+                .fixedSize()
+            } else {
+                Button("Ask Again") { Task { await library.askAgain(decline, server: server) } }
+                    .disabled(decline.change.isAskedAgain)
+                Button("OK") { Task { await library.leaveAsIs(decline, server: server) } }
+            }
+        }
+    }
+
+    private func deletedRow(_ device: PairedDevice, _ items: [MediaItem]) -> some View {
+        row(
+            device: device, symbol: "iphone.slash",
+            title: items.count == 1 ? "1 item was deleted on \(device.name)" : "\(items.count.formatted()) items were deleted on \(device.name)",
+            detail: "\(items.reduce(0) { $0 + $1.bytes }.bytes) backed up here. "
+                + (server.trashDays > 0 ? "Unless you decide, they move to Recently Deleted after \(server.trashDays) days." : "They stay until you decide.")
+        ) {
+            Button("Review") { openDeleted(device) }
+            Menu("Decide") {
+                Button("Delete Here Too") { Task { history.record(await library.trash(items, server: server)) } }
+                Button("Keep the Backups") { Task { history.record(await library.keepBackups(items, server: server)) } }
+                Button("Put Back on \(device.name)") { Task { history.record(await library.putBackOnPhone(items, server: server)) } }
+            }
+            .fixedSize()
+        }
+    }
+
+    private func row<Actions: View>(device: PairedDevice, symbol: String, title: String, detail: String,
+                                    @ViewBuilder actions: () -> Actions) -> some View {
+        let color = server.color(of: device.id)
+        return HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .foregroundStyle(color)
+                .frame(width: 38, height: 38)
+                .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            HStack(spacing: 8) { actions() }
+                .controlSize(.large)
+        }
+        .padding(.vertical, 12)
+    }
+}
+
+private extension String {
+    /// "Delete 3 items" → "delete 3 items", after "said no:".
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
+}
+

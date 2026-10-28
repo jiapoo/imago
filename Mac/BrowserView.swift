@@ -152,9 +152,17 @@ struct BrowserView: View {
     /// or Deleted on iPhone, where everything is on the drive.
     private func source(of item: MediaItem) -> SourceBadge.Style? {
         switch scope {
-        case .deletedOnPhone, .trash: nil
-        case .folder: nil // Everything in a Folder is on the drive.
-        default: SourceBadge.Style(library.origin(of: item), server: server)
+        case .deletedOnPhone:
+            // Waiting to be put back on its iPhone: its dot, with a clock.
+            if library.restoring.contains(item.id), let deviceID = item.deviceID {
+                var style = SourceBadge.Style(.phone(deviceID), server: server, waiting: true)
+                style.help = "Waiting to be put back on \(server.devices.first { $0.id == deviceID }?.name ?? "the iPhone")"
+                return style
+            }
+            return nil
+        case .trash: return nil
+        case .folder: return nil // Everything in a Folder is on the drive.
+        default: return SourceBadge.Style(library.origin(of: item), server: server)
         }
     }
 
@@ -282,8 +290,8 @@ struct BrowserView: View {
     /// Deleted on iPhone: what these are, and what to do with them.
     private var deletedOnPhoneBanner: some View {
         Label(server.trashDays > 0
-              ? "Backed up here, but deleted on the iPhone since. Each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each); before then, copy or move what you want to keep into a folder."
-              : "Backed up here, but deleted on the iPhone since. They stay until you decide: copy or move them into a folder, or delete them here (they go to Recently Deleted first).",
+              ? "Backed up here, but deleted on the iPhone since. Delete them here too, keep the backups, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each)."
+              : "Backed up here, but deleted on the iPhone since. Delete them here too, keep the backups, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide.",
               systemImage: "iphone.slash")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -487,12 +495,19 @@ extension BrowserView {
                     }
                     .help("Show this folder in Finder")
                 }
-                if case .deletedOnPhone = scope {
-                    Button { confirmingDeleteAll = true } label: {
-                        Label("Move All to Recently Deleted", systemImage: "trash")
+                if case .deletedOnPhone(let deviceID) = scope {
+                    let all = library.items(in: scope)
+                    let phone = server.devices.first { $0.id == deviceID }?.name ?? "the iPhone"
+                    Menu {
+                        Button("Keep All the Backups") { Task { history.record(await library.keepBackups(all, server: server)) } }
+                        Button("Put All Back on \(phone)") { Task { history.record(await library.putBackOnPhone(all, server: server)) } }
+                        Divider()
+                        Button("Move All to Recently Deleted…") { confirmingDeleteAll = true }
+                    } label: {
+                        Label("Decide for All", systemImage: "checklist")
                     }
-                    .disabled(library.items(in: scope).isEmpty)
-                    .help("Move everything deleted on this iPhone to Recently Deleted on this Mac")
+                    .disabled(all.isEmpty)
+                    .help("Keep every backup here, put them all back on \(phone), or move them all to Recently Deleted")
                 }
                 if isTrash {
                     Button("Empty…") { deletingNow = library.trash }
@@ -554,6 +569,15 @@ extension BrowserView {
             Button("Put Back") { putBack(targets) }
             Button("Delete Now…", role: .destructive) { deletingNow = targets.compactMap(library.trashed) }
         } else {
+            if case .deletedOnPhone(let deviceID) = scope {
+                let phone = server.devices.first { $0.id == deviceID }?.name ?? "iPhone"
+                Button("Put Back on \(phone)") { Task { history.record(await library.putBackOnPhone(targets, server: server)) } }
+                    .disabled(targets.allSatisfy { library.restoring.contains($0.id) })
+                Button(targets.count == 1 ? "Keep the Backup" : "Keep the Backups") {
+                    Task { history.record(await library.keepBackups(targets, server: server)) }
+                }
+                Divider()
+            }
             Menu(TransferMode.current == .move ? "Move To" : "Copy To") {
                 ForEach(otherFolders, id: \.self) { folder in
                     Button(folder) { moveSelected(targets, to: folder) }

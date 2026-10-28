@@ -27,7 +27,7 @@ public enum PendingChanges {
     /// Makes a change to one asset's metadata. Deletion leaves it as it is.
     public static func apply(_ action: LibraryChange.Action, to metadata: inout AssetMetadata) {
         switch action {
-        case .delete:
+        case .delete, .restore:
             break
         case .setFavorite(let on):
             metadata.isFavorite = on
@@ -98,6 +98,8 @@ public enum PendingChanges {
             guard let metadata = base[id] else { return true }
             return switch change.action {
             case .delete: true
+            // Off the phone already: it isn't in `base`.
+            case .restore: false
             case .setFavorite(let on): metadata.isFavorite != on
             case .addToAlbum(let title): !metadata.albums.contains(title)
             case .removeFromAlbum(let title): metadata.albums.contains(title)
@@ -130,6 +132,8 @@ public enum PendingChanges {
     private static func opposite(of action: LibraryChange.Action) -> LibraryChange.Action? {
         switch action {
         case .delete: nil
+        // Deleting what's waiting to be put back takes the restore back instead.
+        case .restore: .delete
         case .setFavorite(let on): .setFavorite(!on)
         case .addToAlbum(let title): .removeFromAlbum(title)
         case .removeFromAlbum(let title): .addToAlbum(title)

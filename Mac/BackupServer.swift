@@ -388,7 +388,8 @@ final class BackupServer {
 
                 case .control(.changeReport(let reports)):
                     guard let store, let device else { break }
-                    for done in (try? await store.record(reports)) ?? [] {
+                    let recorded = (try? await store.record(reports)) ?? []
+                    for done in recorded {
                         let verb = switch done.report.outcome {
                         case .applied: "did"
                         case .declined: "declined"
@@ -396,7 +397,11 @@ final class BackupServer {
                         }
                         addLog("\(device.name) \(verb): \(done.change.summary)", symbol: done.report.outcome == .applied ? "checkmark.circle" : "xmark.circle")
                     }
+                    let declined = recorded.filter { $0.report.outcome == .declined }.map(\.change)
+                    if !declined.isEmpty { MacNotifications.declined(declined, on: device.name) }
                     libraryChanged(device.id)
+                    // Put back under new IDs: the library reads the files' new names.
+                    if recorded.contains(where: { $0.report.restored?.isEmpty == false }) { catalogRevision += 1 }
 
                 case .control(.live):
                     guard let store, let device else { peer.cancel(); break }
@@ -414,6 +419,10 @@ final class BackupServer {
                 case .control(.thumbnails(let thumbnails)):
                     guard let device else { break }
                     savePreviews(thumbnails, for: device.id)
+
+                case .control(.restoreRequest(let changeID)):
+                    guard let store, let device else { break }
+                    try await sendRestore(changeID, from: store, to: device, over: peer)
 
                 case .control(.goodbye):
                     // A live session says goodbye too, but it backed nothing up.
@@ -521,6 +530,80 @@ final class BackupServer {
             await pushChanges(to: device.id, from: store)
         }
         return change.id
+    }
+
+    /// Asks the phone to put these backed-up assets back in its library: ones deleted there that the
+    /// user wants back. The phone asks first, then fetches the files over the live link.
+    func requestRestore(_ assetIDs: [String], on device: PairedDevice) {
+        guard let store = store(for: device), !assetIDs.isEmpty else { return }
+        enqueue(LibraryChange(action: .restore, assetIDs: assetIDs), on: device, store: store)
+    }
+
+    /// Takes assets out of waiting put-backs.
+    func withdrawRestore(_ assetIDs: Set<String>, on device: PairedDevice) {
+        guard let store = store(for: device) else { return }
+        Task {
+            try? await store.withdraw(assetIDs, from: .restore)
+            libraryChanged(device.id)
+            catalogRevision += 1
+            await pushChanges(to: device.id, from: store)
+        }
+    }
+
+    /// Asks again for a change the phone turned down, once: it shows there as asked a second time.
+    func askAgain(_ change: LibraryChange, on device: PairedDevice) {
+        guard let store = store(for: device) else { return }
+        enqueue(LibraryChange(action: change.action, assetIDs: change.assetIDs, bytes: change.bytes, round: (change.round ?? 1) + 1),
+                on: device, store: store)
+    }
+
+    /// Records what the user decided about a change the phone turned down.
+    func resolve(_ change: LibraryChange, as resolution: ChangeQueue.Resolution, on device: PairedDevice) async {
+        try? await store(for: device)?.resolve(change.id, as: resolution)
+        libraryChanged(device.id)
+    }
+
+    private func enqueue(_ change: LibraryChange, on device: PairedDevice, store: BackupStore) {
+        Task {
+            do {
+                if let queued = try await store.enqueue(change, base: [:]) {
+                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                           symbol: queued.symbol)
+                }
+            } catch {
+                addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            }
+            libraryChanged(device.id)
+            catalogRevision += 1
+            await pushChanges(to: device.id, from: store)
+        }
+    }
+
+    /// Sends the files of a restore the user approved on the phone: each asset's details, then its
+    /// originals in chunks, read off the drive away from the main thread.
+    private func sendRestore(_ changeID: UUID, from store: BackupStore, to device: PairedDevice, over peer: PeerConnection) async throws {
+        guard let change = await store.changeQueue().pending.first(where: { $0.id == changeID }), change.action == .restore else {
+            try await peer.send(.control(.restoreEnd(changeID, missing: [])))
+            return
+        }
+        let assets = await store.restoreAssets(change.assetIDs)
+        let found = Set(assets.map(\.asset.metadata.assetID))
+        addLog("Sending \(assets.count) \(assets.count == 1 ? "item" : "items") back to \(device.name)", symbol: "arrow.uturn.backward.circle")
+        for (asset, urls) in assets {
+            try await peer.send(.control(.restoreAsset(asset)))
+            for (file, url) in zip(asset.files, urls) {
+                guard let handle = try? FileHandle(forReadingFrom: url) else { continue }
+                defer { try? handle.close() }
+                var offset: UInt64 = 0
+                while true {
+                    let data = await Task.detached(priority: .userInitiated) { (try? handle.read(upToCount: FrameCodec.chunkSize)) ?? Data() }.value
+                    guard !data.isEmpty else { break }
+                    try await peer.send(.chunk(key: file.key, offset: offset, data: data))
+                    offset += UInt64(data.count)
+                }
+            }
+        }
+        try await peer.send(.control(.restoreEnd(changeID, missing: change.assetIDs.filter { !found.contains($0) })))
     }
 
     /// Takes back a waiting change by its ID.

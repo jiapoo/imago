@@ -138,6 +138,7 @@ private func asset(
             .manifest([]), .need([]), .beginResource(descriptor, metadata: metadata, size: 0), .endResource(key, sha256: ""),
             .stored(key), .failed(key, reason: ""), .goodbye, .manifestEnd(albums: []), .changes([]), .changeReport([]),
             .live, .thumbnailRequest([]), .thumbnails([]),
+            .restoreRequest(UUID()), .restoreAsset(RestoreAsset(metadata: metadata, files: [])), .restoreEnd(UUID(), missing: []),
         ]
         let names = try all.map { try (JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) as! [String: Any]).keys.first! }
         #expect(Set(names) == ControlMessage.names)

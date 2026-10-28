@@ -189,30 +189,9 @@ struct DeviceView: View {
         return left == 0 ? "Everything" : "\(left.formatted()) to go"
     }
 
-    /// Backed up, but deleted on the iPhone since: there to review.
-    @ViewBuilder
+    /// What this iPhone answered that needs a decision, and what was deleted on it since it was backed up.
     private var deletedOnPhone: some View {
-        let deleted = library.deletedOnPhone(device.id)
-        if !deleted.isEmpty {
-            HStack(spacing: 14) {
-                Image(systemName: "iphone.slash")
-                    .font(.title3)
-                    .foregroundStyle(Color.imago)
-                    .frame(width: 38, height: 38)
-                    .background(Color.imago.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(deleted.count == 1 ? "1 item was deleted on \(device.name) after it was backed up"
-                                            : "\(deleted.count.formatted()) items were deleted on \(device.name) after they were backed up")
-                        .font(.headline)
-                    Text("\(deleted.reduce(0) { $0 + $1.bytes }.bytes). They stay in this backup until you decide.")
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("Review", action: openDeleted)
-                    .controlSize(.large)
-            }
-            .modernCard(padding: 18)
-        }
+        DecisionsCard(devices: [device]) { _ in openDeleted() }
     }
 
     private var waiting: some View {

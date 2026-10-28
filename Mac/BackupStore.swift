@@ -404,6 +404,69 @@ actor BackupStore {
         if changed { try? saveIndex() }
     }
 
+    // MARK: Putting back on the phone
+
+    /// The kinds of file sent back to put an asset back on its phone: its originals. An edit would need
+    /// PhotoKit's adjustment format, so the phone gets the photo as it was taken.
+    static let restorableKinds: [ResourceKind] = [.photo, .video, .pairedVideo, .alternatePhoto]
+
+    /// What to send to put these assets back on the phone: each one's details and original files, in
+    /// order. Assets with no original here are left out.
+    func restoreAssets(_ assetIDs: [String]) -> [(asset: RestoreAsset, urls: [URL])] {
+        let byAsset = resourcesByAsset(only: Set(assetIDs))
+        return assetIDs.compactMap { assetID in
+            guard let metadata = index.assets[assetID]?.metadata, let keys = byAsset[assetID] else { return nil }
+            let base = (metadata.originalFilename as NSString).deletingPathExtension
+            var files: [(RestoreAsset.File, URL)] = []
+            for kind in Self.restorableKinds {
+                guard let key = keys.first(where: { Self.kind(of: $0, assetID: assetID) == kind && $0.hasSuffix("@original") }),
+                      let stored = index.resources[key] else { continue }
+                let url = url(of: stored.relativePath)
+                // The name it had on the phone: IMG_4821.HEIC, and IMG_4821.MOV for its motion.
+                let name = kind == .photo || kind == .video ? metadata.originalFilename : base + "." + url.pathExtension
+                files.append((RestoreAsset.File(key: ResourceKey(assetID: assetID, kind: kind, revision: "original"),
+                                                originalFilename: name, size: stored.size, sha256: stored.sha256), url))
+            }
+            guard files.contains(where: { $0.0.key.kind == .photo || $0.0.key.kind == .video }) else { return nil }
+            return (RestoreAsset(metadata: metadata, files: files.map(\.0)), files.map(\.1))
+        }
+    }
+
+    /// The phone put assets back under new IDs (old → new): their files, records and sidecars take the
+    /// new ID, so the phone's next backup finds them stored and doesn't send them again.
+    func rekey(_ ids: [String: String]) throws {
+        let byAsset = resourcesByAsset(only: Set(ids.keys))
+        defer { try? saveIndex() }
+        for (old, new) in ids where old != new {
+            for key in byAsset[old] ?? [] {
+                guard var stored = index.resources.removeValue(forKey: key) else { continue }
+                stored.assetID = new
+                index.resources[new + key.dropFirst(old.count)] = stored
+            }
+            guard var record = index.assets.removeValue(forKey: old) else { continue }
+            record.metadata.assetID = new
+            if let path = record.sidecar ?? locateSidecar(of: old, keys: byAsset[old] ?? []),
+               var sidecar = Self.readSidecar(at: url(of: path)) {
+                sidecar.metadata.assetID = new
+                try Self.write(sidecar, to: url(of: path))
+                record.sidecar = path
+            }
+            index.assets[new] = record
+        }
+    }
+
+    /// An asset as a library-list entry with the files it has here, for the saved list after it's put
+    /// back on the phone (until the phone's next backup sends a fresh list).
+    func manifestEntry(of assetID: String) -> ManifestEntry? {
+        guard let metadata = index.assets[assetID]?.metadata else { return nil }
+        let resources = (resourcesByAsset(only: [assetID])[assetID] ?? []).compactMap { key -> ResourceDescriptor? in
+            guard let kind = Self.kind(of: key, assetID: assetID), Self.restorableKinds.contains(kind), key.hasSuffix("@original") else { return nil }
+            return ResourceDescriptor(key: ResourceKey(assetID: assetID, kind: kind, revision: "original"),
+                                      originalFilename: metadata.originalFilename, uti: "")
+        }
+        return resources.isEmpty ? nil : ManifestEntry(metadata: metadata, resources: resources)
+    }
+
     /// Writes the asset's sidecar into `directory` (relative to `root`), naming its files as they are
     /// now, and removes the old one.
     private func settleSidecar(of assetID: String, keys: [String], in directory: String) throws {

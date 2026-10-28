@@ -10,6 +10,8 @@ struct ImagoMacApp: App {
     init() {
         let server = BackupServer()
         server.start()
+        // To tell the user when an iPhone said no to a change, or photos were deleted on one.
+        MacNotifications.requestPermission()
         #if DEBUG
         // Test hook: `Imago -PairOnLaunch` opens pairing mode and prints the link,
         // so the iOS Simulator can pair without clicking in the Mac UI.

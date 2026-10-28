@@ -1,10 +1,10 @@
 import Foundation
 
 public enum ProtocolVersion {
-    public static let current = 6
+    public static let current = 7
     /// Versions the Mac still accepts. A version-4 phone backs up as before; it just never opens a live
     /// session. Changes a phone's version doesn't know (`LibraryChange.Action.minimumVersion`) aren't sent to it.
-    public static let supported = 4...6
+    public static let supported = 4...7
 }
 
 /// Which file of an asset a resource is. Mirrors the PHAssetResourceType cases worth keeping.
@@ -130,6 +130,36 @@ public struct Thumbnail: Codable, Sendable, Hashable {
     }
 }
 
+/// Version 7: one backed-up photo or video the Mac is sending back to the phone, to put back in its
+/// library. Its files follow as `chunk` frames, keyed by `files[i].key`, in order.
+public struct RestoreAsset: Codable, Sendable, Hashable {
+    public struct File: Codable, Sendable, Hashable {
+        public var key: ResourceKey
+        /// The name it had on the phone (IMG_4821.HEIC), for the restored asset's resource.
+        public var originalFilename: String
+        public var size: UInt64
+        public var sha256: String
+
+        public init(key: ResourceKey, originalFilename: String, size: UInt64, sha256: String) {
+            self.key = key
+            self.originalFilename = originalFilename
+            self.size = size
+            self.sha256 = sha256
+        }
+    }
+
+    /// As it was backed up: its date, place, favorite and albums go back with it.
+    public var metadata: AssetMetadata
+    /// Originals only (photo, video, Live Photo motion, the other half of RAW+JPEG): an edit would
+    /// need PhotoKit's adjustment format.
+    public var files: [File]
+
+    public init(metadata: AssetMetadata, files: [File]) {
+        self.metadata = metadata
+        self.files = files
+    }
+}
+
 /// A resource the Mac still needs, and how many bytes of it it already has.
 public struct ResumePoint: Codable, Sendable, Hashable {
     public var key: ResourceKey
@@ -157,6 +187,8 @@ public struct ResumePoint: Codable, Sendable, Hashable {
 ///   live → changes(Mac)                  then the Mac sends `changes` again whenever its queue changes
 ///   changeReport                         as soon as the user acts on changes
 ///   thumbnailRequest(Mac) → thumbnails   previews of photos the Mac hasn't backed up yet
+///   restoreRequest → restoreAsset, chunk…, … restoreEnd (Mac)
+///                                        version 7: the files of a `restore` change the user approved
 ///   goodbye, or the connection just closes when the app leaves the screen
 public enum ControlMessage: Codable, Sendable, Equatable {
     case pairRequest(deviceID: String, deviceName: String, protocolVersion: Int)
@@ -186,11 +218,19 @@ public enum ControlMessage: Codable, Sendable, Equatable {
     case thumbnailRequest([String])
     /// Version 5: previews the Mac asked for. Assets the phone no longer has are left out.
     case thumbnails([Thumbnail])
+    /// Version 7: the user approved putting these back; the phone asks for the files of the `restore`
+    /// change with this ID, over the live link.
+    case restoreRequest(UUID)
+    /// Version 7: one asset of a restore; its files follow as chunks.
+    case restoreAsset(RestoreAsset)
+    /// Version 7: every asset of the restore with this change ID has been sent. Assets the Mac
+    /// couldn't read (a file gone, or not matching its checksum) are listed in `missing`.
+    case restoreEnd(UUID, missing: [String])
 
     /// Every message name on the wire. A name not in here comes from a newer version and is skipped.
     public static let names: Set<String> = [
         "pairRequest", "paired", "hello", "welcome", "unavailable", "manifest", "need", "beginResource",
         "endResource", "stored", "failed", "goodbye", "manifestEnd", "changes", "changeReport",
-        "live", "thumbnailRequest", "thumbnails",
+        "live", "thumbnailRequest", "thumbnails", "restoreRequest", "restoreAsset", "restoreEnd",
     ]
 }

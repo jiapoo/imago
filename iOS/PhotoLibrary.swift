@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Photos
 import UIKit
@@ -168,8 +169,8 @@ enum PhotoLibrary {
                     }
                 case .setFavorite(let on):
                     assets.enumerateObjects { asset, _, _ in PHAssetChangeRequest(for: asset).isFavorite = on }
-                case .deleteAlbum:
-                    break // Handled above.
+                case .deleteAlbum, .restore:
+                    break // Handled above, and by `restore`.
                 }
             }
             return ChangeReport(changeID: change.id, outcome: .applied, assetCount: found)
@@ -200,6 +201,46 @@ enum PhotoLibrary {
         }
     }
 
+    /// Puts a photo or video back in the library from the Mac's backup: its original files, its date,
+    /// place and favorite, and the albums it was in that are still here. Returns its new identifier.
+    /// The files are moved into the library.
+    static func restore(_ asset: RestoreAsset, files: [(RestoreAsset.File, URL)]) async throws -> String {
+        final class Created: @unchecked Sendable { var identifier: String? }
+        let created = Created()
+        let metadata = asset.metadata
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            for (file, url) in files {
+                guard let type = PHAssetResourceType(file.key.kind) else { continue }
+                let options = PHAssetResourceCreationOptions()
+                options.originalFilename = file.originalFilename
+                options.shouldMoveFile = true
+                request.addResource(with: type, fileURL: url, options: options)
+            }
+            request.creationDate = metadata.creationDate
+            request.isFavorite = metadata.isFavorite
+            if let place = metadata.location {
+                request.location = CLLocation(
+                    coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude), altitude: place.altitude,
+                    horizontalAccuracy: 0, verticalAccuracy: 0, timestamp: metadata.creationDate ?? .now
+                )
+            }
+            guard let placeholder = request.placeholderForCreatedAsset else { return }
+            created.identifier = placeholder.localIdentifier
+            for title in metadata.albums {
+                guard let album = editableAlbum(titled: title) else { continue }
+                PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)
+            }
+        }
+        guard let identifier = created.identifier else { throw RestoreError.notCreated }
+        return identifier
+    }
+
+    enum RestoreError: LocalizedError {
+        case notCreated
+        var errorDescription: String? { "Photos didn't add it back." }
+    }
+
     /// A regular album the user made (not a smart or shared album) with this title.
     private static func editableAlbum(titled title: String) -> PHAssetCollection? {
         var match: PHAssetCollection?
@@ -222,6 +263,19 @@ enum PhotoLibrary {
             }
         }
         return membership
+    }
+}
+
+extension PHAssetResourceType {
+    /// The type to add a restored file as. Only originals are sent back.
+    init?(_ kind: ResourceKind) {
+        switch kind {
+        case .photo: self = .photo
+        case .video: self = .video
+        case .alternatePhoto: self = .alternatePhoto
+        case .pairedVideo: self = .pairedVideo
+        default: return nil
+        }
     }
 }
 

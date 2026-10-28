@@ -811,7 +811,7 @@ struct PhoneActions {
         case .setFavorite(let on): opposite = .setFavorite(!on)
         case .addToAlbum(let title): opposite = .removeFromAlbum(title)
         case .removeFromAlbum(let title): opposite = .addToAlbum(title)
-        case .delete, .deleteAlbum: return nil   // see `delete` and `deleteAlbum`
+        case .delete, .deleteAlbum, .restore: return nil   // see `delete`, `deleteAlbum`, `MediaLibrary.putBackOnPhone`
         }
         server.request(action, for: model.baseAssets(ids), on: device)
         return FileHistory.Step(name: LibraryChange(action: action, assetIDs: ids).summary) { [self] in

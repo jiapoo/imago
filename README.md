@@ -56,11 +56,18 @@ Jia's iPhone/.photobackup/index.json                         cache; rebuildable 
 ```
 
 Deletions on the phone never delete anything on the Mac: a photo deleted on the iPhone after it was
-backed up stays in the backup. Each iPhone's **Deleted on iPhone** (in the sidebar, under its row, and on
-its page) lists them, as of its last backup, to keep, copy or move into a folder, or delete here (one at a time, or
-all with **Move All to Recently Deleted**). Each tile shows the days left: after as many days as Recently
-Deleted keeps things (30 by default), they move to Recently Deleted on their own, which keeps them that long
-again before deleting them. Interrupted files resume from the last byte received.
+backed up stays in the backup. The Mac notices at the next backup, says so in Notification Center, and asks
+under **Needs your answer** on Home and the iPhone's page. Each iPhone's **Deleted on iPhone** (in the
+sidebar, under its row) lists them, as of its last backup. For each, or all with **Decide for All**:
+**Delete Here Too** (to Recently Deleted), **Keep the Backups** (settled: they leave the list and stay put),
+or **Put Back on iPhone**: the iPhone asks, then fetches the originals from the Mac while Imago is open and
+adds them back with their dates, places and albums. Each tile shows the days left: undecided, they move to
+Recently Deleted after as many days as it keeps things (30 by default), which keeps them that long again.
+
+When an iPhone says no to a change from the Mac, the Mac asks too. For a deletion: **Keep Here Too** (the
+backups come back from Recently Deleted, and the photos stay on both), **Leave in Recently Deleted**, or
+**Ask Again**: the iPhone shows it as asked a second time, and if it says no again, the backups are kept.
+Nothing goes back and forth more than once; each side has the last word over its own copy. Interrupted files resume from the last byte received.
 
 ## Overnight backups
 

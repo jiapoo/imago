@@ -32,6 +32,13 @@ struct MacChangesCard: View {
             if changes.count > 3 {
                 Text("and \(changes.count - 3) more").font(.footnote).foregroundStyle(.secondary)
             }
+            if !client.restoringIDs.isEmpty {
+                Label("Putting photos back from your Mac…", systemImage: "arrow.down.circle")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            } else if client.restoreNeedsConnection {
+                Label("Photos to put back come from your Mac. Keep Imago open near it.", systemImage: "wifi.exclamationmark")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
             Button {
                 reviewing = true
             } label: {
@@ -69,6 +76,17 @@ struct ChangesReviewSheet: View {
                     }
                 } footer: {
                     Text("Changes you turn off are declined, and your Mac is told at the next backup.")
+                }
+
+                if client.macChanges.contains(where: { $0.action == .restore }) {
+                    Section {
+                        Label {
+                            Text("Items to put back were deleted on this iPhone. Your Mac sends the backed-up originals, and they're added to your library with their dates, places and albums. Keep Imago open until they're in.")
+                        } icon: {
+                            Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.orange)
+                        }
+                        .font(.footnote)
+                    }
                 }
 
                 if client.macChanges.contains(where: { $0.action == .delete }) {
@@ -141,7 +159,13 @@ private struct ChangeRow: View {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(change.summary).font(.body.weight(.medium))
-                        if let bytes = change.bytes {
+                        if change.isAskedAgain {
+                            Text("Asked again: you said no before. Saying no again keeps things as they are.")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        if change.action == .restore {
+                            Text("From the backup on your Mac").font(.caption).foregroundStyle(.secondary)
+                        } else if let bytes = change.bytes {
                             Text("About \(bytes.formatted(.byteCount(style: .file)))")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -150,22 +174,27 @@ private struct ChangeRow: View {
                     Image(systemName: change.symbol).foregroundStyle(change.action == .delete ? .red : .accentColor)
                 }
             }
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(change.assetIDs.prefix(12), id: \.self) { id in
-                        AssetThumbnail(assetID: id)
-                    }
-                    if change.assetIDs.count > 12 {
-                        Text("+\(change.assetIDs.count - 12)")
-                            .font(.caption.weight(.semibold))
-                            .frame(width: 56, height: 56)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-            }
-            .scrollIndicators(.never)
+            // Items to put back aren't on the iPhone, so there's nothing to preview.
+            if change.action != .restore { previews }
         }
         .padding(.vertical, 4)
+    }
+
+    private var previews: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(change.assetIDs.prefix(12), id: \.self) { id in
+                    AssetThumbnail(assetID: id)
+                }
+                if change.assetIDs.count > 12 {
+                    Text("+\(change.assetIDs.count - 12)")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 56, height: 56)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+        .scrollIndicators(.never)
     }
 }
 

@@ -146,6 +146,21 @@ final class MediaLibrary {
     /// When Imago first saw each item missing from its iPhone (by item ID): Deleted on iPhone moves it
     /// to Recently Deleted after as many days as Recently Deleted keeps things.
     private(set) var leftPhoneAt: [String: Date] = [:]
+    /// Deleted on an iPhone, and kept here on purpose (Keep Backups): no longer on Deleted on iPhone,
+    /// and never moved to Recently Deleted for it. By item ID, in the library's `.photobackup`.
+    private(set) var kept: Set<String> = []
+    /// Deleted on an iPhone and waiting to be put back there (a `restore` change), by item ID.
+    private(set) var restoring: Set<String> = []
+    /// Changes an iPhone turned down that the user hasn't decided about yet.
+    private(set) var declines: [Decline] = []
+
+    /// A change an iPhone said no to, waiting for a decision here.
+    struct Decline: Identifiable {
+        let device: PairedDevice
+        let done: ChangeQueue.Done
+        var id: UUID { done.id }
+        var change: LibraryChange { done.change }
+    }
     /// Shared with the sidebar, so dropping one selected item on a Folder moves the whole selection.
     var selection: Set<MediaItem.ID> = []
     var error: String?
@@ -179,6 +194,8 @@ final class MediaLibrary {
         var trashed: [TrashedItem] = []
         var phones: [String: [String: PhoneAsset]] = [:]
         var pending: Set<String> = []
+        var putBack: Set<String> = []
+        var turnedDown: [Decline] = []
         var stores: [BackupStore] = []
         var known: Set<URL> = []
         for device in server.devices {
@@ -209,9 +226,13 @@ final class MediaLibrary {
             if let library = await store.phoneLibrary() {
                 phones[device.id] = Dictionary(library.assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             }
-            for change in await store.changeQueue().pending where change.action == .delete {
-                pending.formUnion(change.assetIDs.map { "\(device.id)/\($0)" })
+            let queue = await store.changeQueue()
+            for change in queue.pending {
+                if change.action == .delete { pending.formUnion(change.assetIDs.map { "\(device.id)/\($0)" }) }
+                if change.action == .restore { putBack.formUnion(change.assetIDs.map { "\(device.id)/\($0)" }) }
             }
+            turnedDown += queue.done.filter { $0.report.outcome == .declined && $0.resolution == nil }
+                .map { Decline(device: device, done: $0) }
         }
 
         // Files in Folders or Recently Deleted that no phone's index knows: added another way, or moved
@@ -249,6 +270,9 @@ final class MediaLibrary {
         trash = trashed.sorted { $0.deletedAt > $1.deletedAt }
         onPhone = phones
         pendingRemoval = pending
+        restoring = putBack
+        declines = turnedDown
+        kept = await Self.readKept(at: keptURL(server))
         revision += 1
         folders = Self.tree(folderPaths, items: items)
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
@@ -257,8 +281,15 @@ final class MediaLibrary {
         // Deleted on an iPhone: note when each was first seen missing, and after its days, move it to
         // Recently Deleted (where it gets the same days again before it's gone for good).
         await noteLeftPhone(server)
+        // Answers that settle themselves: a deletion turned down the second time it was asked keeps the
+        // backups; a put-back turned down keeps them too, off the iPhone.
+        if await settleFinalAnswers(server) {
+            await load(from: server, force: true)
+            return
+        }
         if server.trashDays > 0 {
-            let due = server.devices.flatMap { deletedOnPhone($0.id) }.filter { (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0 }
+            let due = server.devices.flatMap { deletedOnPhone($0.id) }
+                .filter { !restoring.contains($0.id) && (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0 }
             if !due.isEmpty {
                 _ = await trash(due, server: server)
                 return
@@ -280,6 +311,112 @@ final class MediaLibrary {
         return max(0, Int((due.timeIntervalSinceNow / 86_400).rounded(.up)))
     }
 
+    // MARK: Answers from the iPhones
+
+    /// Keeps the backups of a deletion the iPhone turned down: they come back from Recently Deleted
+    /// to where they were, and both sides agree the photos stay. Returns the step that undoes it.
+    func keepHereToo(_ decline: Decline, server: BackupServer) async -> FileHistory.Step? {
+        let ids = Set(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
+        let back = trash.filter { ids.contains($0.id) }
+        let step = back.isEmpty ? nil : await putBack(back, server: server)
+        await server.resolve(decline.change, as: .kept, on: decline.device)
+        await load(from: server, force: true)
+        return step
+    }
+
+    /// Settles a turned-down change as it is: for a deletion, the backups stay in Recently Deleted and
+    /// the photos stay on the iPhone; for anything else, it's just noted.
+    func leaveAsIs(_ decline: Decline, server: BackupServer) async {
+        await server.resolve(decline.change, as: decline.change.action == .delete ? .leftDeleted : .dismissed, on: decline.device)
+        await load(from: server, force: true)
+    }
+
+    /// Asks the iPhone once more. If it says no again, the backups are kept (see `settleFinalAnswers`).
+    func askAgain(_ decline: Decline, server: BackupServer) async {
+        server.askAgain(decline.change, on: decline.device)
+        await server.resolve(decline.change, as: .askedAgain, on: decline.device)
+        await load(from: server, force: true)
+    }
+
+    /// Keeps the backups of items deleted on their iPhone, on purpose: they leave Deleted on iPhone and
+    /// stay where they are. Returns the step that undoes it.
+    func keepBackups(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
+        let ids = Set(items.map(\.id)).subtracting(kept)
+        guard !ids.isEmpty else { return nil }
+        kept.formUnion(ids)
+        await Self.writeKept(kept, to: keptURL(server))
+        revision += 1
+        return FileHistory.Step(name: ids.count == 1 ? "Keep Backup" : "Keep \(ids.count) Backups") { [weak self] in
+            guard let self else { return nil }
+            kept.subtract(ids)
+            await Self.writeKept(kept, to: keptURL(server))
+            revision += 1
+            return FileHistory.Step(name: "Keep Backups") { [weak self] in await self?.keepBackups(items, server: server) }
+        }
+    }
+
+    /// Asks the items' iPhones to put them back in their libraries, from the backups here. Each iPhone
+    /// asks first, then fetches the files while Imago is open on it. Returns the step that withdraws it.
+    func putBackOnPhone(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
+        var asked: [(PairedDevice, [String])] = []
+        for (deviceID, group) in Dictionary(grouping: items.filter { $0.deviceID != nil && !restoring.contains($0.id) }, by: { $0.deviceID! }) {
+            guard let device = server.devices.first(where: { $0.id == deviceID }) else { continue }
+            let assetIDs = group.compactMap(\.assetID)
+            server.requestRestore(assetIDs, on: device)
+            asked.append((device, assetIDs))
+        }
+        guard !asked.isEmpty else { return nil }
+        restoring.formUnion(asked.flatMap { device, ids in ids.map { "\(device.id)/\($0)" } })
+        revision += 1
+        let count = asked.reduce(0) { $0 + $1.1.count }
+        return FileHistory.Step(name: count == 1 ? "Put Back on iPhone" : "Put Back \(count) Items on iPhone") { [weak self] in
+            for (device, ids) in asked { server.withdrawRestore(Set(ids), on: device) }
+            self?.restoring.subtract(asked.flatMap { device, ids in ids.map { "\(device.id)/\($0)" } })
+            self?.revision += 1
+            return FileHistory.Step(name: "Put Back on iPhone") { [weak self] in await self?.putBackOnPhone(items, server: server) }
+        }
+    }
+
+    /// Settles turned-down changes that need no question: a deletion turned down when asked again keeps
+    /// the backups (they come back from Recently Deleted), and so does a put-back the iPhone turned
+    /// down (they stay here, off Deleted on iPhone). Returns whether anything changed.
+    private func settleFinalAnswers(_ server: BackupServer) async -> Bool {
+        var changed = false
+        for decline in declines {
+            switch decline.change.action {
+            case .delete where decline.change.isAskedAgain:
+                let ids = Set(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
+                let back = trash.filter { ids.contains($0.id) }
+                if !back.isEmpty { _ = await putBack(back, server: server) }
+                await server.resolve(decline.change, as: .kept, on: decline.device)
+                changed = true
+            case .restore:
+                kept.formUnion(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
+                await Self.writeKept(kept, to: keptURL(server))
+                await server.resolve(decline.change, as: .kept, on: decline.device)
+                changed = true
+            default:
+                break
+            }
+        }
+        return changed
+    }
+
+    private func keptURL(_ server: BackupServer) -> URL {
+        server.location.url.appending(path: ".photobackup/kept-off-iphone.json")
+    }
+
+    private nonisolated static func readKept(at url: URL) async -> Set<String> {
+        await Task.detached { (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: url))) ?? [] }.value
+    }
+
+    private nonisolated static func writeKept(_ kept: Set<String>, to url: URL) async {
+        await Task.detached {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? JSONEncoder().encode(kept.sorted()).write(to: url, options: .atomic)
+        }.value
+    }
+
     /// Updates when each item on Deleted on iPhone was first seen there, in the library's `.photobackup`.
     private func noteLeftPhone(_ server: BackupServer) async {
         let url = server.location.url.appending(path: ".photobackup/left-iphone.json")
@@ -290,9 +427,15 @@ final class MediaLibrary {
         }.value
         let now = Set(server.devices.flatMap { deletedOnPhone($0.id) }.map(\.id))
         var changed = false
+        var fresh: [String: Int] = [:]
         for id in now where known[id] == nil {
             known[id] = .now
             changed = true
+            fresh[String(id.prefix { $0 != "/" }), default: 0] += 1
+        }
+        // Newly seen deleted on an iPhone: ask what to do with the backups.
+        for (deviceID, count) in fresh {
+            if let device = server.devices.first(where: { $0.id == deviceID }) { MacNotifications.deletedOnPhone(count, on: device.name) }
         }
         // Back on its iPhone, or dealt with. Only for iPhones whose library list was read: without it,
         // nothing looks deleted, and the days so far mustn't be lost.
@@ -392,7 +535,7 @@ final class MediaLibrary {
     func deletedOnPhone(_ deviceID: String) -> [MediaItem] {
         guard let phone = onPhone[deviceID] else { return [] }
         return items.filter { item in
-            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil } == true
+            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil } == true && !kept.contains(item.id)
         }
     }
 

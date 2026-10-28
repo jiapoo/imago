@@ -48,6 +48,36 @@ private func metadata(filename: String = "IMG_4821.HEIC", date: Date? = Date(tim
         #expect(decoded == .chunk(key: key, offset: 1_000_000, data: payload))
     }
 
+    @Test func restoreMessagesRoundTrip() throws {
+        let key = ResourceKey(assetID: "A/L0/001", kind: .photo, revision: "original")
+        let asset = RestoreAsset(metadata: metadata(), files: [.init(key: key, originalFilename: "IMG_4821.HEIC", size: 3, sha256: "abc")])
+        let id = UUID()
+        let frames: [Frame] = [
+            .control(.restoreRequest(id)),
+            .control(.restoreAsset(asset)),
+            .chunk(key: key, offset: 0, data: Data([1, 2, 3])),
+            .control(.restoreEnd(id, missing: ["B/L0/001"])),
+            // Whole seconds: dates lose their fractions on the wire.
+            .control(.changes([LibraryChange(action: .restore, assetIDs: ["A/L0/001"], createdAt: Date(timeIntervalSince1970: 1_792_506_612), round: 2)])),
+            .control(.changeReport([ChangeReport(changeID: id, outcome: .applied, assetCount: 1, date: Date(timeIntervalSince1970: 1_792_506_612),
+                                                 restored: ["A/L0/001": "C/L0/001"])])),
+        ]
+        var decoder = FrameDecoder()
+        for frame in frames { decoder.append(try FrameCodec.encode(frame)) }
+        for frame in frames { #expect(try decoder.next() == frame) }
+    }
+
+    /// A change from before version 7 has no round; it reads as asked once.
+    @Test func changesWithoutARoundAreAskedOnce() throws {
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","action":{"delete":{}},"assetIDs":["a"],"createdAt":"2026-10-28T00:00:00Z"}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let change = try decoder.decode(LibraryChange.self, from: Data(json.utf8))
+        #expect(change.round == nil)
+        #expect(!change.isAskedAgain)
+        #expect(LibraryChange.Action.restore.minimumVersion == 7)
+    }
+
     @Test func rejectsOversizedFrames() {
         var decoder = FrameDecoder()
         var header = Data()

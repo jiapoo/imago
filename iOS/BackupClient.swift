@@ -119,6 +119,13 @@ final class BackupClient {
     }
     /// Set while the live link is connected, to send reports to the Mac the moment there are any.
     var sendReportsNow: (([ChangeReport]) -> Void)?
+    /// Set while the live link is connected (version 7): asks the Mac for the files of a put-back
+    /// the user approved. They arrive over the link (see `LiveLink`).
+    var requestRestoreNow: ((LibraryChange) -> Void)?
+    /// Put-backs approved and on their way from the Mac.
+    private(set) var restoringIDs: Set<UUID> = []
+    /// A put-back was approved while the Mac couldn't be reached: it waits for the connection.
+    private(set) var restoreNeedsConnection = false
     private var autoApply: Task<Void, Never>?
     /// What the user did with earlier changes; sent to the Mac at the next backup.
     private var unsentReports: [ChangeReport] = [] {
@@ -651,8 +658,9 @@ final class BackupClient {
             defer { autoApply = nil }
             // Changes made together on the Mac arrive one after another; wait a moment so deletions go in one prompt.
             try? await Task.sleep(for: .seconds(1.5))
-            while applyRightAway, UIApplication.shared.applicationState == .active, !macChanges.isEmpty {
-                let batch = macChanges
+            // Putting photos back adds to the library: always the user's call, in the review.
+            while applyRightAway, UIApplication.shared.applicationState == .active, macChanges.contains(where: { $0.action != .restore }) {
+                let batch = macChanges.filter { $0.action != .restore }
                 await review(approve: batch, decline: [])
                 // Stop if nothing was handled (e.g. a review was already running); more may have arrived meanwhile.
                 if macChanges.allSatisfy(batch.contains) { break }
@@ -668,8 +676,21 @@ final class BackupClient {
         defer { isApplyingChanges = false }
 
         var reports = declined.map { ChangeReport(changeID: $0.id, outcome: .declined, assetCount: 0) }
+        // Put-backs need the files from the Mac: asked for now over the live link, reported when they're in.
+        let restores = approved.filter { $0.action == .restore && !restoringIDs.contains($0.id) }
+        if !restores.isEmpty {
+            if let requestRestoreNow {
+                restoreNeedsConnection = false
+                for change in restores {
+                    restoringIDs.insert(change.id)
+                    requestRestoreNow(change)
+                }
+            } else {
+                restoreNeedsConnection = true
+            }
+        }
         let deletions = approved.filter { $0.action == .delete }
-        for change in approved where change.action != .delete {
+        for change in approved where change.action != .delete && change.action != .restore {
             reports.append(await PhotoLibrary.apply(change))
         }
         if !deletions.isEmpty {
@@ -689,6 +710,33 @@ final class BackupClient {
         handledChangeIDs = Array((handledChangeIDs + ids).suffix(500))
         macChanges.removeAll { ids.contains($0.id) }
         await refreshCounts()
+    }
+
+    /// A put-back finished (or couldn't be done): the Mac hears now, or at the next backup.
+    func finishRestore(_ report: ChangeReport) async {
+        restoringIDs.remove(report.changeID)
+        unsentReports.append(report)
+        sendReportsNow?([report])
+        handledChangeIDs = Array((handledChangeIDs + [report.changeID]).suffix(500))
+        macChanges.removeAll { $0.id == report.changeID }
+        await refreshCounts()
+    }
+
+    /// The live link dropped mid-way: the put-backs on their way wait for the next connection.
+    func restoresInterrupted() {
+        guard !restoringIDs.isEmpty else { return }
+        restoringIDs = []
+        restoreNeedsConnection = true
+    }
+
+    /// The live link is up again: put-backs approved while it wasn't go now.
+    func resumeWaitingRestores() {
+        guard restoreNeedsConnection, let requestRestoreNow else { return }
+        restoreNeedsConnection = false
+        for change in macChanges where change.action == .restore && !restoringIDs.contains(change.id) {
+            restoringIDs.insert(change.id)
+            requestRestoreNow(change)
+        }
     }
 
     private struct ChangeState: Codable {

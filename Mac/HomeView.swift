@@ -14,6 +14,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 hero
+                DecisionsCard(devices: server.devices) { selection = .deletedOnPhone($0.id) }
                 numbers
                 if server.isBackingUp { BackingUpCard() }
                 if !server.devices.isEmpty {

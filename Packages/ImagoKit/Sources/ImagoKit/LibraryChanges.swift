@@ -13,11 +13,18 @@ public struct LibraryChange: Codable, Sendable, Hashable, Identifiable {
         /// Version 6: deletes the regular album with this title, as Photos does: its photos stay in the
         /// library. Has no assets. Sent only to phones on version 6 or later.
         case deleteAlbum(String)
+        /// Version 7: puts these backed-up photos and videos back in the library: ones deleted on the
+        /// phone that the user wants back. The phone asks for the files (`restoreRequest`) once the user
+        /// approves; the report says the new asset IDs (`ChangeReport.restored`).
+        case restore
 
         /// The protocol version a phone needs to understand it.
         public var minimumVersion: Int {
-            if case .deleteAlbum = self { return 6 }
-            return 4
+            switch self {
+            case .deleteAlbum: 6
+            case .restore: 7
+            default: 4
+            }
         }
     }
 
@@ -27,14 +34,21 @@ public struct LibraryChange: Codable, Sendable, Hashable, Identifiable {
     /// About how much space the change frees on the phone (deletions only).
     public var bytes: UInt64?
     public var createdAt: Date
+    /// Version 7: 2 when the Mac asks again after the user said no on the phone (nil: the first time).
+    /// A change goes round once more at most: if it's turned down again, that's the answer.
+    public var round: Int?
 
-    public init(id: UUID = UUID(), action: Action, assetIDs: [String], bytes: UInt64? = nil, createdAt: Date = .now) {
+    public init(id: UUID = UUID(), action: Action, assetIDs: [String], bytes: UInt64? = nil, createdAt: Date = .now, round: Int? = nil) {
         self.id = id
         self.action = action
         self.assetIDs = assetIDs
         self.bytes = bytes
         self.createdAt = createdAt
+        self.round = round
     }
+
+    /// Asked a second time, after the user said no.
+    public var isAskedAgain: Bool { (round ?? 1) > 1 }
 }
 
 public struct ChangeReport: Codable, Sendable, Hashable {
@@ -51,13 +65,17 @@ public struct ChangeReport: Codable, Sendable, Hashable {
     public var assetCount: Int
     public var detail: String?
     public var date: Date
+    /// Version 7, for a `restore`: each put-back asset's old ID (the backup's) and its new one on the phone.
+    public var restored: [String: String]?
 
-    public init(changeID: UUID, outcome: Outcome, assetCount: Int, detail: String? = nil, date: Date = .now) {
+    public init(changeID: UUID, outcome: Outcome, assetCount: Int, detail: String? = nil, date: Date = .now,
+                restored: [String: String]? = nil) {
         self.changeID = changeID
         self.outcome = outcome
         self.assetCount = assetCount
         self.detail = detail
         self.date = date
+        self.restored = restored
     }
 }
 
@@ -71,6 +89,7 @@ extension LibraryChange {
         case .removeFromAlbum(let album): return "Remove \(items) from “\(album)”"
         case .setFavorite(let on): return on ? "Favorite \(items)" : "Unfavorite \(items)"
         case .deleteAlbum(let album): return "Delete album “\(album)”"
+        case .restore: return "Put back \(items)"
         }
     }
 
@@ -82,6 +101,7 @@ extension LibraryChange {
         case .removeFromAlbum: "rectangle.stack.badge.minus"
         case .setFavorite(let on): on ? "heart.fill" : "heart.slash"
         case .deleteAlbum: "rectangle.stack.badge.minus"
+        case .restore: "arrow.uturn.backward.circle"
         }
     }
 }

@@ -14,7 +14,22 @@ struct ChangeQueue: Codable, Equatable {
     struct Done: Codable, Equatable, Identifiable {
         var change: LibraryChange
         var report: ChangeReport
+        /// For a change the phone turned down: what the user decided here, once they have. Until then
+        /// the Mac asks (see `MediaLibrary.Notice`).
+        var resolution: Resolution?
         var id: UUID { change.id }
+    }
+
+    /// What became of a change the phone turned down.
+    enum Resolution: String, Codable {
+        /// The Mac's side was undone too: the backups came back from Recently Deleted.
+        case kept
+        /// The Mac's side stands: the backups stay in Recently Deleted; the photos stay on the phone.
+        case leftDeleted
+        /// Asked once more, as a new change.
+        case askedAgain
+        /// Nothing to undo here (favorites, albums): noted, and that's all.
+        case dismissed
     }
 
     var pending: [LibraryChange] = []
@@ -120,20 +135,39 @@ extension BackupStore {
         }
         queue.done = Array(queue.done.prefix(200))
         try save(queue)
-        let applied = matched.filter { $0.report.outcome == .applied }.map(\.change)
-        if !applied.isEmpty { try patchSnapshot(with: applied) }
+        let applied = matched.filter { $0.report.outcome == .applied }
+        // Put back under new IDs: the files follow before the snapshot names them.
+        let restored = applied.compactMap(\.report.restored).reduce(into: [String: String]()) { $0.merge($1) { a, _ in a } }
+        if !restored.isEmpty { try rekey(restored) }
+        if !applied.isEmpty { try patchSnapshot(with: applied.map(\.change), restored: restored) }
         return matched
+    }
+
+    /// Records what the user decided about a change the phone turned down.
+    func resolve(_ id: UUID, as resolution: ChangeQueue.Resolution) throws {
+        var queue = changeQueue()
+        guard let index = queue.done.firstIndex(where: { $0.id == id }) else { return }
+        queue.done[index].resolution = resolution
+        try save(queue)
     }
 
     /// Makes changes the phone has done to the saved snapshot, so the library shows them before the
     /// phone's next backup sends a fresh one. Otherwise a change done during a live session would
     /// look undone once it leaves the queue.
-    private func patchSnapshot(with changes: [LibraryChange]) throws {
+    private func patchSnapshot(with changes: [LibraryChange], restored: [String: String] = [:]) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard var snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return }
         for change in changes {
             let ids = Set(change.assetIDs)
+            if change.action == .restore {
+                let present = Set(snapshot.entries.map(\.metadata.assetID))
+                for old in change.assetIDs {
+                    guard let new = restored[old], !present.contains(new), let entry = manifestEntry(of: new) else { continue }
+                    snapshot.entries.append(entry)
+                }
+                continue
+            }
             if change.action == .delete {
                 snapshot.entries.removeAll { ids.contains($0.metadata.assetID) }
                 continue
