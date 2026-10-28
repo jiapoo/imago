@@ -16,6 +16,7 @@ struct DeviceView: View {
     @State private var model: PhoneLibraryModel
     @State private var confirmingRemove = false
     @State private var renaming = false
+    @State private var pickingColor = false
     @State private var newName = ""
 
     init(device: PairedDevice, openPhotos: @escaping (PhoneSection?) -> Void, openDeleted: @escaping () -> Void = {}) {
@@ -70,7 +71,11 @@ struct DeviceView: View {
     // MARK: Hero
 
     /// The iPhone's own color.
-    private var tint: Color { server.color(of: device.id) }
+    private var tint: Color {
+        let color = server.color(of: device.id)
+        // The banner's text is white: deepen a light color (yellow, mint) under it.
+        return color.isLight ? color.mix(with: .black, by: 0.3) : color
+    }
 
     private var hero: some View {
         let session = server.session(for: device)
@@ -106,7 +111,7 @@ struct DeviceView: View {
                 .buttonStyle(.plain)
                 Menu {
                     Button("Rename…") { newName = device.name; renaming = true }
-                    DeviceColorMenu(device: device)
+                    DeviceColorMenu(device: device) { pickingColor = true }
                     Button("Show Folder in Finder") { server.revealInFinder(server.folderURL(for: device)) }
                         .disabled(!server.location.isAvailable)
                     Divider()
@@ -121,6 +126,7 @@ struct DeviceView: View {
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
                 .fixedSize()
+                .popover(isPresented: $pickingColor, arrowEdge: .bottom) { DeviceColorPicker(device: device) }
             }
         }
         .foregroundStyle(.white)

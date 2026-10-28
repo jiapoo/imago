@@ -105,6 +105,9 @@ final class MediaLibrary {
 
     private(set) var state: State = .loading
     private(set) var items: [MediaItem] = []
+    /// Bumped whenever what's in the library changes (items, Recently Deleted, what's on the iPhones),
+    /// so views can keep what they work out from it until then.
+    private(set) var revision = 0
     private(set) var trash: [TrashedItem] = []
     /// The top-level folders, each with the ones inside it.
     private(set) var folders: [Folder] = []
@@ -162,6 +165,7 @@ final class MediaLibrary {
             items = []
             trash = []
             folders = []
+            revision += 1
             return
         }
         if items.isEmpty { state = .loading }
@@ -245,6 +249,7 @@ final class MediaLibrary {
         trash = trashed.sorted { $0.deletedAt > $1.deletedAt }
         onPhone = phones
         pendingRemoval = pending
+        revision += 1
         folders = Self.tree(folderPaths, items: items)
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
         state = .ready

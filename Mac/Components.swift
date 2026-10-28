@@ -127,6 +127,29 @@ struct ThumbnailView: View {
 extension Color {
     /// Imago's red, from the app icon (#DD1B3F). Also the app's accent color (Assets › AccentColor).
     static let imago = Color(red: 0xDD / 255, green: 0x1B / 255, blue: 0x3F / 255)
+
+    /// From hex, "DD1B3F" (a leading # is fine).
+    init(hex: String) {
+        let value = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0
+        self.init(.sRGB, red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+                  blue: Double(value & 0xFF) / 255)
+    }
+
+    /// As hex, "DD1B3F".
+    var hex: String {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return "000000" }
+        let channel = { (c: CGFloat) in Int((min(max(c, 0), 1) * 255).rounded()) }
+        return String(format: "%02X%02X%02X", channel(rgb.redComponent), channel(rgb.greenComponent), channel(rgb.blueComponent))
+    }
+
+    /// Light enough that white on it is hard to read (yellow, mint).
+    var isLight: Bool {
+        guard let rgb = NSColor(self).usingColorSpace(.sRGB) else { return false }
+        return 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent > 0.6
+    }
+
+    /// Text and symbols on this color: white, or near-black on a light color.
+    var ink: Color { isLight ? .black.opacity(0.78) : .white }
 }
 
 extension Color {

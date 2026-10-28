@@ -192,6 +192,8 @@ struct GridKeys: ViewModifier {
 /// out, and nothing redraws for it.
 final class TileFrames {
     var frames: [String: CGRect] = [:]
+    /// Day headers on screen. Pinned ones sit over tiles: a drag starting on one draws a box.
+    var headers: [String: CGRect] = [:]
 }
 
 extension View {
@@ -199,42 +201,38 @@ extension View {
     func tileFrame(_ id: String, in frames: TileFrames) -> some View {
         onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SelectionBox.space)) } action: { frames.frames[id] = $0 }
     }
+
+    /// Records a day header's frame while it's on screen, for the selection box.
+    func headerFrame(_ id: String, in frames: TileFrames) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SelectionBox.space)) } action: { frames.headers[id] = $0 }
+            .onDisappear { frames.headers[id] = nil }
+    }
 }
 
-/// Drag across empty space in a grid to select the tiles the box touches, as in Finder. With ⌘ or ⇧
-/// held, they're added to the selection instead of replacing it.
+/// Drag from anywhere that isn't a tile (gaps, margins, day headers, below the last row) to select
+/// the tiles the box touches, as in Finder. With ⌘ or ⇧ held, they're added to the selection instead
+/// of replacing it. Past the top or bottom edge, the grid scrolls, faster the further out the pointer is.
+///
+/// Apply it to the scroll view's whole content, so the box's coordinates are the content's.
 struct SelectionBox: ViewModifier {
     static let space = "selectionBox"
     let frames: TileFrames
-    /// The tiles' IDs in order, so only ones still in the grid are picked.
-    let ids: [String]
+    /// The tiles' IDs, so only ones still in the grid are picked. Asked for when a box starts.
+    let ids: () -> Set<String>
     @Binding var selection: Set<String>
     @State private var box: CGRect?
-    @State private var before: Set<String> = []
+    @State private var drag = BoxDrag()
 
     func body(content: Content) -> some View {
         content
+            .contentShape(Rectangle())
             .coordinateSpace(.named(Self.space))
-            // Behind the tiles: only a drag that starts on empty space draws a box.
-            .background {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.space))
-                            .onChanged { drag in
-                                if box == nil {
-                                    let modifiers = NSEvent.modifierFlags
-                                    before = modifiers.contains(.command) || modifiers.contains(.shift) ? selection : []
-                                }
-                                let rect = CGRect(x: min(drag.startLocation.x, drag.location.x), y: min(drag.startLocation.y, drag.location.y),
-                                                  width: abs(drag.location.x - drag.startLocation.x), height: abs(drag.location.y - drag.startLocation.y))
-                                box = rect
-                                let inside = Set(ids.filter { frames.frames[$0]?.intersects(rect) == true })
-                                selection = before.union(inside)
-                            }
-                            .onEnded { _ in box = nil }
-                    )
-            }
+            // Alongside the tiles' own clicks and drags: a drag that starts on a tile is theirs.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
+                    .onChanged { value in changed(start: value.startLocation, location: value.location) }
+                    .onEnded { _ in ended() }
+            )
             .overlay(alignment: .topLeading) {
                 if let box {
                     Rectangle()
@@ -244,6 +242,121 @@ struct SelectionBox: ViewModifier {
                         .offset(x: box.minX, y: box.minY)
                         .allowsHitTesting(false)
                 }
+            }
+    }
+
+    private func changed(start: CGPoint, location: CGPoint) {
+        switch drag.phase {
+        case .ignoring:
+            return
+        case .idle:
+            let ids = ids()
+            // On a tile (and not a day header pinned over it): it's dragging the tile, not drawing a box.
+            if !frames.headers.values.contains(where: { $0.contains(start) }),
+               frames.frames.contains(where: { $0.value.contains(start) && ids.contains($0.key) }) {
+                drag.phase = .ignoring
+                return
+            }
+            drag.ids = ids
+            let modifiers = NSEvent.modifierFlags
+            drag.before = modifiers.contains(.command) || modifiers.contains(.shift) ? selection : []
+            drag.start = start
+            drag.scrollView = Self.scrollView(under: NSEvent.mouseLocation)
+            drag.phase = .boxing
+            startAutoscroll()
+        case .boxing:
+            break
+        }
+        drag.location = location
+        drag.originAtLocation = drag.scrollView?.contentView.bounds.origin.y ?? 0
+        update()
+    }
+
+    private func ended() {
+        drag.autoscroll?.cancel()
+        drag = BoxDrag()
+        box = nil
+    }
+
+    /// Redraws the box to the pointer and selects what it touches. Writes the selection only when
+    /// it changes: every write redraws the grid.
+    private func update() {
+        let rect = CGRect(x: min(drag.start.x, drag.location.x), y: min(drag.start.y, drag.location.y),
+                          width: abs(drag.location.x - drag.start.x), height: abs(drag.location.y - drag.start.y))
+        box = rect
+        var inside = drag.before
+        for (id, frame) in frames.frames where frame.intersects(rect) && drag.ids.contains(id) { inside.insert(id) }
+        if inside != selection { selection = inside }
+    }
+
+    /// While the box is drawn: with the pointer past the top or bottom of the grid, scroll, and grow
+    /// the box with the content.
+    private func startAutoscroll() {
+        drag.autoscroll = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard drag.phase == .boxing, let scrollView = drag.scrollView else { continue }
+                let clip = scrollView.contentView
+                guard clip.isFlipped, let window = scrollView.window else { continue }
+                let pointer = clip.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+                let visible = clip.bounds
+                let top = visible.minY + scrollView.contentInsets.top, bottom = visible.maxY - scrollView.contentInsets.bottom
+                let margin: CGFloat = 20
+                let overshoot = pointer.y < top + margin ? pointer.y - (top + margin)
+                    : pointer.y > bottom - margin ? pointer.y - (bottom - margin) : 0
+                guard overshoot != 0 else { continue }
+                // Faster the further out, as in Finder.
+                let step = (overshoot.sign == .minus ? -1 : 1) * min(4 + abs(overshoot) * 0.35, 60)
+                var target = visible
+                target.origin.y += step
+                target = clip.constrainBoundsRect(target)
+                let moved = target.origin.y - visible.origin.y
+                guard moved != 0 else { continue }
+                clip.scroll(to: target.origin)
+                scrollView.reflectScrolledClipView(clip)
+                // The pointer hasn't moved on screen, so in the content it moved with the scroll.
+                drag.location.y += target.origin.y - drag.originAtLocation
+                drag.originAtLocation = target.origin.y
+                update()
+            }
+        }
+    }
+
+    /// The scroll view under a point on screen: the grid's, when the drag starts.
+    private static func scrollView(under screenPoint: NSPoint) -> NSScrollView? {
+        guard let window = NSApp.windows.first(where: { $0.isVisible && $0.frame.contains(screenPoint) }),
+              let contentView = window.contentView else { return nil }
+        let point = contentView.convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+        return contentView.hitTest(point)?.enclosingScrollView
+    }
+}
+
+/// One box being drawn. A class, so the autoscroll loop and the gesture share it without redrawing.
+private final class BoxDrag {
+    enum Phase { case idle, boxing, ignoring }
+    var phase = Phase.idle
+    var start: CGPoint = .zero
+    var location: CGPoint = .zero
+    /// The scroll position when `location` was last set from the pointer.
+    var originAtLocation: CGFloat = 0
+    var before: Set<String> = []
+    var ids: Set<String> = []
+    weak var scrollView: NSScrollView?
+    var autoscroll: Task<Void, Never>?
+}
+
+/// Makes a scroll view's content at least as tall as the scroll view, so a box can start below the
+/// last row of a short grid.
+struct FillsViewport: ViewModifier {
+    @State private var height: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, minHeight: height, alignment: .top)
+            .background {
+                // The scroll view's own height, not the content's.
+                Color.clear.containerRelativeFrame(.vertical)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             }
     }
 }

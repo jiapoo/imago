@@ -41,7 +41,7 @@ struct Sidebar: View {
 
             Section("iPhones", isExpanded: $phonesExpanded) {
                 ForEach(server.devices) { device in
-                    PhoneSidebarItem(device: device, isOpen: openBinding(device.id))
+                    PhoneSidebarItem(device: device, isOpen: openBinding(device.id), selection: selection)
                 }
                 Button { showingAddPhone = true } label: {
                     Label("Add iPhone", systemImage: "plus.circle.fill")
@@ -173,10 +173,21 @@ private struct PhoneSidebarItem: View {
     @Environment(MediaLibrary.self) private var library
     let device: PairedDevice
     @Binding var isOpen: Bool
+    let selection: SidebarItem?
+
+    /// This iPhone, or one of its pages, is open.
+    private var isSelected: Bool {
+        selection == .device(device.id) || selection == .manage(device.id) || selection == .deletedOnPhone(device.id)
+    }
 
     var body: some View {
         DisclosureGroup(isExpanded: $isOpen) {
-            Label("Photos", systemImage: "photo.stack").tag(SidebarItem.manage(device.id))
+            Label {
+                Text("Photos")
+            } icon: {
+                Image(systemName: "photo.stack").foregroundStyle(server.color(of: device.id))
+            }
+            .tag(SidebarItem.manage(device.id))
             let deleted = library.deletedOnPhone(device.id).count
             if deleted > 0 {
                 Label {
@@ -191,12 +202,15 @@ private struct PhoneSidebarItem: View {
                 .tag(SidebarItem.deletedOnPhone(device.id))
                 .help("Backed up here, but deleted on \(device.name) since")
             }
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .padding(.leading, 4)
-                .selectionDisabled()
+            // How its backup stands: only while this iPhone is open, to keep the sidebar short.
+            if isSelected {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .padding(.leading, 4)
+                    .selectionDisabled()
+            }
         } label: {
             PhoneRow(device: device).tag(SidebarItem.device(device.id))
         }
@@ -229,12 +243,13 @@ struct PhoneRow: View {
     @Environment(FileHistory.self) private var history
     let device: PairedDevice
     @State private var targeted = false
+    @State private var pickingColor = false
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: targeted ? "iphone.and.arrow.forward" : "iphone")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(server.color(of: device.id).ink)
                 .frame(width: 22, height: 22)
                 .background(server.color(of: device.id).gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentTransition(.symbolEffect(.replace))
@@ -246,7 +261,8 @@ struct PhoneRow: View {
             library.drop(urls, onto: .phoneFolder, server: server, history: history)
         } isTargeted: { targeted = $0 }
         .help(help)
-        .contextMenu { DeviceColorMenu(device: device) }
+        .contextMenu { DeviceColorMenu(device: device) { pickingColor = true } }
+        .popover(isPresented: $pickingColor, arrowEdge: .trailing) { DeviceColorPicker(device: device) }
     }
 
     /// Backing up: a spinner. Otherwise a light: green while Imago is open on it, orange when a
@@ -270,33 +286,132 @@ struct PhoneRow: View {
     }
 }
 
-/// Picks an iPhone's color: its row in the sidebar, its page, and its mark on tiles.
+/// In an iPhone's menus: its color as a row of swatches (as Finder shows tag colors), and More Colors…
+/// for the whole palette.
 struct DeviceColorMenu: View {
     @Environment(BackupServer.self) private var server
     let device: PairedDevice
+    var more: () -> Void
 
     var body: some View {
-        let current = server.colorIndex(of: device.id)
-        Menu("Color") {
-            ForEach(PairedDevice.colors.indices, id: \.self) { index in
-                Toggle(isOn: Binding(get: { index == current }, set: { _ in server.setColor(index, for: device) })) {
-                    Label {
-                        Text(PairedDevice.colors[index].name)
-                    } icon: {
-                        Image(nsImage: Self.swatch(PairedDevice.colors[index].color))
-                    }
-                }
+        let current = server.colorHex(of: device.id)
+        // A color from beyond the bright row shows as an extra swatch, picked.
+        let swatches = PairedDevice.brights.contains { $0.hex == current }
+            ? PairedDevice.brights : PairedDevice.brights + [.init(name: "Current Color", hex: current)]
+        Picker("Color", selection: Binding(get: { current }, set: { server.setColor($0, for: device) })) {
+            ForEach(swatches) { swatch in
+                Image(nsImage: Self.swatch(swatch.color))
+                    .accessibilityLabel(swatch.name)
+                    .tag(swatch.hex)
             }
         }
+        .pickerStyle(.palette)
+        Button("More Colors…", action: more)
     }
 
-    /// A round swatch: menus draw SF Symbols in the text color, so the color needs an image of its own.
+    /// A round swatch, lit from the top. Menus draw SF Symbols in the text color, so the color needs an
+    /// image of its own.
     private static func swatch(_ color: Color) -> NSImage {
-        NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            NSColor(color).setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+            let base = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            NSGradient(starting: base.blended(withFraction: 0.25, of: .white) ?? base,
+                       ending: base.blended(withFraction: 0.12, of: .black) ?? base)?.draw(in: circle, angle: -90)
+            NSColor.black.withAlphaComponent(0.12).setStroke()
+            circle.lineWidth = 0.75
+            circle.stroke()
             return true
         }
+        image.isTemplate = false
+        return image
+    }
+}
+
+/// The whole palette, in a popover: a grid of swatches, a preview of the iPhone in the color, and
+/// the system color picker for any other. Changes show everywhere as they're made.
+struct DeviceColorPicker: View {
+    @Environment(BackupServer.self) private var server
+    let device: PairedDevice
+    @State private var hovered: String?
+
+    var body: some View {
+        let current = server.colorHex(of: device.id)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                let color = Color(hex: current)
+                Image(systemName: "iphone")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(color.ink)
+                    .frame(width: 30, height: 30)
+                    .background(color.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .animation(.snappy(duration: 0.2), value: current)
+                Text(device.name).font(.headline).lineLimit(1)
+            }
+
+            Grid(horizontalSpacing: 10, verticalSpacing: 10) {
+                ForEach(PairedDevice.palette.indices, id: \.self) { row in
+                    GridRow {
+                        ForEach(PairedDevice.palette[row]) { swatch in
+                            SwatchButton(swatch: swatch, selected: swatch.hex == current, hovered: hovered == swatch.hex) {
+                                server.setColor(swatch.hex, for: device)
+                            }
+                            .onHover { hovered = $0 ? swatch.hex : (hovered == swatch.hex ? nil : hovered) }
+                        }
+                    }
+                    if row == 2 { GridRow { Color.clear.frame(height: 0).gridCellColumns(8) } }
+                }
+            }
+
+            Divider()
+
+            HStack {
+                Text("Custom").foregroundStyle(.secondary)
+                Spacer()
+                ColorPicker("Custom", selection: Binding(
+                    get: { Color(hex: current) },
+                    set: { server.setColor($0.hex, for: device) }
+                ), supportsOpacity: false)
+                .labelsHidden()
+            }
+        }
+        .padding(16)
+        .frame(width: 8 * 26 + 7 * 10 + 32)
+    }
+}
+
+/// A round swatch in the palette: lit from the top, a ring in its own color when picked.
+private struct SwatchButton: View {
+    let swatch: PairedDevice.Swatch
+    let selected: Bool
+    let hovered: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(LinearGradient(colors: [swatch.color.mix(with: .white, by: 0.18), swatch.color.mix(with: .black, by: 0.08)],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(Circle().strokeBorder(.black.opacity(0.1), lineWidth: 0.5))
+                .overlay {
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(swatch.color.ink)
+                    }
+                }
+                .padding(selected ? 3 : 0)
+                .overlay {
+                    if selected { Circle().strokeBorder(swatch.color, lineWidth: 2) }
+                }
+                .frame(width: 26, height: 26)
+                .scaleEffect(hovered && !selected ? 1.12 : 1)
+                .shadow(color: swatch.color.opacity(hovered ? 0.45 : 0), radius: 5, y: 1)
+                .animation(.snappy(duration: 0.15), value: hovered)
+                .animation(.snappy(duration: 0.2), value: selected)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(swatch.name)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

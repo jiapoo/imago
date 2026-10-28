@@ -19,9 +19,12 @@ struct PhoneBrowserView: View {
     @Environment(FileHistory.self) private var history
     let device: PairedDevice
     @State private var model: PhoneLibraryModel
-    /// An album to delete, while the confirmation is up.
-    @State private var deletingAlbum: String?
+    /// Albums to delete, while the confirmation is up.
+    @State private var deletingAlbums: [String]?
+    /// What's open.
     @State private var section: PhoneSection = .library
+    /// What's selected in the sidebar: one section, or several albums (⌘- or ⇧-click) to act on.
+    @State private var sidebarSelection: Set<PhoneSection> = [.library]
     @State private var zoom: LibraryZoom = .all
     @AppStorage("phoneTileSize") private var tileSize = 150.0
     /// Select mode, as in Photos on the iPhone: a click adds an item to the selection or takes it out.
@@ -64,17 +67,24 @@ struct PhoneBrowserView: View {
             server.loadPreviews(for: device)
             await model.load(from: server)
         }
-        .onChange(of: section) { selecting = false }
-        .confirmationDialog("Delete “\(deletingAlbum ?? "")”?", isPresented: Binding(
-            get: { deletingAlbum != nil }, set: { if !$0 { deletingAlbum = nil } }
+        .onChange(of: section) {
+            selecting = false
+            if !sidebarSelection.contains(section) { sidebarSelection = [section] }
+        }
+        .onChange(of: sidebarSelection) {
+            if sidebarSelection.count == 1, let only = sidebarSelection.first { section = only }
+        }
+        .confirmationDialog(deleteAlbumsTitle, isPresented: Binding(
+            get: { deletingAlbums != nil }, set: { if !$0 { deletingAlbums = nil } }
         ), titleVisibility: .visible) {
-            Button("Delete Album", role: .destructive) {
-                guard let album = deletingAlbum else { return }
-                if section == .album(album) { section = .library }
-                PhoneActions(server: server, model: model, device: device, library: library, history: history).deleteAlbum(album)
+            Button((deletingAlbums?.count ?? 0) > 1 ? "Delete Albums" : "Delete Album", role: .destructive) {
+                guard let albums = deletingAlbums else { return }
+                if case .album(let open) = section, albums.contains(open) { section = .library }
+                PhoneActions(server: server, model: model, device: device, library: library, history: history).deleteAlbums(albums)
             }
         } message: {
-            Text("The album is deleted on \(device.name); its photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : "when you next open Imago on it").")
+            let one = (deletingAlbums?.count ?? 0) == 1
+            Text("\(one ? "The album is" : "The albums are") deleted on \(device.name); \(one ? "its" : "their") photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : "when you next open Imago on it").")
         }
         .onAppear {
             if let requested = model.requestedSection {
@@ -87,6 +97,16 @@ struct PhoneBrowserView: View {
             model.cancelSimilar()
             server.keepDriveAwake(false)
         }
+    }
+
+    private var deleteAlbumsTitle: String {
+        guard let albums = deletingAlbums else { return "" }
+        return albums.count == 1 ? "Delete “\(albums[0])”?" : "Delete \(albums.count) Albums?"
+    }
+
+    /// The albums among these sidebar rows.
+    private func albums(in sections: Set<PhoneSection>) -> [String] {
+        model.albums.filter { sections.contains(.album($0)) }
     }
 
     private var subtitle: String {
@@ -130,7 +150,7 @@ struct PhoneBrowserView: View {
     // MARK: Sidebar
 
     private var sidebar: some View {
-        List(selection: $section) {
+        List(selection: $sidebarSelection) {
             Section {
                 SectionRow(title: "Library", symbol: "photo.on.rectangle", detail: model.assets.count.formatted()).tag(PhoneSection.library)
                 SectionRow(title: "Favorites", symbol: "heart", detail: model.favorites.count.formatted()).tag(PhoneSection.favorites)
@@ -153,9 +173,6 @@ struct PhoneBrowserView: View {
                     ForEach(model.albums, id: \.self) { album in
                         SectionRow(title: album, symbol: "rectangle.stack", detail: model.albumCounts[album, default: 0].formatted())
                             .tag(PhoneSection.album(album))
-                            .contextMenu {
-                                Button("Delete Album…", role: .destructive) { deletingAlbum = album }
-                            }
                     }
                 }
             }
@@ -177,6 +194,29 @@ struct PhoneBrowserView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        // Right-click an album, or several selected: the menu acts on all of them.
+        .contextMenu(forSelectionType: PhoneSection.self) { sections in
+            let albums = albums(in: sections)
+            if !albums.isEmpty {
+                if albums.count == 1 {
+                    Button("Open") { sidebarSelection = [.album(albums[0])] }
+                    Divider()
+                }
+                Button(albums.count == 1 ? "Copy Name" : "Copy Names") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(albums.joined(separator: "\n"), forType: .string)
+                }
+                Divider()
+                Button(albums.count == 1 ? "Delete Album…" : "Delete \(albums.count) Albums…", role: .destructive) {
+                    deletingAlbums = albums
+                }
+            }
+        }
+        // ⌫ deletes the selected albums.
+        .onDeleteCommand {
+            let albums = albums(in: sidebarSelection)
+            if !albums.isEmpty { deletingAlbums = albums }
+        }
     }
 
     /// Taken on today's date in earlier years.
@@ -455,6 +495,7 @@ struct PhoneGrid: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
+              VStack(spacing: 0) {
                 if let explanation {
                     Text(explanation)
                         .foregroundStyle(.secondary)
@@ -472,6 +513,7 @@ struct PhoneGrid: View {
                                 ForEach(day.items) { tile($0) }
                             } header: {
                                 DayHeader(day: day) { selection.selected.formUnion(day.items.map(\.id)) }
+                                    .headerFrame("\(day.id.timeIntervalSinceReferenceDate)", in: tileFrames)
                                     .id(day.id)
                             }
                         }
@@ -482,7 +524,9 @@ struct PhoneGrid: View {
                 .padding(.horizontal, 16)
                 .padding(.top, byDay ? 0 : 12)
                 .padding(.bottom, 96)
-                .modifier(SelectionBox(frames: tileFrames, ids: assets.map(\.id), selection: $selection.selected))
+              }
+              .modifier(FillsViewport())
+              .modifier(SelectionBox(frames: tileFrames, ids: { Set(assets.map(\.id)) }, selection: $selection.selected))
             }
             .onAppear {
                 guard let target = scrollTarget.wrappedValue else { return }
@@ -773,18 +817,21 @@ struct PhoneActions {
         }
     }
 
-    /// Asks the iPhone to delete an album, as Photos does: its photos stay in the library. Undo takes the
-    /// request back while it waits.
-    func deleteAlbum(_ title: String) {
+    /// Asks the iPhone to delete albums, as Photos does: their photos stay in the library. One undo
+    /// takes the requests back while they wait.
+    func deleteAlbums(_ titles: [String]) {
+        history.record(albumDeletion(titles))
+    }
+
+    private func albumDeletion(_ titles: [String]) -> FileHistory.Step? {
         let base = Dictionary(model.base.map { ($0.id, $0.metadata) }, uniquingKeysWith: { a, _ in a })
-        guard let id = server.requestAlbumDeletion(title, on: device, base: base) else { return }
-        history.record(FileHistory.Step(name: "Delete Album") { [self] in
-            server.cancelChange(id, on: device)
-            return FileHistory.Step(name: "Delete Album") { [self] in
-                deleteAlbum(title)
-                return nil
-            }
-        })
+        let ids = titles.compactMap { server.requestAlbumDeletion($0, on: device, base: base) }
+        guard !ids.isEmpty else { return nil }
+        let name = titles.count == 1 ? "Delete Album" : "Delete \(titles.count) Albums"
+        return FileHistory.Step(name: name) { [self] in
+            for id in ids { server.cancelChange(id, on: device) }
+            return FileHistory.Step(name: name) { [self] in albumDeletion(titles) }
+        }
     }
 
     /// Deletes them from the iPhone (it keeps them in its own Recently Deleted) and moves the backed-up

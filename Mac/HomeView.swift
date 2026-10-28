@@ -160,7 +160,7 @@ private struct PhoneCard: View {
                 HStack(spacing: 12) {
                     Image(systemName: "iphone")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(server.color(of: device.id).ink)
                         .frame(width: 38, height: 38)
                         .background(server.color(of: device.id).gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {

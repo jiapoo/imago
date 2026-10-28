@@ -10,14 +10,40 @@ struct PairedDevice: Codable, Identifiable, Hashable {
     /// Folder under the backup location. Fixed at pairing so renaming the phone never moves files.
     var folder: String
     var pairedAt: Date
-    /// Its color in the sidebar and on tiles, from `colors`. Nil: by the order it was paired.
-    var colorIndex: Int? = nil
+    /// Its color in the sidebar and on tiles, as hex ("DD1B3F"): one from `palette`, or any the user
+    /// mixed. Nil: by the order it was paired.
+    var colorHex: String? = nil
 
-    /// The colors an iPhone can have: Imago's red first.
-    static let colors: [(name: String, color: Color)] = [
-        ("Red", .imago), ("Blue", .blue), ("Green", .green), ("Orange", .orange),
-        ("Purple", .purple), ("Teal", .teal), ("Pink", .pink), ("Indigo", .indigo), ("Brown", .brown), ("Graphite", .gray),
+    /// A color in the palette. The name is for VoiceOver; the picker shows only the color.
+    struct Swatch: Identifiable {
+        let name: String
+        let hex: String
+        var id: String { hex }
+        var color: Color { Color(hex: hex) }
+    }
+
+    /// The palette, a column per hue (from Imago's red around the wheel): bright, then soft, then deep,
+    /// then a row of neutrals and earth tones.
+    static let palette: [[Swatch]] = [
+        [.init(name: "Red", hex: "DD1B3F"), .init(name: "Orange", hex: "FF8A00"), .init(name: "Yellow", hex: "FFC800"),
+         .init(name: "Green", hex: "2DBE60"), .init(name: "Teal", hex: "14B8A6"), .init(name: "Blue", hex: "2F7CF6"),
+         .init(name: "Purple", hex: "8B5CF6"), .init(name: "Pink", hex: "EC4899")],
+        [.init(name: "Coral", hex: "FF7A85"), .init(name: "Apricot", hex: "FFB36B"), .init(name: "Lemon", hex: "FFE27A"),
+         .init(name: "Mint", hex: "7FDCA0"), .init(name: "Aqua", hex: "67E3D2"), .init(name: "Sky", hex: "7DB5FF"),
+         .init(name: "Lavender", hex: "C3A8FF"), .init(name: "Blush", hex: "F9A8D4")],
+        [.init(name: "Crimson", hex: "9F1239"), .init(name: "Rust", hex: "C2410C"), .init(name: "Ochre", hex: "A16207"),
+         .init(name: "Forest", hex: "15803D"), .init(name: "Pine", hex: "0F766E"), .init(name: "Navy", hex: "1D4ED8"),
+         .init(name: "Violet", hex: "6D28D9"), .init(name: "Berry", hex: "BE185D")],
+        [.init(name: "Charcoal", hex: "1F2937"), .init(name: "Slate", hex: "475569"), .init(name: "Gray", hex: "8A9099"),
+         .init(name: "Silver", hex: "B8BEC7"), .init(name: "Sand", hex: "D2B48C"), .init(name: "Brown", hex: "8B5E3C"),
+         .init(name: "Espresso", hex: "4E342E"), .init(name: "Olive", hex: "6B7D2C")],
     ]
+
+    /// The bright row, for the quick picker in menus.
+    static var brights: [Swatch] { palette[0] }
+
+    /// Colors for iPhones in the order they were paired, far apart so neighbors are easy to tell apart.
+    static let defaultColors = ["DD1B3F", "2F7CF6", "2DBE60", "FF8A00", "8B5CF6", "14B8A6", "EC4899", "FFC800"]
 }
 
 enum DeviceRegistry {

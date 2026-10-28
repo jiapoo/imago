@@ -267,19 +267,19 @@ final class BackupServer {
         addLog("Removed \(device.name)", symbol: "iphone.slash")
     }
 
-    /// The iPhone's color, from the ones in `PairedDevice.colors`: its own, or by the order it was paired.
-    func colorIndex(of deviceID: String) -> Int {
-        guard let index = devices.firstIndex(where: { $0.id == deviceID }) else { return 0 }
-        return (devices[index].colorIndex ?? index) % PairedDevice.colors.count
+    /// The iPhone's color as hex: the one picked for it, or by the order it was paired.
+    func colorHex(of deviceID: String) -> String {
+        guard let index = devices.firstIndex(where: { $0.id == deviceID }) else { return PairedDevice.defaultColors[0] }
+        return devices[index].colorHex ?? PairedDevice.defaultColors[index % PairedDevice.defaultColors.count]
     }
 
     func color(of deviceID: String) -> Color {
-        PairedDevice.colors[colorIndex(of: deviceID)].color
+        Color(hex: colorHex(of: deviceID))
     }
 
-    func setColor(_ colorIndex: Int, for device: PairedDevice) {
-        guard let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
-        devices[index].colorIndex = colorIndex
+    func setColor(_ hex: String, for device: PairedDevice) {
+        guard let index = devices.firstIndex(where: { $0.id == device.id }), devices[index].colorHex != hex else { return }
+        devices[index].colorHex = hex
         DeviceRegistry.saveDevices(devices)
     }
 

@@ -34,12 +34,26 @@ struct BrowserView: View {
     @State private var confirmingDeleteAll = false
     @FocusState private var focused: Bool
 
-    private var items: [MediaItem] {
-        let items = library.items(in: scope, kind: kind)
-        return showsSource ? library.filter(items, by: MediaLibrary.Source(raw: sourceRaw)) : items
+    @State private var cache = GridCache()
+
+    /// What the grid shows, worked out once per change to the library or the filters, not on every
+    /// redraw: selecting redraws the page, and the library can have tens of thousands of items.
+    private var shown: GridCache {
+        let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? sourceRaw : "")
+        if cache.key != key {
+            let items = library.items(in: scope, kind: kind)
+            cache.items = showsSource ? library.filter(items, by: MediaLibrary.Source(raw: sourceRaw)) : items
+            cache.days = isFlat ? [] : Day.group(cache.items)
+            cache.ids = Set(cache.items.map(\.id))
+            cache.key = key
+        }
+        return cache
     }
+    private var items: [MediaItem] { shown.items }
     private var selected: [MediaItem] {
-        library.selection.isEmpty ? [] : items.filter { library.selection.contains($0.id) }
+        let selection = library.selection
+        guard !selection.isEmpty else { return [] }
+        return items.filter { selection.contains($0.id) }
     }
     private var isTrash: Bool { scope == .trash }
     /// Pages with the Show menu (on the iPhones, or everything on the drive).
@@ -77,6 +91,7 @@ struct BrowserView: View {
 
     private func grid(_ items: [MediaItem]) -> some View {
         ScrollView {
+          VStack(spacing: 0) {
             if case .folder = scope { phoneBanner.padding(.horizontal, 16) }
             if isTrash, !items.isEmpty { trashBanner.padding(.horizontal, 16) }
             if case .deletedOnPhone = scope, !items.isEmpty { deletedOnPhoneBanner.padding(.horizontal, 16) }
@@ -88,11 +103,12 @@ struct BrowserView: View {
                     // In their own order (biggest first; most recently deleted first), not by day.
                     ForEach(items) { item in tile(item, in: items) }
                 } else {
-                    ForEach(Day.group(items)) { day in
+                    ForEach(shown.days) { day in
                         Section {
                             ForEach(day.items) { item in tile(item, in: items) }
                         } header: {
                             DayHeader(day: day) { library.selection.formUnion(day.items.map(\.id)) }
+                                .headerFrame("\(day.id.timeIntervalSinceReferenceDate)", in: tileFrames)
                         }
                     }
                 }
@@ -100,8 +116,10 @@ struct BrowserView: View {
             .padding(.horizontal, 16)
             .padding(.top, isFlat ? 12 : 0)
             .padding(.bottom, 96)
-            .modifier(SelectionBox(frames: tileFrames, ids: items.map(\.id),
-                                   selection: Binding(get: { library.selection }, set: { library.selection = $0 })))
+          }
+          .modifier(FillsViewport())
+          .modifier(SelectionBox(frames: tileFrames, ids: { shown.ids },
+                                 selection: Binding(get: { library.selection }, set: { library.selection = $0 })))
         }
         .scrollContentBackground(.hidden)
         .background(Color(nsColor: .textBackgroundColor))
@@ -590,6 +608,20 @@ extension BrowserView {
     }
 }
 
+/// What a grid shows, kept between redraws until its key changes.
+private final class GridCache {
+    struct Key: Hashable {
+        var revision: Int
+        var scope: MediaLibrary.Scope
+        var kind: MediaLibrary.Kind
+        var source: String
+    }
+    var key: Key?
+    var items: [MediaItem] = []
+    var days: [Day<MediaItem>] = []
+    var ids: Set<String> = []
+}
+
 // MARK: - Tile
 
 private struct MediaTile: View {
@@ -683,7 +715,7 @@ struct SourceBadge: View {
                 Image(systemName: "externaldrive.fill").font(.system(size: 8, weight: .semibold))
             }
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(style.color.ink)
         .frame(width: 18, height: 18)
         .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.2))
         .shadow(color: .black.opacity(0.3), radius: 1.5)

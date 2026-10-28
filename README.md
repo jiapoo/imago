@@ -91,8 +91,9 @@ How changes reach the phone:
   hasn't backed up yet show previews the phone sends.
 - **Imago not open:** changes wait, and go to the phone when you next open Imago or at its next backup.
 
-Right-click an album in an iPhone's Photos sidebar to delete it. As in Photos, only the album goes: its
-photos and videos stay in the library, and iOS asks before deleting it.
+Right-click an album in an iPhone's Photos sidebar to delete it, or ⌘- or ⇧-click several and delete them
+together (or press ⌫). As in Photos, only the album goes: its photos and videos stay in the library, and
+iOS asks before deleting it.
   When they arrive while Imago isn't on screen (an overnight backup), the iPhone shows a notification.
 
 The page opens from a copy of the phone's library kept on the Mac's own disk, then refreshes from the
@@ -111,8 +112,9 @@ card per iPhone, shortcuts into the library, the backup drive and recent activit
 **Places** shows them on a map where they were taken (grouped by area; click a group to list its
 photos beside the map, and zoom to split a group, to copy, move, delete or open them there); **On This Day** shows what was taken on
 today's date in earlier years; **Large Files** shows the biggest first. On these four, **Show** picks what's
-on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone has a color (right-click it in the
-sidebar, or its page's **…** menu, to change it). On these pages a tile's bottom-right corner says where it
+on all iPhones (the default), on one iPhone, or everything on the drive. Each iPhone has a color: right-click it in the
+sidebar, or open its page's **…** menu, to pick one of the bright colors, or **More Colors…** for a palette
+of 32 and any custom color. On these pages a tile's bottom-right corner says where it
 is now: a dot in the iPhone's color with its initial, or a drive for what's only on the drive. In a Folder
 and in Recently Deleted, everything is on the drive, so the bottom-left corner says which iPhone it came
 from instead (a drive: not from an iPhone).
