@@ -415,8 +415,8 @@ struct TileSizeSlider: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "photo").imageScale(.small).foregroundStyle(.secondary)
             Slider(value: $size, in: 90...300).frame(width: 96).controlSize(.small)
+                .padding(.leading, 4)
             Image(systemName: "photo").imageScale(.large).foregroundStyle(.secondary)
         }
         .help("Thumbnail size")
