@@ -112,9 +112,12 @@ extension MediaLibrary {
         case .copy:
             history.record(await copy(items, toFolder: path, server: server))
         case .move:
+            // One step: ⌘Z takes the iPhone's deletion back and returns the files together.
             let fromPhone = removable(items)
-            history.record(await move(items, to: .folder(path), server: server))
-            if !fromPhone.isEmpty { history.record(await removeFromPhone(fromPhone, server: server)) }
+            let moved = await move(items, to: .folder(path), server: server)
+            let removed = fromPhone.isEmpty ? nil : await removeFromPhone(fromPhone, server: server)
+            let name = "Move to “\((path as NSString).lastPathComponent)”"
+            history.record(FileHistory.combine(name, [moved, removed]))
         }
     }
 

@@ -60,7 +60,9 @@ extension BackupStore {
             let present = keys.compactMap { key in stored[key.description].map { (key: key, file: $0) } }
             let original = present.first { $0.key.kind == .photo || $0.key.kind == .video }
             let display = original ?? present.first { $0.key.kind == .fullSizePhoto || $0.key.kind == .fullSizeVideo }
-            if let display { files[entry.metadata.assetID] = root.appending(path: display.file.relativePath) }
+            // Standardized: a file moved out of the phone's folder is stored as "../Recently Deleted/…",
+            // which Finder can't select and thumbnails would key differently.
+            if let display { files[entry.metadata.assetID] = root.appending(path: display.file.relativePath).lexicallyStandardized }
             return PhoneAsset(
                 metadata: entry.metadata,
                 originalSHA256: original?.file.sha256,

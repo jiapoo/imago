@@ -677,7 +677,9 @@ struct PhoneGrid: View {
             sourceFrame: asset.id == selection.anchor ? anchorFrame : nil,
             deleteTitle: "Delete from iPhone (the backup goes to Recently Deleted on this Mac)",
             delete: { [library, server, history] index in
-                let items = library.items.filter { $0.id == "\(device.id)/\(ids[index])" }
+                let id = "\(device.id)/\(ids[index])"
+                // Its backup may be in Recently Deleted already: it's still deleted from the iPhone.
+                let items = (library.items + library.trash.map(\.item)).filter { $0.id == id }
                 guard !items.isEmpty, let step = await library.deleteFromPhoneAndHere(items, server: server) else { return false }
                 history.record(step)
                 return true
@@ -837,14 +839,20 @@ struct PhoneActions {
     /// Deletes them from the iPhone (it keeps them in its own Recently Deleted) and moves the backed-up
     /// copies to Imago's Recently Deleted on the Mac, so Put Back returns them. Undo takes both back.
     func delete(_ assets: [PhoneAsset]) {
-        let items = libraryItems(assets)
+        let items = libraryItems(assets, includingDeleted: true)
+        guard !items.isEmpty else {
+            library.error = "\(assets.count == 1 ? "It isn't" : "They aren't") backed up yet, so Imago doesn't delete \(assets.count == 1 ? "it" : "them") from the iPhone. Back up first, or delete in Photos on the iPhone."
+            return
+        }
         Task { history.record(await library.deleteFromPhoneAndHere(items, server: server)) }
     }
 
-    /// The library's items for these assets: their backed-up files.
-    func libraryItems(_ assets: [PhoneAsset]) -> [MediaItem] {
+    /// The library's items for these assets: their backed-up files. With `includingDeleted`, also ones
+    /// whose backup is in Recently Deleted.
+    func libraryItems(_ assets: [PhoneAsset], includingDeleted: Bool = false) -> [MediaItem] {
         let ids = Set(assets.map { "\(device.id)/\($0.id)" })
-        return library.items.filter { ids.contains($0.id) }
+        let items = includingDeleted ? library.items + library.trash.map(\.item) : library.items
+        return items.filter { ids.contains($0.id) }
     }
 
     /// Copies their backed-up files into a folder on the drive, or moves them there and removes them

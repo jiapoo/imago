@@ -146,14 +146,16 @@ Long copies, moves, checks and deletions show their progress at the bottom right
 - **Remove from iPhone** checks each file against its checksum from the backup, then queues the deletion
   for the phone (only for items fully backed up). It happens once you confirm it on the iPhone.
   A Folder with items still on an iPhone says so at the top, with a button to remove them all there.
-- **Delete** (⌫) moves them to **Recently Deleted**: a folder on the backup drive (chosen in Settings),
+- **Delete** (⌫) in a Folder moves them to **Recently Deleted**: a folder on the backup drive (chosen in Settings),
   with a note of where each came from. **Put Back** returns them; **Delete Now** and **Empty** delete for
   good. Items are deleted for good after 30 days (or 7, 60, or never). Deleted iPhone items aren't backed
   up again while they're there.
 
-On an iPhone's Photos page, **Delete** deletes from the iPhone (it asks you to confirm and keeps them in
-its own Recently Deleted for 30 days) and moves the backed-up copies to **Recently Deleted** in Imago on
-the Mac, where Put Back returns them. One ⌘Z undoes both while the iPhone's deletion is still waiting.
+On an iPhone's Photos page, and in Library, Places, On This Day and Large Files, **Delete** deletes from the
+iPhone (it asks you to confirm and keeps them in its own Recently Deleted for 30 days) and moves the
+backed-up copies to **Recently Deleted** in Imago on the Mac, where Put Back returns them. What's only on
+the drive just goes to Recently Deleted. A backup already in Recently Deleted is checked there and stays
+there. One ⌘Z undoes it all while the iPhone's deletion is still waiting.
 
 **Undo and Redo** (⌘Z, ⇧⌘Z) cover moves, deletions and Put Back, new, renamed and deleted folders, copies
 from Finder, and changes queued for an iPhone (while they're still waiting). Deleting for good can't be

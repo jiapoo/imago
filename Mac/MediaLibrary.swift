@@ -638,12 +638,25 @@ final class MediaLibrary {
     /// checked against its backup first; the iPhone keeps them in its own Recently Deleted), and the
     /// backed-up copies go to Imago's Recently Deleted here on the Mac, so Put Back returns them.
     /// Returns one step that undoes both.
+    /// A backup that's already in Recently Deleted is checked there, and stays there.
     func deleteFromPhoneAndHere(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
         let removal = await removeFromPhone(items, server: server)
         // Only what the iPhone was asked to delete: items that failed the check stay put.
         let asked = items.filter { pendingRemoval.contains($0.id) }
-        let trashed = asked.isEmpty ? nil : await trash(asked, server: server)
+        let toTrash = asked.filter { trashed($0) == nil }
+        let trashed = toTrash.isEmpty ? nil : await trash(toTrash, server: server)
         return FileHistory.combine(asked.count == 1 ? "Delete" : "Delete \(asked.count) Items", [removal, trashed])
+    }
+
+    /// Delete, from the library's own pages (Library, Places, On This Day, Large Files): what's still on
+    /// an iPhone is deleted there too, as on the iPhone's page, and its backup goes to Recently Deleted
+    /// here; what's only on the drive just goes to Recently Deleted. One step undoes it all.
+    func delete(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
+        let onPhones = items.filter { phoneAsset($0) != nil }
+        let driveOnly = items.filter { phoneAsset($0) == nil }
+        let fromPhones = onPhones.isEmpty ? nil : await deleteFromPhoneAndHere(onPhones, server: server)
+        let trashed = driveOnly.isEmpty ? nil : await trash(driveOnly, server: server)
+        return FileHistory.combine(items.count == 1 ? "Delete" : "Delete \(items.count) Items", [fromPhones, trashed])
     }
 
     // MARK: Folders

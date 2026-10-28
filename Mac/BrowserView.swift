@@ -217,6 +217,9 @@ struct BrowserView: View {
                     move: { folder in moveSelected(selected, to: folder) },
                     newFolder: { naming = .newFolder(moving: selected) },
                     removeFromPhone: { removing = selected },
+                    deleteHelp: deletesOnPhone
+                        ? "Delete (⌫): from the iPhone too, and the backup goes to Recently Deleted. ⌘Z undoes it."
+                        : "Move to Recently Deleted (⌫). ⌘Z puts it back.",
                     trash: { trash(selected) },
                     clear: { library.selection = [] }
                 )
@@ -313,7 +316,7 @@ struct BrowserView: View {
                 guard !selected.isEmpty else { return }
                 if isTrash { deletingNow = selected.compactMap(library.trashed) } else { trash(selected) }
             },
-            deleteTitle: isTrash ? "Delete Now…" : "Move to Recently Deleted",
+            deleteTitle: isTrash ? "Delete Now…" : deletesOnPhone ? "Delete" : "Move to Recently Deleted",
             copy: { selected.map(\.url) },
             paste: pasteTarget.map { path in { urls in _ = library.drop(urls, onto: .folder(path), server: server, history: history) } }
         )
@@ -337,9 +340,22 @@ struct BrowserView: View {
 
     // MARK: Actions
 
+    /// The library's own pages delete from the iPhones too; a Folder, Deleted on iPhone and Recently
+    /// Deleted are about the drive alone.
+    private var deletesOnPhone: Bool {
+        switch scope {
+        case .all, .large, .onThisDay, .items: true
+        default: false
+        }
+    }
+
+    /// Delete: from the iPhones too on the library's own pages (the backups go to Recently Deleted);
+    /// elsewhere, to Recently Deleted.
     private func trash(_ items: [MediaItem]) {
         library.selection = []
-        Task { history.record(await library.trash(items, server: server)) }
+        Task {
+            history.record(deletesOnPhone ? await library.delete(items, server: server) : await library.trash(items, server: server))
+        }
     }
 
     private func putBack(_ items: [MediaItem]) {
@@ -598,9 +614,11 @@ extension BrowserView {
                 return rows
             },
             sourceFrame: item.id == anchor ? anchorFrame : nil,
-            deleteTitle: isTrash ? nil : "Move to Recently Deleted",
-            delete: isTrash ? nil : { [library, server, history] index in
-                guard let step = await library.trash([items[index]], server: server) else { return false }
+            deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone too; the backup goes to Recently Deleted)" : "Move to Recently Deleted",
+            delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
+                let item = [items[index]]
+                guard let step = deletesOnPhone ? await library.delete(item, server: server) : await library.trash(item, server: server)
+                else { return false }
                 history.record(step)
                 return true
             }
@@ -764,6 +782,7 @@ private struct SelectionBar: View {
     var move: (String?) -> Void
     var newFolder: () -> Void
     var removeFromPhone: () -> Void
+    let deleteHelp: String
     var trash: () -> Void
     var clear: () -> Void
 
@@ -798,7 +817,7 @@ private struct SelectionBar: View {
             Button(role: .destructive, action: trash) {
                 Label("Delete", systemImage: "trash")
             }
-            .help("Move to Recently Deleted (⌫). ⌘Z puts it back.")
+            .help(deleteHelp)
         }
     }
 }
