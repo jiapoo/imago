@@ -80,6 +80,8 @@ struct MainView: View {
             .id(selection)
             // An iPhone that connects gets its Not synced files.
             .onChange(of: server.liveDevices) { library.sendNotSynced(server) }
+            // Turned to automatic: what's waiting on Deleted on iPhone is dealt with now.
+            .onChange(of: server.acceptPhoneChanges) { Task { await library.load(from: server, force: true) } }
             // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
             .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -512,9 +514,40 @@ struct SettingsView: View {
             Tab("Overnight", systemImage: "moon.stars") {
                 OvernightSettings()
             }
+            Tab("Changes", systemImage: "arrow.down.left.arrow.up.right") {
+                ChangesSettings()
+            }
         }
         .frame(width: 720, height: 640)
         .focusEffectDisabled()
+    }
+}
+
+/// Whether changes made on the iPhones are made here by themselves, or wait for the user.
+private struct ChangesSettings: View {
+    @Environment(BackupServer.self) private var server
+
+    var body: some View {
+        @Bindable var server = server
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Changes from iPhones", systemImage: "arrow.down.left.arrow.up.right")
+                .font(.title2.bold())
+            Picker("Photos deleted on an iPhone", selection: $server.acceptPhoneChanges) {
+                Text("Ask First").tag(false)
+                Text("Apply Automatically").tag(true)
+            }
+            .pickerStyle(.radioGroup)
+            Text(server.acceptPhoneChanges
+                 ? "Their backups on this Mac go straight to Recently Deleted, where you can put them back for \(server.trashDays > 0 ? "\(server.trashDays) days" : "as long as you like")."
+                 : "Their backups stay on this Mac, and the bell asks whether to delete them here too, keep them, or put them back on the iPhone.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Each iPhone has its own setting for changes made on this Mac, in Imago on the iPhone.")
+                .font(.callout).foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

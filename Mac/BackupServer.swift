@@ -807,6 +807,11 @@ final class BackupServer {
     var trashDays: Int = UserDefaults.standard.object(forKey: "trashDays") as? Int ?? 30 {
         didSet { UserDefaults.standard.set(trashDays, forKey: "trashDays") }
     }
+    /// Photos deleted on an iPhone: on, their backups here go straight to Recently Deleted; off (the
+    /// default), they wait on Deleted on iPhone for the user to decide.
+    var acceptPhoneChanges: Bool = UserDefaults.standard.bool(forKey: "acceptPhoneChanges") {
+        didSet { UserDefaults.standard.set(acceptPhoneChanges, forKey: "acceptPhoneChanges") }
+    }
 
     var trashURL: URL {
         location.url.appending(path: trashFolder, directoryHint: .isDirectory)

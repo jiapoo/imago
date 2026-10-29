@@ -125,12 +125,13 @@ final class BackupClient {
         didSet { saveChangeState() }
     }
     private(set) var isApplyingChanges = false
-    /// Favorites and album changes from the Mac are made as soon as they arrive while the app is open,
-    /// and deletions go straight to iOS's confirmation. Off: every change waits for a review here.
-    var applyRightAway: Bool {
+    /// Changes from the Mac. On: made as soon as they arrive while the app is open (deletions still go
+    /// through iOS's own confirmation). Off, the default: Imago asks first (`askPrompt`).
+    var acceptMacChanges: Bool {
         didSet {
-            UserDefaults.standard.set(applyRightAway, forKey: "applyRightAway")
+            UserDefaults.standard.set(acceptMacChanges, forKey: "acceptMacChanges")
             scheduleAutoApply()
+            askAboutChanges()
         }
     }
     /// Set while the live link is connected, to send reports to the Mac the moment there are any.
@@ -178,7 +179,7 @@ final class BackupClient {
         lastAutomaticRun = UserDefaults.standard.object(forKey: "lastAutomaticRun") as? Date
         deviceName = UserDefaults.standard.string(forKey: "deviceName") ?? Self.systemDeviceName
         overnightBackup = UserDefaults.standard.object(forKey: "overnightBackup") as? Bool ?? true
-        applyRightAway = UserDefaults.standard.object(forKey: "applyRightAway") as? Bool ?? true
+        acceptMacChanges = UserDefaults.standard.bool(forKey: "acceptMacChanges")
         storage = UserDefaults.standard.data(forKey: "storage").flatMap { try? JSONDecoder().decode(Storage.self, from: $0) }
         if let data = UserDefaults.standard.data(forKey: "unfinishedBackup") {
             unfinished = try? JSONDecoder().decode(Progress.self, from: data)
@@ -675,9 +676,9 @@ final class BackupClient {
 
     // MARK: Changes from the Mac
 
-    /// Takes the Mac's current list of changes, at a backup or over the live link. With "apply right
-    /// away" on and the app on screen, they're made straight away (deletions still ask in iOS's own
-    /// prompt); otherwise they wait for the user to review them.
+    /// Takes the Mac's current list of changes, at a backup or over the live link. Accepted
+    /// automatically, they're made straight away with the app on screen (deletions still ask in iOS's
+    /// own prompt); otherwise Imago asks, and what isn't answered waits in the review.
     func receive(_ changes: [LibraryChange]) {
         macChanges = changes.filter { !handledChangeIDs.contains($0.id) }
         // Arrived while Imago isn't on screen (an overnight backup): tell the user, once per change.
@@ -687,30 +688,41 @@ final class BackupClient {
             notifiedChangeIDs = Array((notifiedChangeIDs + fresh.map(\.id)).suffix(500))
         }
         scheduleAutoApply()
-        askToAdd()
+        askAboutChanges()
     }
 
-    /// Files from the Mac waiting for the user's yes, while the question is up.
-    var addPrompt: [LibraryChange] = []
+    /// Changes from the Mac waiting for the user's yes, while the question is up.
+    var askPrompt: [LibraryChange] = []
     /// Asked about already this session; "Not Now" leaves them in the review.
-    private var askedToAdd: Set<UUID> = []
+    private var asked: Set<UUID> = []
+    private var askSoon: Task<Void, Never>?
 
-    /// Asks whether to add files the Mac sent (an edit made there), with Imago on screen.
-    func askToAdd() {
-        guard UIApplication.shared.applicationState == .active, addPrompt.isEmpty else { return }
-        let adds = macChanges.filter { $0.addsFromMac && !askedToAdd.contains($0.id) }
-        guard !adds.isEmpty else { return }
-        askedToAdd.formUnion(adds.map(\.id))
-        addPrompt = adds
+    /// Asks whether to make the Mac's changes, with Imago on screen and changes not made by themselves.
+    func askAboutChanges() {
+        guard !acceptMacChanges, askSoon == nil, askPrompt.isEmpty,
+              macChanges.contains(where: { !asked.contains($0.id) }) else { return }
+        askSoon = Task {
+            defer { askSoon = nil }
+            // Changes made together on the Mac arrive one after another: one question for them all.
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !acceptMacChanges, UIApplication.shared.applicationState == .active, askPrompt.isEmpty else { return }
+            let fresh = macChanges.filter { !asked.contains($0.id) && !restoringIDs.contains($0.id) }
+            guard !fresh.isEmpty else { return }
+            asked.formUnion(fresh.map(\.id))
+            askPrompt = fresh
+        }
     }
 
-    /// The answer to `addPrompt`: add them, say no (the Mac doesn't offer them again by itself), or
-    /// leave them for later in the review.
-    func answerAdd(_ answer: Bool?) {
-        let adds = addPrompt
-        addPrompt = []
-        guard let answer else { return }
-        Task { await review(approve: answer ? adds : [], decline: answer ? [] : adds) }
+    /// The answer to `askPrompt`: make the changes, say no (the Mac hears, and doesn't ask again by
+    /// itself), or leave them for later in the review.
+    func answerChanges(_ answer: Bool?) {
+        let changes = askPrompt
+        askPrompt = []
+        guard let answer else { return askAboutChanges() }
+        Task {
+            await review(approve: answer ? changes : [], decline: answer ? [] : changes)
+            askAboutChanges()
+        }
     }
 
     /// Changes the user has already been notified about.
@@ -725,15 +737,14 @@ final class BackupClient {
     }
 
     private func scheduleAutoApply() {
-        guard applyRightAway, autoApply == nil, !macChanges.isEmpty else { return }
+        guard acceptMacChanges, autoApply == nil, !macChanges.isEmpty else { return }
         autoApply = Task {
             defer { autoApply = nil }
             // Changes made together on the Mac arrive one after another; wait a moment so deletions go in one prompt.
             try? await Task.sleep(for: .seconds(1.5))
-            // Adding to the library is always the user's call: put-backs in the review, files from the
-            // Mac in a question of their own (`addPrompt`), as iOS asks before deleting.
-            func automatic(_ change: LibraryChange) -> Bool { change.action != .restore }
-            while applyRightAway, UIApplication.shared.applicationState == .active, macChanges.contains(where: automatic) {
+            // Put-backs and files from the Mac too; those on their way are left alone.
+            @MainActor func automatic(_ change: LibraryChange) -> Bool { !restoringIDs.contains(change.id) }
+            while acceptMacChanges, UIApplication.shared.applicationState == .active, macChanges.contains(where: automatic) {
                 let batch = macChanges.filter(automatic)
                 await review(approve: batch, decline: [])
                 // Stop if nothing was handled (e.g. a review was already running); more may have arrived meanwhile.

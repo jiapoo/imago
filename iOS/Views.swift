@@ -42,23 +42,35 @@ struct ContentView: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
                     Task { await client.refreshCounts() }
-                    client.askToAdd()
+                    client.askAboutChanges()
                 }
             }
-            .alert(addTitle, isPresented: Binding(get: { !client.addPrompt.isEmpty }, set: { if !$0 { client.answerAdd(nil) } })) {
-                Button("Add") { client.answerAdd(true) }
-                Button("Don't Add", role: .destructive) { client.answerAdd(false) }
-                Button("Not Now", role: .cancel) { client.answerAdd(nil) }
+            .alert(askTitle, isPresented: Binding(get: { !client.askPrompt.isEmpty }, set: { if !$0 { client.answerChanges(nil) } })) {
+                Button("Apply") { client.answerChanges(true) }
+                Button("Don't Apply", role: .destructive) { client.answerChanges(false) }
+                Button("Not Now", role: .cancel) { client.answerChanges(nil) }
             } message: {
-                Text("\(client.credential?.serverName ?? "Your Mac") has \(addCount == 1 ? "a photo or video" : "photos or videos") this iPhone doesn't, such as an edit made there. Add \(addCount == 1 ? "it" : "them") to Photos?")
+                Text(askMessage)
             }
         }
     }
 }
 
 extension ContentView {
-    private var addCount: Int { client.addPrompt.reduce(0) { $0 + $1.assetIDs.count } }
-    private var addTitle: String { addCount == 1 ? "Add 1 item from your Mac?" : "Add \(addCount) items from your Mac?" }
+    private var mac: String { client.credential?.serverName ?? "Your Mac" }
+    private var askTitle: String {
+        let changes = client.askPrompt
+        return changes.count == 1 ? "\(changes[0].summary)?" : "\(mac) asks for \(changes.count) changes"
+    }
+    private var askMessage: String {
+        let changes = client.askPrompt
+        var lines = changes.count == 1 ? ["\(mac) asks for this change."] : changes.prefix(6).map(\.summary)
+        if changes.count > 6 { lines.append("and \(changes.count - 6) more") }
+        if changes.contains(where: { $0.addsFromMac }) { lines.append("New items are photos or videos this iPhone doesn't have, such as an edit made on the Mac.") }
+        if changes.contains(where: { $0.action == .delete }) { lines.append("iOS asks once more before deleting.") }
+        lines.append("To make changes from \(mac) without asking, turn on “Apply changes from Mac automatically” in Imago.")
+        return lines.joined(separator: "\n")
+    }
 }
 
 extension View {
@@ -412,8 +424,8 @@ struct SettingsCard: View {
             SettingRow(symbol: "moon.stars.fill", tint: .indigo, title: "Back up overnight", isOn: $client.overnightBackup,
                        note: client.overnightBackup ? "While charging on Wi-Fi. \(lastRunText)" : "While charging on Wi-Fi, when iOS allows.")
             Divider().padding(.leading, 50)
-            SettingRow(symbol: "arrow.down.left.arrow.up.right", tint: .orange, title: "Apply changes from Mac", isOn: $client.applyRightAway,
-                       note: client.applyRightAway ? "Favorites and albums right away. Deletions always ask first." : "Changes wait here for you to review them.")
+            SettingRow(symbol: "arrow.down.left.arrow.up.right", tint: .orange, title: "Apply changes from Mac automatically", isOn: $client.acceptMacChanges,
+                       note: client.acceptMacChanges ? "Made as they arrive, new items included. iOS still asks before deleting." : "Imago asks before making each change.")
         }
         .card()
     }

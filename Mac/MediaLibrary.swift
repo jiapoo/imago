@@ -315,9 +315,11 @@ final class MediaLibrary {
             await load(from: server, force: true)
             return
         }
-        if server.trashDays > 0 {
+        // Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now.
+        if server.acceptPhoneChanges || server.trashDays > 0 {
             let due = server.devices.flatMap { deletedOnPhone($0.id) }
-                .filter { !restoring.contains($0.id) && (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0 }
+                .filter { !restoring.contains($0.id)
+                    && (server.acceptPhoneChanges || (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0) }
             if !due.isEmpty {
                 _ = await trash(due, server: server)
                 return
@@ -465,8 +467,8 @@ final class MediaLibrary {
             changed = true
             fresh[String(id.prefix { $0 != "/" }), default: 0] += 1
         }
-        // Newly seen deleted on an iPhone: ask what to do with the backups.
-        for (deviceID, count) in fresh {
+        // Newly seen deleted on an iPhone: ask what to do with the backups (unless that's automatic).
+        for (deviceID, count) in fresh where !server.acceptPhoneChanges {
             if let device = server.devices.first(where: { $0.id == deviceID }) { MacNotifications.deletedOnPhone(count, on: device.name) }
         }
         // Back on its iPhone, or dealt with. Only for iPhones whose library list was read: without it,
