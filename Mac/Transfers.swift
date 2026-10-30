@@ -11,6 +11,12 @@ enum DragSession {
 }
 
 /// What putting photos and videos into a folder does, chosen in the toolbar.
+/// "Send to 007", or "Move to 007" for another iPhone's photos with Move on (see `MediaLibrary.send`).
+func sendLabel(_ items: [MediaItem], _ device: PairedDevice) -> String {
+    let moving = TransferMode.current == .move && items.contains { $0.deviceID != nil && $0.deviceID != device.id }
+    return (moving ? "Move to " : "Send to ") + device.name
+}
+
 enum TransferMode: String, CaseIterable, Identifiable {
     /// Copies them in; the iPhone and its backup stay as they are. The default.
     case copy
@@ -167,6 +173,42 @@ extension MediaLibrary {
         return true
     }
 
+    /// Adds items to an iPhone's Photos library: Send to iPhone, or a drop on it. With Move, what came
+    /// from another iPhone is deleted there, and its backup goes to Recently Deleted: the iPhone it went
+    /// to has its own copy. Returns the step that takes it all back.
+    func send(_ items: [MediaItem], to device: PairedDevice, server: BackupServer) async -> FileHistory.Step? {
+        let items = items.filter { $0.deviceID != device.id }
+        guard !items.isEmpty else { return nil }
+        let isMove = TransferMode.current == .move
+        let (ids, copies) = await server.send(items, to: device)
+        guard !ids.isEmpty else { return nil }
+        let name = (isMove ? "Move to " : "Send to ") + device.name
+        // Undo takes back what hasn't gone yet; what the iPhone added stays there.
+        let sent = FileHistory.Step(name: name) {
+            server.withdrawRestore(Set(ids), on: device, removing: copies)
+            return nil
+        }
+        let leaving = isMove ? items.filter { $0.deviceID != nil } : []
+        let removed = leaving.isEmpty ? nil : await deleteFromPhoneAndHere(leaving, server: server)
+        return FileHistory.combine(name, [sent, removed])
+    }
+
+    /// A drop on an iPhone: its own items move back into its folder; everything else is sent to it
+    /// (copied, or moved per Copy | Move).
+    func drop(_ urls: [URL], onto device: PairedDevice, server: BackupServer, history: FileHistory) -> Bool {
+        let trashed = Set(trash.map(\.item.id))
+        let dropped = droppedItems(urls).filter { !trashed.contains($0.id) }
+        let own = dropped.filter { $0.deviceID == device.id && place(of: $0) != .phoneFolder }
+        let others = dropped.filter { $0.deviceID != device.id }
+        guard !own.isEmpty || !others.isEmpty else { return false }
+        DragSession.urls = []
+        Task {
+            if !own.isEmpty { history.record(await move(own, to: .phoneFolder, server: server)) }
+            if !others.isEmpty { history.record(await send(others, to: device, server: server)) }
+        }
+        return true
+    }
+
     /// Copies files from outside the library into a folder. Returns the step that removes the copies.
     func copyIn(_ files: [URL], to path: String, server: BackupServer) async -> FileHistory.Step? {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
@@ -247,3 +289,4 @@ extension MediaLibrary {
         return type.conforms(to: .image) || type.conforms(to: .movie)
     }
 }
+

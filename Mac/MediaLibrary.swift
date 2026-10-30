@@ -169,7 +169,12 @@ final class MediaLibrary {
     var selection: Set<MediaItem.ID> = []
     var error: String?
 
+    /// A quiet re-read is under way (`refreshQuietly`): pages say "Updating".
+    private(set) var isRefreshing = false
     private var loadedRevision: Int?
+    /// Bumped by each read of the library and each change shown straight away: a read that finds it
+    /// changed since it began is out of date, and drops what it read.
+    private var loadGeneration = 0
     /// A full re-read of the library after work that already updated what's on screen; see `refreshQuietly`.
     private var quietRefresh: Task<Void, Never>?
     /// For each iPhone item (by ID), the folders it's in: its own backup moved into one, or the same
@@ -200,6 +205,8 @@ final class MediaLibrary {
             return
         }
         if items.isEmpty { state = .loading }
+        loadGeneration += 1
+        let generation = loadGeneration
 
         await moveLegacyFolders(server)
         let foldersURL = server.foldersURL
@@ -267,23 +274,32 @@ final class MediaLibrary {
             let tops = paths.filter { !$0.contains("/") }.map { foldersURL.appending(path: $0, directoryHint: .isDirectory) }
             return (((tops + phoneFolders).flatMap(Self.mediaFiles(in:)) + Self.mediaFiles(in: trashURL)).filter { !known.contains($0) }, paths)
         }.value
-        var relinked = false
-        for url in unknown {
-            var claimed = false
-            for store in stores where (try? await store.relink(url)) == true {
-                claimed = true
-                break
-            }
-            if claimed {
-                relinked = true
-            } else if Self.isInside(url, trashURL) {
-                let record = manifest.entries[TrashManifest.key(forFile: url)]
-                trashed.append(TrashedItem(item: Self.fileItem(url, in: foldersURL, reserved: reserved, folder: nil),
-                                           deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .folder("")))
-            } else {
-                loaded.append(Self.fileItem(url, in: foldersURL, reserved: reserved))
-            }
+        // Moved in Finder: each iPhone's index looks for its lost files among them, all at once.
+        var claimed: Set<URL> = []
+        for store in stores {
+            claimed.formUnion(await store.relink(unknown.filter { !claimed.contains($0) }))
         }
+        let relinked = !claimed.isEmpty
+        // Each file's size, type and date come off the drive: away from the main thread.
+        let remaining = unknown.filter { !claimed.contains($0) }
+        let (files, trashedFiles) = await Task.detached(priority: .userInitiated) { () -> ([MediaItem], [TrashedItem]) in
+            var files: [MediaItem] = []
+            var trashedFiles: [TrashedItem] = []
+            for url in remaining {
+                if Self.isInside(url, trashURL) {
+                    let record = manifest.entries[TrashManifest.key(forFile: url)]
+                    trashedFiles.append(TrashedItem(item: Self.fileItem(url, in: foldersURL, reserved: reserved, folder: nil),
+                                                    deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .folder("")))
+                } else {
+                    files.append(Self.fileItem(url, in: foldersURL, reserved: reserved))
+                }
+            }
+            return (files, trashedFiles)
+        }.value
+        loaded += files
+        trashed += trashedFiles
+        // Something changed on screen meanwhile (a move, a newer read): this read is out of date.
+        guard generation == loadGeneration else { return }
         if relinked {
             // Moved in Finder: read again so they show up with their phone's details.
             await load(from: server, force: true)
@@ -673,15 +689,19 @@ final class MediaLibrary {
         return .file(item.url)
     }
 
-    private func item(for ref: ItemRef) -> MediaItem? {
-        switch ref {
-        case .asset(let deviceID, let assetID):
-            let id = "\(deviceID)/\(assetID)"
-            return items.first { $0.id == id } ?? trash.first { $0.id == id }?.item
-        case .file(let url):
-            let url = url.lexicallyStandardized
-            return items.first { $0.url.lexicallyStandardized == url } ?? trash.first { $0.item.url.lexicallyStandardized == url }?.item
+    /// Every item (Recently Deleted too) by how a move finds it, for finding many at once.
+    private func itemsByRef() -> [ItemRef: MediaItem] {
+        var found: [ItemRef: MediaItem] = [:]
+        for item in items + trash.map(\.item) {
+            let ref = Self.ref(item)
+            if case .file(let url) = ref { found[.file(url.lexicallyStandardized)] = item } else { found[ref] = item }
         }
+        return found
+    }
+
+    private static func lookup(_ ref: ItemRef, in found: [ItemRef: MediaItem]) -> MediaItem? {
+        if case .file(let url) = ref { return found[.file(url.lexicallyStandardized)] }
+        return found[ref]
     }
 
     /// Moves each item to its place. Returns what moved: each item as it can be found now, and where
@@ -699,8 +719,9 @@ final class MediaLibrary {
         var done: [(ref: ItemRef, from: Place)] = []
         var deleted: [String: TrashManifest.Entry] = [:]
         var restored: [String] = []
+        let found = itemsByRef()
         let wanted: [(item: MediaItem, from: Place, to: Place)] = moves.compactMap { ref, to in
-            guard let item = item(for: ref) else { return nil }
+            guard let item = Self.lookup(ref, in: found) else { return nil }
             let from = place(of: item)
             // Only phone assets have a phone folder to go back to.
             guard from != to, !(to == .phoneFolder && item.deviceID == nil) else { return nil }
@@ -721,8 +742,9 @@ final class MediaLibrary {
         defer {
             activity = nil
             // Thumbnails follow their files, so moved items don't make them again from the drive.
+            let now = moved.isEmpty ? [:] : itemsByRef()
             for (was, ref) in moved {
-                guard let now = item(for: ref) else { continue }
+                guard let now = Self.lookup(ref, in: now) else { continue }
                 Thumbnails.shared.carryOver(from: was.url, to: now.url, bytes: was.bytes)
             }
         }
@@ -734,23 +756,21 @@ final class MediaLibrary {
                       let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device),
                       let to = group.first?.to else { continue }
                 if let target = directory(to) { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
-                // One at a time, so the ring moves with each item; the index is saved once at the end.
-                for move in group {
-                    activity?.detail = move.item.name
-                    do {
-                        try await store.move([move.item.assetID].compactMap { $0 }, to: directory(to), saving: false)
-                    } catch {
-                        await store.saveIndexIfChanged()
-                        throw error
+                // All in one go, reading the index once; the ring moves with each item as it's done.
+                let result = await store.move(group.compactMap(\.item.assetID), to: directory(to), saving: false) { name in
+                    Task { @MainActor [weak self] in
+                        self?.activity?.detail = name
+                        self?.activity?.done += 1
                     }
+                }
+                for move in group {
+                    guard let assetID = move.item.assetID, result.moved.keys.contains(assetID) else { continue }
                     done.append((Self.ref(move.item), move.from))
                     moved.append((move.item, Self.ref(move.item)))
-                    if let assetID = move.item.assetID, let url = await store.displayFile(of: assetID) {
-                        landed.append((move.item, move.from, to, url))
-                    }
-                    activity?.done += 1
+                    if let url = result.moved[assetID] ?? nil { landed.append((move.item, move.from, to, url)) }
                 }
                 await store.saveIndexIfChanged()
+                if let error = result.error { throw error }
             }
             for move in wanted where move.item.deviceID == nil {
                 guard let target = directory(move.to) else { continue }
@@ -1045,12 +1065,17 @@ final class MediaLibrary {
     /// Reads the whole library again in the background, to catch what the quick updates can't know
     /// (a new folder's count, a file's numbered name). Several in a row become one.
     func refreshQuietly(_ server: BackupServer) {
+        // What's on screen is newer than any read under way.
+        loadGeneration += 1
         quietRefresh?.cancel()
         quietRefresh = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled, let self else { return }
+            isRefreshing = true
             await load(from: server, force: true)
             await server.refreshSummaries()
+            // A newer one took over: it says when it's done.
+            if !Task.isCancelled { isRefreshing = false }
         }
     }
 
@@ -1207,7 +1232,7 @@ final class MediaLibrary {
         }.map(\.lexicallyStandardized)
     }
 
-    private static func fileItem(_ url: URL, in foldersURL: URL, reserved: Set<String>, folder: String?? = .none) -> MediaItem {
+    nonisolated private static func fileItem(_ url: URL, in foldersURL: URL, reserved: Set<String>, folder: String?? = .none) -> MediaItem {
         let values = try? url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .creationDateKey])
         return MediaItem(
             id: url.path, url: url, name: url.lastPathComponent, date: values?.creationDate,

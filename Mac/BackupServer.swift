@@ -560,14 +560,17 @@ final class BackupServer {
         didSet { UserDefaults.standard.set(Array(declinedAdds), forKey: "declinedAdds") }
     }
 
-    /// Sends files on the drive that an iPhone doesn't have (an edited copy, a file from Finder) to
-    /// add to its Photos library. Each becomes one of its assets here first (`BackupStore.adopt`), then
-    /// goes like a put-back; an iPhone with this version adds it without asking. Returns how many went.
+    /// Sends files on the drive that an iPhone doesn't have (an edited copy, a file from Finder, another
+    /// iPhone's photo) to add to its Photos library. Each becomes one of its assets here first
+    /// (`BackupStore.adopt`), then goes like a put-back. Another iPhone's backup is copied into this
+    /// iPhone's folder first, so each iPhone keeps its own file. Returns the new assets' IDs, and
+    /// those copies.
     @discardableResult
-    func send(_ items: [MediaItem], to device: PairedDevice) async -> Int {
-        guard let store = store(for: device) else { return 0 }
+    func send(_ items: [MediaItem], to device: PairedDevice) async -> (ids: [String], copies: [URL]) {
+        guard let store = store(for: device) else { return ([], []) }
         var ids: [String] = []
-        for item in items where item.deviceID == nil {
+        var copies: [URL] = []
+        for item in items where item.deviceID != device.id {
             let metadata = AssetMetadata(
                 assetID: "", originalFilename: item.name, creationDate: item.date, modificationDate: nil,
                 mediaType: item.isVideo ? "video" : "image", pixelWidth: 0, pixelHeight: 0, duration: item.duration,
@@ -575,29 +578,58 @@ final class BackupServer {
                 location: item.latitude.flatMap { lat in item.longitude.map { .init(latitude: lat, longitude: $0, altitude: 0) } },
                 albums: []
             )
+            var file = item.url
             do {
-                ids.append(try await store.adopt(item.url, metadata: metadata, kind: item.isVideo ? .video : .photo))
-                declinedAdds.remove(item.url.path)
+                if item.deviceID != nil {
+                    file = try await copy(item.url, into: device, dated: metadata)
+                }
+                ids.append(try await store.adopt(file, metadata: metadata, kind: item.isVideo ? .video : .photo))
+                if file != item.url { copies.append(file) }
+                declinedAdds.remove(file.path)
             } catch BackupStore.AdoptError.alreadyThere {
                 continue
             } catch {
+                if file != item.url { try? FileManager.default.removeItem(at: file) }
                 addLog("Couldn't send \(item.name) to \(device.name): \(error.localizedDescription)", symbol: "exclamationmark.triangle")
             }
         }
-        guard !ids.isEmpty else { return 0 }
+        guard !ids.isEmpty else { return ([], copies) }
         enqueue(LibraryChange(action: .restore, assetIDs: ids, isNew: true), on: device, store: store)
         catalogRevision += 1
-        return ids.count
+        return (ids, copies)
+    }
+
+    /// Copies another iPhone's file into this iPhone's folder, dated as its backups are ("2026/10/…"),
+    /// numbered past a file of the same name.
+    private func copy(_ file: URL, into device: PairedDevice, dated metadata: AssetMetadata) async throws -> URL {
+        let folder = folderURL(for: device).appending(path: (LibraryLayout().sidecarPath(for: metadata) as NSString).deletingLastPathComponent,
+                                                      directoryHint: .isDirectory)
+        return try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let first = folder.appending(path: file.lastPathComponent)
+            var target = first
+            var n = 2
+            while FileManager.default.fileExists(atPath: target.path) {
+                target = URL(filePath: LibraryLayout.numbered(first.path, n))
+                n += 1
+            }
+            try FileManager.default.copyItem(at: file, to: target)
+            return target
+        }.value
     }
 
     /// Takes assets out of waiting put-backs.
-    func withdrawRestore(_ assetIDs: Set<String>, on device: PairedDevice) {
+    /// `copies`: files copied here from another iPhone to send; removed unless the iPhone has them now.
+    func withdrawRestore(_ assetIDs: Set<String>, on device: PairedDevice, removing copies: [URL] = []) {
         guard let store = store(for: device) else { return }
         Task {
             try? await store.withdraw(assetIDs, from: .restore)
             // Files from the Mac taken back before they went: plain files here again.
             if assetIDs.contains(where: { $0.hasPrefix("mac-") }) {
                 try? await store.unadopt(assetIDs)
+                for copy in copies where !(await store.holds(copy)) {
+                    try? FileManager.default.removeItem(at: copy)
+                }
                 catalogRevision += 1
             }
             libraryChanged(device.id)

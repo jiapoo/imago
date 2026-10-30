@@ -258,7 +258,7 @@ struct PhoneRow: View {
             status
         }
         .dropDestination(for: URL.self) { urls, _ in
-            library.drop(urls, onto: .phoneFolder, server: server, history: history)
+            library.drop(urls, onto: device, server: server, history: history)
         } isTargeted: { targeted = $0 }
         .help(help)
         .contextMenu { DeviceColorMenu(device: device) { pickingColor = true } }

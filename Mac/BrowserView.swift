@@ -209,10 +209,15 @@ struct BrowserView: View {
         }
     }
 
-    /// Adds files that didn't come from an iPhone to one's Photos library.
+    /// Adds them to an iPhone's Photos library: files on the drive, or another iPhone's photos (copied,
+    /// or moved per Copy | Move).
     private func sendToPhone(_ items: [MediaItem], _ device: PairedDevice) {
-        let files = items.filter { $0.deviceID == nil }
-        Task { await server.send(files, to: device) }
+        Task { history.record(await library.send(items, to: device, server: server)) }
+    }
+
+    /// iPhones some of these aren't from, to send them to.
+    private func sendable(_ items: [MediaItem]) -> [PairedDevice] {
+        server.devices.filter { device in items.contains { $0.deviceID != device.id } }
     }
 
     /// Top right: the folders an iPhone item is also in. In a folder, not that one (or one inside it).
@@ -283,7 +288,7 @@ struct BrowserView: View {
                     removable: library.removable(selected).count,
                     folders: otherFolders,
                     copies: selected.flatMap(otherFolders(holding:)).map(\.url),
-                    sendable: selected.contains { $0.deviceID == nil } ? server.devices : [],
+                    sendable: sendable(selected),
                     send: { device in sendToPhone(selected, device) },
                     canPutBack: selected.contains { $0.folder != nil && $0.deviceID != nil },
                     move: { folder in moveSelected(selected, to: folder) },
@@ -381,10 +386,10 @@ struct BrowserView: View {
         if case .folder = scope, !subfolders.isEmpty {
             let all = library.items(in: scope)
             let here = includeSubfolders ? all.count(where: { $0.folder == folderPath }) : items.count
-            return "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)"
+            return "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)" + (library.isRefreshing ? " · Updating…" : "")
         }
         let count = items.count == 1 ? "1 item" : "\(items.count.formatted()) items"
-        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)"
+        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)" + (library.isRefreshing ? " · Updating…" : "")
     }
 
     private func keyHandling(_ items: [MediaItem]) -> GridKeys {
@@ -750,10 +755,10 @@ extension BrowserView {
         if !copies.isEmpty {
             Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
         }
-        if !isTrash, targets.contains(where: { $0.deviceID == nil }), !server.devices.isEmpty {
+        if !isTrash, !sendable(targets).isEmpty {
             Menu("Send to iPhone") {
-                ForEach(server.devices) { device in
-                    Button("Send to \(device.name)") { sendToPhone(targets, device) }
+                ForEach(sendable(targets)) { device in
+                    Button(sendLabel(targets, device)) { sendToPhone(targets, device) }
                 }
             }
         }
@@ -1180,7 +1185,7 @@ private struct SelectionBar: View {
     let folders: [String]
     /// Copies of these in the folders, for Open Copy in Finder.
     var copies: [URL] = []
-    /// iPhones these can be sent to (files not from an iPhone); none hides Send to iPhone.
+    /// iPhones these can be sent to (ones some aren't from); none hides Send to iPhone.
     var sendable: [PairedDevice] = []
     var send: (PairedDevice) -> Void = { _ in }
     let canPutBack: Bool
@@ -1215,14 +1220,14 @@ private struct SelectionBar: View {
             if !sendable.isEmpty {
                 Menu {
                     ForEach(sendable) { device in
-                        Button("Send to \(device.name)") { send(device) }
+                        Button(sendLabel(items, device)) { send(device) }
                     }
                 } label: {
                     Label("Send to iPhone", systemImage: "iphone.and.arrow.forward")
                 }
                 .menuStyle(.button)
                 .fixedSize()
-                .help("Add to the iPhone's Photos library. It goes now if Imago is open on the iPhone, otherwise when it next connects.")
+                .help("Add to the iPhone's Photos library. It goes now if Imago is open on the iPhone, otherwise when it next connects. With Move, ones from another iPhone are deleted there.")
             }
 
             if !copies.isEmpty {

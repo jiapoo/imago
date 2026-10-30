@@ -330,47 +330,64 @@ actor BackupStore {
     /// Moves assets' files and sidecars into `directory`, or back into the dated folders when it's nil.
     /// The index follows them, so the phone isn't asked for them again.
     /// With `saving` off, the index is saved later (`saveIndexIfChanged`): saving it after every item
-    /// of a big move would take longer than the moves.
-    func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true) throws {
+    /// of a big move would take longer than the moves. The index is read once for the whole move;
+    /// `progress` hears each asset's name as it's done.
+    /// Returns where each moved asset's photo or video is now, and what stopped it, if anything did.
+    func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true,
+              progress: (@Sendable (String) -> Void)? = nil) -> (moved: [String: URL?], error: Error?) {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
         defer { if saving { try? saveIndex() } else { unsavedChanges += 1 } }
         // Two assets can share one file (the iPhone had the same video twice, and the backup kept one
         // copy). A file another asset still uses is copied, not moved, so that asset keeps its file.
         var users: [URL: Int] = [:]
         for stored in index.resources.values { users[url(of: stored.relativePath), default: 0] += 1 }
-        for (assetID, keys) in byAsset {
-            guard let metadata = index.assets[assetID]?.metadata else { continue }
+        var moved: [String: URL?] = [:]
+        // In the order asked, so the progress follows the selection.
+        for assetID in assetIDs {
+            guard let keys = byAsset[assetID], let metadata = index.assets[assetID]?.metadata else { continue }
             let target = directory.map(relativePath(of:))
                 ?? (layout.sidecarPath(for: metadata) as NSString).deletingLastPathComponent
-            for key in keys {
-                guard let stored = index.resources[key] else { continue }
-                let source = url(of: stored.relativePath)
-                let wanted = target + "/" + source.lastPathComponent
-                guard url(of: wanted) != source else { continue }
-                let shared = users[source, default: 0] > 1
-                let path = uniquePath(wanted, sha256: stored.sha256) { users[$0, default: 0] > 0 }
-                let destination = url(of: path)
-                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-                if fileManager.fileExists(atPath: destination.path) {
-                    // An identical file nothing else uses is already there.
-                    if !shared, fileManager.fileExists(atPath: source.path) { try fileManager.removeItem(at: source) }
-                } else if !fileManager.fileExists(atPath: source.path) {
-                    // Its file left with an asset it shared it with (an earlier move): copy that one.
-                    guard let twin = index.resources.values.lazy.filter({ $0.sha256 == stored.sha256 }).map({ self.url(of: $0.relativePath) })
-                        .first(where: { $0 != source && self.fileManager.fileExists(atPath: $0.path) })
-                    else { throw CocoaError(.fileNoSuchFile, userInfo: [NSFilePathErrorKey: source.path]) }
-                    try fileManager.copyItem(at: twin, to: destination)
-                } else if shared {
-                    try fileManager.copyItem(at: source, to: destination)
-                } else {
-                    try fileManager.moveItem(at: source, to: destination)
+            do {
+                for key in keys {
+                    guard let stored = index.resources[key] else { continue }
+                    let source = url(of: stored.relativePath)
+                    let wanted = target + "/" + source.lastPathComponent
+                    guard url(of: wanted) != source else { continue }
+                    let shared = users[source, default: 0] > 1
+                    let path = uniquePath(wanted, sha256: stored.sha256) { users[$0, default: 0] > 0 }
+                    let destination = url(of: path)
+                    try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if fileManager.fileExists(atPath: destination.path) {
+                        // An identical file nothing else uses is already there.
+                        if !shared, fileManager.fileExists(atPath: source.path) { try fileManager.removeItem(at: source) }
+                    } else if !fileManager.fileExists(atPath: source.path) {
+                        // Its file left with an asset it shared it with (an earlier move): copy that one.
+                        guard let twin = index.resources.values.lazy.filter({ $0.sha256 == stored.sha256 }).map({ self.url(of: $0.relativePath) })
+                            .first(where: { $0 != source && self.fileManager.fileExists(atPath: $0.path) })
+                        else { throw CocoaError(.fileNoSuchFile, userInfo: [NSFilePathErrorKey: source.path]) }
+                        try fileManager.copyItem(at: twin, to: destination)
+                    } else if shared {
+                        try fileManager.copyItem(at: source, to: destination)
+                    } else {
+                        try fileManager.moveItem(at: source, to: destination)
+                    }
+                    users[source, default: 1] -= 1
+                    users[destination, default: 0] += 1
+                    index.resources[key]?.relativePath = path
                 }
-                users[source, default: 1] -= 1
-                users[destination, default: 0] += 1
-                index.resources[key]?.relativePath = path
+                try settleSidecar(of: assetID, keys: keys, in: target)
+            } catch {
+                return (moved, error)
             }
-            try settleSidecar(of: assetID, keys: keys, in: target)
+            let files = keys.compactMap { key -> (kind: ResourceKind, url: URL)? in
+                guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
+                return (kind, url(of: stored.relativePath))
+            }
+            moved[assetID] = .some((files.first { $0.kind == .photo || $0.kind == .video }
+                              ?? files.first { $0.kind == .fullSizePhoto || $0.kind == .fullSizeVideo })?.url)
+            progress?(metadata.originalFilename)
         }
+        return (moved, nil)
     }
 
     /// Deletes assets' files and sidecars for good (Recently Deleted › Delete Now), and stops asking
@@ -407,26 +424,32 @@ actor BackupStore {
         }
     }
 
-    /// Takes note of a file that was moved in Finder: if the index's copy of it is gone and `url` has
-    /// the same name and size, the index points there instead. Returns whether it did.
-    func relink(_ url: URL) throws -> Bool {
-        let name = url.lastPathComponent
-        let size = UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1)
-        guard let (key, stored) = index.resources.first(where: {
-                  ($0.value.relativePath as NSString).lastPathComponent == name && $0.value.size == size
-              }).map({ ($0.key, $0.value) }),
-              !fileManager.fileExists(atPath: self.url(of: stored.relativePath).path),
-              try FileHasher.sha256(of: url) == stored.sha256
-        else { return false }
-        index.resources[key]?.relativePath = relativePath(of: url)
-        let keys = resourcesByAsset(only: [stored.assetID])[stored.assetID] ?? []
-        let directories = Set(keys.compactMap { index.resources[$0].map { (self.url(of: $0.relativePath).path as NSString).deletingLastPathComponent } })
-        // Bring the sidecar along once all of the asset's files are together.
-        if directories.count == 1, let directory = directories.first {
-            try settleSidecar(of: stored.assetID, keys: keys, in: relativePath(of: URL(filePath: directory, directoryHint: .isDirectory)))
+    /// Files moved in Finder: for each of `urls` that this iPhone's index lost (same name and size,
+    /// its old place empty, the same contents), the index follows it there. The index is read once
+    /// for them all. Returns the files it took.
+    func relink(_ urls: [URL]) -> Set<URL> {
+        guard !urls.isEmpty else { return [] }
+        var byName: [String: [String]] = [:]
+        for (key, stored) in index.resources { byName[(stored.relativePath as NSString).lastPathComponent, default: []].append(key) }
+        var claimed: Set<URL> = []
+        for url in urls {
+            guard let keys = byName[url.lastPathComponent] else { continue }
+            let size = UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1)
+            guard let key = keys.first(where: { index.resources[$0]?.size == size }), let stored = index.resources[key],
+                  !fileManager.fileExists(atPath: self.url(of: stored.relativePath).path),
+                  (try? FileHasher.sha256(of: url)) == stored.sha256
+            else { continue }
+            index.resources[key]?.relativePath = relativePath(of: url)
+            let assetKeys = resourcesByAsset(only: [stored.assetID])[stored.assetID] ?? []
+            let directories = Set(assetKeys.compactMap { index.resources[$0].map { (self.url(of: $0.relativePath).path as NSString).deletingLastPathComponent } })
+            // Bring the sidecar along once all of the asset's files are together.
+            if directories.count == 1, let directory = directories.first {
+                try? settleSidecar(of: stored.assetID, keys: assetKeys, in: relativePath(of: URL(filePath: directory, directoryHint: .isDirectory)))
+            }
+            claimed.insert(url)
         }
-        try saveIndex()
-        return true
+        if !claimed.isEmpty { try? saveIndex() }
+        return claimed
     }
 
     /// Points the index at a Folder's new place after it was renamed.
@@ -495,6 +518,12 @@ actor BackupStore {
         try settleSidecar(of: assetID, keys: [key], in: (path as NSString).deletingLastPathComponent)
         try saveIndex()
         return assetID
+    }
+
+    /// Whether a file is one of this iPhone's stored files.
+    func holds(_ file: URL) -> Bool {
+        let path = relativePath(of: file)
+        return index.resources.values.contains { url(of: $0.relativePath) == url(of: path) }
     }
 
     enum AdoptError: LocalizedError {

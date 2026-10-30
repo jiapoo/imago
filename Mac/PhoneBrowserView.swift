@@ -640,6 +640,14 @@ struct PhoneGrid: View {
             if let album {
                 Button("Remove from “\(album)”") { actions.request(.removeFromAlbum(album), targets) }
             }
+            let items = actions.libraryItems(targets)
+            if !actions.otherPhones.isEmpty, !items.isEmpty {
+                Menu("Send to iPhone") {
+                    ForEach(actions.otherPhones) { other in
+                        Button(sendLabel(items, other)) { actions.send(targets, to: other) }
+                    }
+                }
+            }
             Divider()
             if targets.contains(where: { !$0.isUnsynced }) {
                 Button("Delete from iPhone…", role: .destructive) {
@@ -932,6 +940,16 @@ struct PhoneActions {
         Task { await library.transfer(items, toFolder: path, server: server, history: history) }
     }
 
+    /// The other iPhones, to send these to.
+    var otherPhones: [PairedDevice] { server.devices.filter { $0.id != device.id } }
+
+    /// Adds their backed-up files to another iPhone's Photos library: copied, or with Move deleted
+    /// here after (see `MediaLibrary.send`).
+    func send(_ assets: [PhoneAsset], to other: PairedDevice) {
+        let items = libraryItems(assets)
+        Task { history.record(await library.send(items, to: other, server: server)) }
+    }
+
     /// Favorites them all, or unfavorites them if they all are already.
     func toggleFavorite(_ assets: [PhoneAsset]) {
         request(.setFavorite(!assets.allSatisfy(\.metadata.isFavorite)), assets)
@@ -1030,6 +1048,21 @@ struct PhoneSelectionBar: View {
                 .help(transferMode == TransferMode.move.rawValue
                       ? "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)"
                       : "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)")
+                let items = actions.libraryItems(selected)
+                if !actions.otherPhones.isEmpty {
+                    Menu {
+                        ForEach(actions.otherPhones) { other in
+                            Button(sendLabel(items, other)) { actions.send(selected, to: other) }
+                        }
+                    } label: {
+                        Label("Send to iPhone", systemImage: "iphone.and.arrow.forward")
+                    }
+                    .menuStyle(.button)
+                    .fixedSize()
+                    .disabled(items.isEmpty)
+                    .help(items.isEmpty ? "Only items backed up on this Mac can be sent to another iPhone"
+                          : "Add to another iPhone's Photos library. With Move, they're deleted from this iPhone after.")
+                }
                 let copies = actions.folderCopies(selected)
                 if !copies.isEmpty {
                     Button { NSWorkspace.shared.activateFileViewerSelecting(copies) } label: {
