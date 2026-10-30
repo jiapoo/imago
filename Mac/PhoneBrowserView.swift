@@ -537,6 +537,9 @@ struct PhoneGrid: View {
               }
               .modifier(FillsViewport())
               .modifier(SelectionBox(frames: tileFrames, ids: { Set(assets.map(\.id)) }, selection: $selection.selected))
+              .dragsSelection(tileFrames, selection: { selection.selected }) { ids in
+                  ids.sorted().compactMap { model.files[$0] }
+              }
             }
             .onAppear {
                 guard let target = scrollTarget.wrappedValue else { return }
@@ -596,10 +599,9 @@ struct PhoneGrid: View {
 
     /// Drags the backed-up file, or the whole selection's when it's part of it, into a folder.
     private func dragProvider(for asset: PhoneAsset) -> NSItemProvider {
+        guard model.files[asset.id] != nil else { return NSItemProvider() }
         let dragged = selection.selected.contains(asset.id) ? selected : [asset]
-        DragSession.urls = dragged.compactMap { model.files[$0.id] }
-        guard let url = model.files[asset.id] else { return NSItemProvider() }
-        return NSItemProvider(object: url as NSURL)
+        return DragSession.begin(dragged.compactMap { model.files[$0.id] })
     }
 
     @ViewBuilder

@@ -4,10 +4,137 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// What's being dragged out of a grid: the whole selection when the dragged item is part of it.
-/// A drag carries one file URL; a drop looks here for the rest.
+/// A drag of one tile is SwiftUI's (`onDrag`) and carries one file URL; a drop looks here for the
+/// rest. A drag of several selected tiles is AppKit's, from `SelectionDrag`, and carries them all.
 @MainActor
 enum DragSession {
     static var urls: [URL] = []
+
+    /// For a grid tile's `onDrag`: these files, of which the drag carries the first.
+    static func begin(_ urls: [URL]) -> NSItemProvider {
+        self.urls = urls
+        return urls.first.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider()
+    }
+}
+
+/// Drags several selected tiles at once, so Finder gets every file: SwiftUI's `onDrag` carries
+/// only one. A press on a selected tile, with more than one selected, is taken before SwiftUI
+/// sees the drag, and dragged from AppKit. SwiftUI never starts a drag of its own for it: one
+/// started alongside never ends, and SwiftUI drags nothing after that.
+@MainActor
+enum SelectionDrag {
+    /// Each grid on screen: the files to drag from a press at a point in its content (its scroll
+    /// view's coordinates), or nil when the press isn't on a selection of several.
+    private static var grids: [UUID: (CGPoint) -> [URL]?] = [:]
+    private static var monitor: Any?
+    /// The press being watched, when it's on a selection of several.
+    private static var pressed: (event: NSEvent, urls: [URL])?
+
+    static func register(_ id: UUID, files: @escaping (CGPoint) -> [URL]?) {
+        grids[id] = files
+        if monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
+                handle(event)
+            }
+        }
+    }
+
+    static func unregister(_ id: UUID) { grids[id] = nil }
+
+    private static func handle(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .leftMouseDown:
+            pressed = nil
+            // ⌘ and ⇧ change the selection; a plain press drags it.
+            guard event.modifierFlags.intersection([.command, .shift, .control]).isEmpty,
+                  let point = contentPoint(of: event),
+                  let urls = grids.values.lazy.compactMap({ $0(point) }).first, urls.count > 1 else { return event }
+            pressed = (event, urls)
+            return event
+        case .leftMouseDragged:
+            guard let (down, urls) = pressed else { return event }
+            let moved = hypot(event.locationInWindow.x - down.locationInWindow.x, event.locationInWindow.y - down.locationInWindow.y)
+            // Too small to be a drag yet: SwiftUI mustn't see it either, or it starts its own.
+            guard moved > 3 else { return nil }
+            pressed = nil
+            start(urls, with: event)
+            return nil
+        default:
+            pressed = nil
+            return event
+        }
+    }
+
+    /// Where a press is in the content of the scroll view it's in.
+    private static func contentPoint(of event: NSEvent) -> CGPoint? {
+        guard let contentView = event.window?.contentView,
+              let clip = contentView.hitTest(contentView.convert(event.locationInWindow, from: nil))?.enclosingScrollView?.contentView,
+              clip.isFlipped else { return nil }
+        return clip.convert(event.locationInWindow, from: nil)
+    }
+
+    private static func start(_ urls: [URL], with event: NSEvent) {
+        guard let view = event.window?.contentView else { return }
+        DragSession.urls = urls
+        let point = view.convert(event.locationInWindow, from: nil)
+        let items = urls.enumerated().map { index, url in
+            let item = NSDraggingItem(pasteboardWriter: url as NSURL)
+            let image = NSWorkspace.shared.icon(forFile: url.path)
+            image.size = NSSize(width: 64, height: 64)
+            // A small fan, as Finder draws several files.
+            let offset = CGFloat(min(index, 4)) * 6
+            item.setDraggingFrame(NSRect(x: point.x - 32 + offset, y: point.y - 32 - offset, width: 64, height: 64), contents: image)
+            return item
+        }
+        let session = view.beginDraggingSession(with: items, event: event, source: FileDragSource.shared)
+        session.draggingFormation = .pile
+    }
+}
+
+/// Lets a grid's selected tiles be dragged together (see `SelectionDrag`).
+private struct DragsSelection: ViewModifier {
+    let files: (CGPoint) -> [URL]?
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { SelectionDrag.register(id, files: files) }
+            .onDisappear { SelectionDrag.unregister(id) }
+    }
+}
+
+extension View {
+    /// On a grid: dragging a selected tile drags `selection`'s files when several are selected.
+    /// `tiles` are the tiles' frames in the grid's content.
+    func dragsSelection(_ tiles: TileFrames, selection: @escaping () -> Set<String>,
+                        files: @escaping (Set<String>) -> [URL]) -> some View {
+        modifier(DragsSelection { point in
+            let selection = selection()
+            guard selection.count > 1,
+                  tiles.frames.contains(where: { selection.contains($0.key) && $0.value.contains(point) }) else { return nil }
+            return files(selection)
+        })
+    }
+
+    /// Takes the files dropped here, every one: `dropDestination(for: URL.self)` hands over only the
+    /// first of several dragged from Finder.
+    func dropsFiles(_ action: @escaping @MainActor ([URL]) -> Bool,
+                    isTargeted: ((Bool) -> Void)? = nil) -> some View {
+        onDrop(of: [.fileURL], isTargeted: isTargeted.map { set in Binding(get: { false }, set: set) }) { providers in
+            Task { @MainActor in _ = action(await GridKeys.fileURLs(from: providers)) }
+            return true
+        }
+    }
+}
+
+/// The source of a drag of several files: copies to other apps; here, the drop decides.
+@MainActor
+private final class FileDragSource: NSObject, NSDraggingSource {
+    static let shared = FileDragSource()
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : [.copy, .move, .generic]
+    }
 }
 
 /// What putting photos and videos into a folder does, chosen in the toolbar.

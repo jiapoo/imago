@@ -246,6 +246,12 @@ struct SelectionBox: ViewModifier {
     }
 
     private func changed(start: CGPoint, location: CGPoint) {
+        // A new press. The last one may never have ended: a tile's drag takes the mouse, and the
+        // gesture doesn't hear its release.
+        if drag.phase != .idle, start != drag.start {
+            drag.autoscroll?.cancel()
+            drag = BoxDrag()
+        }
         switch drag.phase {
         case .ignoring:
             return
@@ -255,6 +261,7 @@ struct SelectionBox: ViewModifier {
             if !frames.headers.values.contains(where: { $0.contains(start) }),
                frames.frames.contains(where: { $0.value.contains(start) && ids.contains($0.key) }) {
                 drag.phase = .ignoring
+                drag.start = start
                 return
             }
             drag.ids = ids

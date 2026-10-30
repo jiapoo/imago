@@ -146,11 +146,15 @@ struct BrowserView: View {
           .modifier(FillsViewport())
           .modifier(SelectionBox(frames: tileFrames, ids: { shown.ids },
                                  selection: Binding(get: { library.selection }, set: { library.selection = $0 })))
+          .dragsSelection(tileFrames, selection: { library.selection }) { ids in
+              // From the library, not this page's items: those are as the page was when it appeared.
+              (library.items + library.trash.map(\.item)).filter { ids.contains($0.id) }.map(\.url)
+          }
         }
         .scrollContentBackground(.hidden)
         .background(Color(nsColor: .textBackgroundColor))
         // A folder takes photos and videos dropped on it: from Finder (copied in) or another grid.
-        .dropDestination(for: URL.self) { urls, _ in
+        .dropsFiles { urls in
             guard case .folder(let path) = scope else { return false }
             return library.drop(urls, onto: .folder(path), server: server, history: history)
         }
@@ -257,9 +261,7 @@ struct BrowserView: View {
 
     /// Drags the item, or the whole selection when it's part of it.
     private func dragProvider(for item: MediaItem) -> NSItemProvider {
-        let urls = library.selection.contains(item.id) ? selected.map(\.url) : [item.url]
-        DragSession.urls = urls
-        return NSItemProvider(object: item.url as NSURL)
+        DragSession.begin(library.selection.contains(item.id) ? selected.map(\.url) : [item.url])
     }
 
     @ViewBuilder
@@ -600,7 +602,7 @@ extension BrowserView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
                         ForEach(inside) { folder in
                             FolderCard(folder: folder, covers: Array(library.items(in: .folder(folder.path)).prefix(4))) { openFolder(folder.path) }
-                                .dropDestination(for: URL.self) { urls, _ in
+                                .dropsFiles { urls in
                                     library.drop(urls, onto: .folder(folder.path), server: server, history: history)
                                 }
                         }

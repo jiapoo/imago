@@ -129,7 +129,7 @@ struct FolderRow: View {
                 .foregroundStyle(.tint)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .dropDestination(for: URL.self) { urls, _ in
+        .dropsFiles { urls in
             library.drop(urls, onto: .folder(folder.path), server: server, history: history)
         } isTargeted: { targeted = $0 }
     }
@@ -156,7 +156,7 @@ struct TrashRow: View {
                 .foregroundStyle(.tint)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .dropDestination(for: URL.self) { urls, _ in
+        .dropsFiles { urls in
             library.drop(urls, onto: .trash, server: server, history: history)
         } isTargeted: { targeted = $0 }
         .contextMenu {
@@ -257,7 +257,7 @@ struct PhoneRow: View {
             Spacer(minLength: 0)
             status
         }
-        .dropDestination(for: URL.self) { urls, _ in
+        .dropsFiles { urls in
             library.drop(urls, onto: device, server: server, history: history)
         } isTargeted: { targeted = $0 }
         .help(help)
