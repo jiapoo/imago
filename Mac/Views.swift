@@ -180,18 +180,25 @@ struct MainView: View {
 
     private var decisionsBell: some View {
         Button { showingDecisions.toggle() } label: {
-            // The count beside the bell, not on it: a toolbar button clips what sticks out.
-            HStack(spacing: 4) {
-                Image(systemName: "bell.fill")
-                Text(decisionCount.formatted())
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .frame(minWidth: 17, minHeight: 17)
-                    .background(.red, in: Capsule())
-            }
-            .padding(.horizontal, 2)
-            .accessibilityLabel("Needs Your Answer")
+            // The count on the bell's corner. A toolbar button clips what sticks out, so the bell
+            // leaves room above and to its right, and the badge sits in that room, inside the button.
+            Image(systemName: "bell.fill")
+                .padding(.top, 7)
+                .padding(.trailing, decisionCount > 9 ? 13 : 9)
+                .overlay(alignment: .topTrailing) {
+                    Text(decisionCount > 99 ? "99+" : decisionCount.formatted())
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 15, minHeight: 15)
+                        .background(.red, in: Capsule())
+                        // A ring in the toolbar's color keeps the badge apart from the bell under it.
+                        .background(Color(nsColor: .windowBackgroundColor), in: Capsule().inset(by: -1.5))
+                        .padding(1.5)
+                }
+                .padding(.horizontal, 2)
+                .accessibilityLabel("Needs Your Answer")
+                .accessibilityValue(decisionCount.formatted())
         }
         .help(decisionCount == 1 ? "1 thing needs your answer" : "\(decisionCount) things need your answer")
         .popover(isPresented: $showingDecisions, arrowEdge: .bottom) {
