@@ -58,13 +58,12 @@ extension BackupStore {
         encoder.dateEncodingStrategy = .iso8601
         try prepareStateDirectory()
         try encoder.encode(snapshot).write(to: snapshotURL, options: .atomic)
+        snapshotCache = snapshotModified().map { ($0, snapshot) }
     }
 
     /// The last snapshot joined with what's stored. Nil before the phone's first version-4 backup.
     func phoneLibrary() -> PhoneLibrary? {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return nil }
+        guard let snapshot = savedSnapshot() else { return nil }
         let stored = storedResources()
         var thumbnailBytes: [String: UInt64] = [:]
         for resource in stored.values { thumbnailBytes[resource.assetID, default: 0] += resource.size }
@@ -86,6 +85,19 @@ extension BackupStore {
             )
         }
         return PhoneLibrary(takenAt: snapshot.takenAt, assets: assets, albums: snapshot.albums, files: files, thumbnailBytes: thumbnailBytes)
+    }
+
+    /// The saved snapshot, read off the drive only when the file changed since it was last read: it's
+    /// big (9 MB for a big library), and during a backup the library is joined with it again and again
+    /// as files arrive.
+    private func savedSnapshot() -> PhoneSnapshot? {
+        guard let modified = snapshotModified() else { return nil }
+        if let cached = snapshotCache, cached.modified == modified { return cached.snapshot }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return nil }
+        snapshotCache = (modified, snapshot)
+        return snapshot
     }
 
     /// When the snapshot was last written, to tell whether it needs reading again.
@@ -155,9 +167,7 @@ extension BackupStore {
     /// phone's next backup sends a fresh one. Otherwise a change done during a live session would
     /// look undone once it leaves the queue.
     private func patchSnapshot(with changes: [LibraryChange], restored: [String: String] = [:]) throws {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard var snapshot = try? decoder.decode(PhoneSnapshot.self, from: Data(contentsOf: snapshotURL)) else { return }
+        guard var snapshot = savedSnapshot() else { return }
         for change in changes {
             let ids = Set(change.assetIDs)
             if change.action == .restore {

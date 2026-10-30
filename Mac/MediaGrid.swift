@@ -222,6 +222,10 @@ struct SelectionBox: ViewModifier {
     @Binding var selection: Set<String>
     @State private var box: CGRect?
     @State private var drag = BoxDrag()
+    /// True while SwiftUI runs the gesture. It goes back to false when the gesture ends and also when
+    /// it's cancelled (a tile's drag takes the mouse, the window changes), which `onEnded` never hears:
+    /// a box left drawn and a gesture that ignores the next press.
+    @GestureState private var pressing = false
 
     func body(content: Content) -> some View {
         content
@@ -230,9 +234,13 @@ struct SelectionBox: ViewModifier {
             // Alongside the tiles' own clicks and drags: a drag that starts on a tile is theirs.
             .simultaneousGesture(
                 DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.space))
+                    .updating($pressing) { _, pressing, _ in pressing = true }
                     .onChanged { value in changed(start: value.startLocation, location: value.location) }
                     .onEnded { _ in ended() }
             )
+            .onChange(of: pressing) { _, pressing in
+                if !pressing { ended() }
+            }
             .overlay(alignment: .topLeading) {
                 if let box {
                     Rectangle()

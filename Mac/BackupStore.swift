@@ -99,9 +99,29 @@ actor BackupStore {
     private let layout = LibraryLayout()
     /// Read on first use, on the actor, not in `init`: the server makes stores on the main actor,
     /// and a slow or failing drive would freeze the app there.
-    private lazy var index: Index = (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
+    private lazy var storedIndex: Index = (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
+    /// Counts changes to the index, so what's worked out from it (`catalog`) is kept until it changes.
+    /// Every change goes through `index`, so none is missed.
+    private var indexVersion = 0
+    private var index: Index {
+        _read { yield storedIndex }
+        _modify {
+            indexVersion &+= 1
+            yield &storedIndex
+        }
+        set {
+            indexVersion &+= 1
+            storedIndex = newValue
+        }
+    }
+    private var catalogCache: (version: Int, entries: [CatalogEntry])?
+    /// The phone's last library list as saved, and the file's date then (see `savedSnapshot`).
+    var snapshotCache: (modified: Date, snapshot: PhoneSnapshot)?
+    /// For `relink`: the index's files by name, and the files already looked for in it.
+    private var relinkCache: (version: Int, byName: [String: [String]], checked: Set<URL>)?
     private var inFlight: [ResourceKey: InFlight] = [:]
     private var unsavedChanges = 0
+    private var lastIndexSave = ContinuousClock.now
     private let fileManager = FileManager.default
 
     nonisolated var stateDirectory: URL { root.appending(path: ".photobackup", directoryHint: .isDirectory) }
@@ -202,7 +222,11 @@ actor BackupStore {
             assetID: key.assetID, relativePath: relativePath, sha256: actual, size: size, storedAt: .now
         )
         unsavedChanges += 1
-        if unsavedChanges >= 50 { try saveIndex() }
+        // The whole index is written each time (13 MB for a big library), so during a backup it's
+        // written every 50 files at most twice a minute; the rest when the session ends (`flush`).
+        // Files that arrived after the last write are still on the drive if Imago quits meanwhile:
+        // the next backup asks for them again and finds them already there.
+        if unsavedChanges >= 50, ContinuousClock.now - lastIndexSave > .seconds(30) { try saveIndex() }
         return relativePath
     }
 
@@ -315,9 +339,10 @@ actor BackupStore {
 
     /// Every asset with files here, wherever in the library its files have been moved.
     func catalog() -> [CatalogEntry] {
+        if let catalogCache, catalogCache.version == indexVersion { return catalogCache.entries }
         let byAsset = resourcesByAsset()
         fillMissingRecords(byAsset)
-        return byAsset.compactMap { assetID, keys in
+        let entries = byAsset.compactMap { assetID, keys -> CatalogEntry? in
             guard let metadata = index.assets[assetID]?.metadata else { return nil }
             let files = keys.compactMap { key -> CatalogEntry.File? in
                 guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
@@ -325,6 +350,14 @@ actor BackupStore {
             }
             return CatalogEntry(assetID: assetID, metadata: metadata, files: files)
         }
+        catalogCache = (indexVersion, entries)
+        return entries
+    }
+
+    /// The catalog, and the version of the index it came from: the same version, the same catalog.
+    func versionedCatalog() -> (version: Int, entries: [CatalogEntry]) {
+        let entries = catalog()
+        return (indexVersion, entries)
     }
 
     /// Moves assets' files and sidecars into `directory`, or back into the dated folders when it's nil.
@@ -428,11 +461,18 @@ actor BackupStore {
     /// its old place empty, the same contents), the index follows it there. The index is read once
     /// for them all. Returns the files it took.
     func relink(_ urls: [URL]) -> Set<URL> {
-        guard !urls.isEmpty else { return [] }
-        var byName: [String: [String]] = [:]
-        for (key, stored) in index.resources { byName[(stored.relativePath as NSString).lastPathComponent, default: []].append(key) }
+        // Each library read asks about the same files. Unless the index changed since, a file asked
+        // about before has the same answer: only new ones are looked at.
+        if relinkCache?.version != indexVersion {
+            var byName: [String: [String]] = [:]
+            for (key, stored) in index.resources { byName[(stored.relativePath as NSString).lastPathComponent, default: []].append(key) }
+            relinkCache = (indexVersion, byName, [])
+        }
+        let fresh = urls.filter { !(relinkCache?.checked.contains($0) ?? false) }
+        guard !fresh.isEmpty, let byName = relinkCache?.byName else { return [] }
+        relinkCache?.checked.formUnion(fresh)
         var claimed: Set<URL> = []
-        for url in urls {
+        for url in fresh {
             guard let keys = byName[url.lastPathComponent] else { continue }
             let size = UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1)
             guard let key = keys.first(where: { index.resources[$0]?.size == size }), let stored = index.resources[key],
@@ -779,5 +819,6 @@ actor BackupStore {
         try prepareStateDirectory()
         try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
         unsavedChanges = 0
+        lastIndexSave = .now
     }
 }

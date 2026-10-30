@@ -11,26 +11,19 @@ enum PhotoLibrary {
         return status == .authorized || status == .limited
     }
 
-    /// One entry per asset, oldest first. No file data is read here.
+    /// One entry per asset, oldest first. No file data is read here. After the first time, only
+    /// what changed since is read again (see `LibraryList`).
     /// `progress` gets 0...1 as assets are read.
     static func scan(progress: @escaping (Double) -> Void = { _ in }) -> [ManifestEntry] {
-        let albums = albumMembership()
-        progress(0.1)
+        LibraryList.shared.manifest(progress: progress)
+    }
+
+    /// Every asset a scan lists, oldest first.
+    fileprivate static func fetchAll() -> PHFetchResult<PHAsset> {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         options.includeAssetSourceTypes = [.typeUserLibrary, .typeiTunesSynced]
-        let assets = PHAsset.fetchAssets(with: options)
-
-        var entries: [ManifestEntry] = []
-        entries.reserveCapacity(assets.count)
-        let count = max(assets.count, 1)
-        assets.enumerateObjects { asset, index, _ in
-            if let entry = entry(for: asset, albums: albums[asset.localIdentifier] ?? []) {
-                entries.append(entry)
-            }
-            if index % 200 == 0 { progress(0.1 + 0.9 * Double(index) / Double(count)) }
-        }
-        return entries
+        return PHAsset.fetchAssets(with: options)
     }
 
     /// What photos and videos take up on this iPhone: the size of every file of each, originals and
@@ -76,7 +69,7 @@ enum PhotoLibrary {
         var errorDescription: String? { "This item was deleted or changed on the iPhone." }
     }
 
-    private static func entry(for asset: PHAsset, albums: [String]) -> ManifestEntry? {
+    fileprivate static func entry(for asset: PHAsset, albums: [String]) -> ManifestEntry? {
         let resources = PHAssetResource.assetResources(for: asset)
         // Originals never change. Edits are keyed by modification date so a re-edit is sent again.
         // (Favoriting also bumps it, which re-sends the edited render; acceptable for now.)
@@ -275,7 +268,7 @@ enum PhotoLibrary {
         return match
     }
 
-    private static func albumMembership() -> [String: [String]] {
+    fileprivate static func albumMembership() -> [String: [String]] {
         var membership: [String: [String]] = [:]
         let albums = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
         albums.enumerateObjects { album, _, _ in
@@ -285,6 +278,74 @@ enum PhotoLibrary {
             }
         }
         return membership
+    }
+}
+
+/// The library list, kept up to date as Photos changes. The first list asks Photos about every asset's
+/// files, which takes a while on a big library; after that, each change re-reads only the assets it
+/// touched. Before, every change (a favorite, a photo added from the Mac) read the whole library
+/// again. Album membership is read each time: it's quick, and adding to an album doesn't change the asset.
+final class LibraryList: NSObject, PHPhotoLibraryChangeObserver, @unchecked Sendable {
+    static let shared = LibraryList()
+    /// Posted after a change to the library has been taken in, so the list is current.
+    static let changed = Notification.Name("LibraryListChanged")
+
+    private let lock = NSLock()
+    private var fetch: PHFetchResult<PHAsset>?
+    /// Each asset's entry by identifier, without its albums.
+    private var entries: [String: ManifestEntry] = [:]
+    private var observing = false
+
+    func manifest(progress: @escaping (Double) -> Void = { _ in }) -> [ManifestEntry] {
+        lock.lock()
+        defer { lock.unlock() }
+        if !observing {
+            PHPhotoLibrary.shared().register(self)
+            observing = true
+        }
+        let albums = PhotoLibrary.albumMembership()
+        progress(0.1)
+        let fetch: PHFetchResult<PHAsset>
+        if let current = self.fetch {
+            fetch = current
+        } else {
+            fetch = PhotoLibrary.fetchAll()
+            var entries: [String: ManifestEntry] = [:]
+            let count = max(fetch.count, 1)
+            fetch.enumerateObjects { asset, index, _ in
+                entries[asset.localIdentifier] = PhotoLibrary.entry(for: asset, albums: [])
+                if index % 200 == 0 { progress(0.1 + 0.9 * Double(index) / Double(count)) }
+            }
+            self.fetch = fetch
+            self.entries = entries
+        }
+        var list: [ManifestEntry] = []
+        list.reserveCapacity(fetch.count)
+        fetch.enumerateObjects { asset, _, _ in
+            guard var entry = self.entries[asset.localIdentifier] else { return }
+            entry.metadata.albums = albums[asset.localIdentifier] ?? []
+            list.append(entry)
+        }
+        return list
+    }
+
+    func photoLibraryDidChange(_ change: PHChange) {
+        lock.lock()
+        if let fetch, let details = change.changeDetails(for: fetch) {
+            if details.hasIncrementalChanges {
+                for asset in details.removedObjects { entries[asset.localIdentifier] = nil }
+                for asset in details.insertedObjects + details.changedObjects {
+                    entries[asset.localIdentifier] = PhotoLibrary.entry(for: asset, albums: [])
+                }
+                self.fetch = details.fetchResultAfterChanges
+            } else {
+                // Too much changed to say what: read everything next time.
+                self.fetch = nil
+                entries = [:]
+            }
+        }
+        lock.unlock()
+        NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 }
 

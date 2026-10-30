@@ -1,6 +1,7 @@
 import AppKit
 import ImagoKit
 import SwiftUI
+import Synchronization
 import UniformTypeIdentifiers
 
 /// One photo or video in the backup: from a phone, with a sidecar, or a file put into a Folder
@@ -153,6 +154,11 @@ final class MediaLibrary {
     /// Deleted on an iPhone, and kept here on purpose (Keep Backups): no longer on Deleted on iPhone,
     /// and never moved to Recently Deleted for it. By item ID, in the library's `.photobackup`.
     private(set) var kept: Set<String> = []
+    /// Where `kept` and `leftPhoneAt` were read from. Only Imago writes them, so each is read once a
+    /// location and kept here after; reading them off the drive on every library read took a third of
+    /// a second each.
+    private var keptReadFrom: URL?
+    private var leftPhoneReadFrom: URL?
     /// Deleted on an iPhone and waiting to be put back there (a `restore` change), by item ID.
     private(set) var restoring: Set<String> = []
     /// Changes an iPhone turned down that the user hasn't decided about yet.
@@ -177,6 +183,11 @@ final class MediaLibrary {
     private var loadGeneration = 0
     /// A full re-read of the library after work that already updated what's on screen; see `refreshQuietly`.
     private var quietRefresh: Task<Void, Never>?
+    /// The read under way. Reads take turns: one asked for meanwhile waits, then runs once more
+    /// (`loadAgain`), however many asked. Several at once read every index and walk the drive side by
+    /// side, each slower for the others.
+    private var loading: Task<Void, Never>?
+    private var loadAgain = false
     /// For each iPhone item (by ID), the folders it's in: its own backup moved into one, or the same
     /// file copied into it. See `findFolderCopies`.
     private(set) var inFolders: [String: [FolderCopies.Copy]] = [:]
@@ -187,6 +198,23 @@ final class MediaLibrary {
     /// files were stored). Reading a big one takes a while, and most reloads (a move, a put-back) don't
     /// change it.
     private var phoneCache: [String: (stamp: String, assets: [String: PhoneAsset])] = [:]
+    /// Each iPhone's items as built from its index, with every file the index knows, by the version of
+    /// the index they came from (see `BackupStore.versionedCatalog`).
+    private var catalogItems: [String: (key: CatalogKey, items: CatalogItems)] = [:]
+
+    private struct CatalogKey: Equatable {
+        var store: ObjectIdentifier
+        var version: Int
+        var foldersURL: URL
+        var trashURL: URL
+    }
+
+    private struct CatalogItems: Sendable {
+        var items: [MediaItem]
+        /// In Recently Deleted, with no folder.
+        var trashed: [MediaItem]
+        var files: Set<URL>
+    }
 
     /// Items over this size show in Large Files.
     static let largeFileBytes: UInt64 = 20_000_000
@@ -196,6 +224,27 @@ final class MediaLibrary {
     func load(from server: BackupServer, force: Bool = false) async {
         guard force || loadedRevision != server.catalogRevision else { return }
         loadedRevision = server.catalogRevision
+        if let loading {
+            loadAgain = true
+            await loading.value
+            return
+        }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            repeat {
+                loadAgain = false
+                await loadOnce(from: server)
+            } while loadAgain
+            // With nothing awaited since the check above, a read asked for now starts afresh.
+            loading = nil
+        }
+        loading = task
+        await task.value
+    }
+
+    /// One read of the whole library. Only `load` calls it; a reason to read again inside it sets
+    /// `loadAgain` (awaiting `load` here would wait for itself).
+    private func loadOnce(from server: BackupServer) async {
         guard server.location.isAvailable else {
             state = .unavailable
             items = []
@@ -212,7 +261,7 @@ final class MediaLibrary {
         let foldersURL = server.foldersURL
         let trashURL = server.trashURL
         let reserved = server.reservedFolderNames
-        let manifest = await Task.detached { TrashManifest.read(in: trashURL) }.value
+        let manifest = await Task.detached(priority: .userInitiated) { TrashManifest.read(in: trashURL) }.value
         var loaded: [MediaItem] = []
         var trashed: [TrashedItem] = []
         var phones: [String: [String: PhoneAsset]] = [:]
@@ -220,30 +269,29 @@ final class MediaLibrary {
         var putBack: Set<String> = []
         var turnedDown: [Decline] = []
         var stores: [BackupStore] = []
-        var known: Set<URL> = []
+        var known: [Set<URL>] = []
         for device in server.devices {
             guard let store = server.store(for: device) else { continue }
             stores.append(store)
-            for entry in await store.catalog() {
-                known.formUnion(entry.files.map(\.url))
-                guard let display = entry.display else { continue }
-                var item = MediaItem(
-                    id: "\(device.id)/\(entry.assetID)", url: display.url,
-                    name: entry.metadata.originalFilename, date: entry.metadata.creationDate,
-                    isVideo: entry.metadata.mediaType == "video", duration: entry.metadata.duration,
-                    bytes: entry.files.reduce(0) { $0 + $1.size },
-                    folder: Self.folderPath(of: display.url, in: foldersURL, reserved: reserved),
-                    deviceID: device.id, assetID: entry.assetID,
-                    latitude: entry.metadata.location?.latitude, longitude: entry.metadata.location?.longitude,
-                    original: .init(size: display.size, sha256: display.sha256)
-                )
-                if Self.isInside(display.url, trashURL) {
-                    item.folder = nil
-                    let record = manifest.entries[item.id]
-                    trashed.append(TrashedItem(item: item, deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .phoneFolder))
-                } else {
-                    loaded.append(item)
-                }
+            let (version, entries) = await store.versionedCatalog()
+            // Built once for each version of the iPhone's index, away from the main thread: tens of
+            // thousands of items, and most reads (a copy into a folder, an undone one) don't change it.
+            let key = CatalogKey(store: ObjectIdentifier(store), version: version, foldersURL: foldersURL, trashURL: trashURL)
+            let built: CatalogItems
+            if let cached = catalogItems[device.id], cached.key == key {
+                built = cached.items
+            } else {
+                let deviceID = device.id
+                built = await Task.detached(priority: .userInitiated) {
+                    Self.items(from: entries, deviceID: deviceID, foldersURL: foldersURL, trashURL: trashURL, reserved: reserved)
+                }.value
+                catalogItems[device.id] = (key, built)
+            }
+            known.append(built.files)
+            loaded += built.items
+            trashed += built.trashed.map { item in
+                let record = manifest.entries[item.id]
+                return TrashedItem(item: item, deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .phoneFolder)
             }
             // After the catalog, which finds the sidecars of records that didn't know theirs.
             await store.hideOlderSidecars()
@@ -272,7 +320,9 @@ final class MediaLibrary {
         let (unknown, folderPaths) = await Task.detached(priority: .userInitiated) {
             let paths = Self.folderPaths(in: foldersURL, reserved: reserved)
             let tops = paths.filter { !$0.contains("/") }.map { foldersURL.appending(path: $0, directoryHint: .isDirectory) }
-            return (((tops + phoneFolders).flatMap(Self.mediaFiles(in:)) + Self.mediaFiles(in: trashURL)).filter { !known.contains($0) }, paths)
+            let files = (tops + phoneFolders).flatMap(Self.mediaFiles(in:)) + Self.mediaFiles(in: trashURL)
+            DriveScan.shared.save()
+            return (files.filter { file in !known.contains { $0.contains(file) } }, paths)
         }.value
         // Moved in Finder: each iPhone's index looks for its lost files among them, all at once.
         var claimed: Set<URL> = []
@@ -298,11 +348,12 @@ final class MediaLibrary {
         }.value
         loaded += files
         trashed += trashedFiles
-        // Something changed on screen meanwhile (a move, a newer read): this read is out of date.
+        // Something changed on screen meanwhile (a move): this read is out of date. The re-read that
+        // change asked for follows.
         guard generation == loadGeneration else { return }
         if relinked {
             // Moved in Finder: read again so they show up with their phone's details.
-            await load(from: server, force: true)
+            loadAgain = true
             return
         }
 
@@ -312,7 +363,10 @@ final class MediaLibrary {
         pendingRemoval = pending
         restoring = putBack
         declines = turnedDown
-        kept = await Self.readKept(at: keptURL(server))
+        if keptReadFrom != keptURL(server) {
+            kept = await Self.readKept(at: keptURL(server))
+            keptReadFrom = keptURL(server)
+        }
         revision += 1
         folders = Self.tree(folderPaths, items: items)
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
@@ -328,7 +382,7 @@ final class MediaLibrary {
         // Answers that settle themselves: a deletion turned down the second time it was asked keeps the
         // backups; a put-back turned down keeps them too, off the iPhone.
         if await settleFinalAnswers(server) {
-            await load(from: server, force: true)
+            loadAgain = true
             return
         }
         // Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now.
@@ -457,7 +511,7 @@ final class MediaLibrary {
     }
 
     private nonisolated static func readKept(at url: URL) async -> Set<String> {
-        await Task.detached { (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: url))) ?? [] }.value
+        await Task.detached(priority: .userInitiated) { (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: url))) ?? [] }.value
     }
 
     private nonisolated static func writeKept(_ kept: Set<String>, to url: URL) async {
@@ -470,11 +524,15 @@ final class MediaLibrary {
     /// Updates when each item on Deleted on iPhone was first seen there, in the library's `.photobackup`.
     private func noteLeftPhone(_ server: BackupServer) async {
         let url = server.location.url.appending(path: ".photobackup/left-iphone.json")
-        var known = await Task.detached { () -> [String: Date] in
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return (try? decoder.decode([String: Date].self, from: Data(contentsOf: url))) ?? [:]
-        }.value
+        var known = leftPhoneAt
+        if leftPhoneReadFrom != url {
+            known = await Task.detached(priority: .userInitiated) { () -> [String: Date] in
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                return (try? decoder.decode([String: Date].self, from: Data(contentsOf: url))) ?? [:]
+            }.value
+            leftPhoneReadFrom = url
+        }
         let now = Set(server.devices.flatMap { deletedOnPhone($0.id) }.map(\.id))
         var changed = false
         var fresh: [String: Int] = [:]
@@ -1174,24 +1232,42 @@ final class MediaLibrary {
 
     /// Every one of the user's folders, as paths from the top of the backup location, parents before
     /// children. The phones' folders and Recently Deleted (`reserved`) aren't looked into.
-    nonisolated private static func folderPaths(in root: URL, reserved: Set<String>) -> [String] {
-        let tops = ((try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey], options: [.skipsHiddenFiles]
-        )) ?? []).filter { url in
-            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                && (try? url.resourceValues(forKeys: [.isPackageKey]).isPackage) != true
-                && !reserved.contains(url.lastPathComponent)
-        }
-        let base = root.lexicallyStandardized.pathComponents
-        var paths: [String] = []
-        for top in tops {
-            paths.append(top.lastPathComponent)
-            guard let enumerator = FileManager.default.enumerator(
-                at: top, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { continue }
-            for case let url as URL in enumerator where (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-                paths.append(Array(url.lexicallyStandardized.pathComponents.dropFirst(base.count)).joined(separator: "/"))
+    /// An iPhone's items from its catalog, and every file its index knows.
+    nonisolated private static func items(from entries: [BackupStore.CatalogEntry], deviceID: String,
+                                          foldersURL: URL, trashURL: URL, reserved: Set<String>) -> CatalogItems {
+        var files: Set<URL> = []
+        var items: [MediaItem] = []
+        var trashed: [MediaItem] = []
+        items.reserveCapacity(entries.count)
+        for entry in entries {
+            files.formUnion(entry.files.map(\.url))
+            guard let display = entry.display else { continue }
+            var item = MediaItem(
+                id: "\(deviceID)/\(entry.assetID)", url: display.url,
+                name: entry.metadata.originalFilename, date: entry.metadata.creationDate,
+                isVideo: entry.metadata.mediaType == "video", duration: entry.metadata.duration,
+                bytes: entry.files.reduce(0) { $0 + $1.size },
+                folder: folderPath(of: display.url, in: foldersURL, reserved: reserved),
+                deviceID: deviceID, assetID: entry.assetID,
+                latitude: entry.metadata.location?.latitude, longitude: entry.metadata.location?.longitude,
+                original: .init(size: display.size, sha256: display.sha256)
+            )
+            if isInside(display.url, trashURL) {
+                item.folder = nil
+                trashed.append(item)
+            } else {
+                items.append(item)
             }
+        }
+        return CatalogItems(items: items, trashed: trashed, files: files)
+    }
+
+    nonisolated private static func folderPaths(in root: URL, reserved: Set<String>) -> [String] {
+        let scan = DriveScan.shared
+        var paths: [String] = []
+        for top in scan.subfolders(of: root) where !reserved.contains(top) {
+            paths.append(top)
+            paths += scan.folders(in: root.appending(path: top, directoryHint: .isDirectory)).map { top + "/" + $0 }
         }
         return paths.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
@@ -1221,15 +1297,7 @@ final class MediaLibrary {
 
     /// Photos and videos anywhere under `directory`.
     nonisolated private static func mediaFiles(in directory: URL) -> [URL] {
-        let keys: [URLResourceKey] = [.contentTypeKey, .isRegularFileKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: directory, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return [] }
-        return enumerator.compactMap { $0 as? URL }.filter { url in
-            guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isRegularFile == true,
-                  let type = values.contentType else { return false }
-            return type.conforms(to: .image) || type.conforms(to: .movie)
-        }.map(\.lexicallyStandardized)
+        DriveScan.shared.mediaFiles(in: directory)
     }
 
     nonisolated private static func fileItem(_ url: URL, in foldersURL: URL, reserved: Set<String>, folder: String?? = .none) -> MediaItem {
@@ -1284,18 +1352,32 @@ struct TrashManifest: Codable, Sendable {
         directory.appending(path: ".imago-trash.json")
     }
 
+    /// The manifest as last read or written, with the file's date then: every library read asks for
+    /// it, and while the file is unchanged there's no need to read it off the drive again.
+    private static let cache = Mutex<(url: URL, modified: Date, manifest: TrashManifest)?>(nil)
+
     static func read(in directory: URL) -> TrashManifest {
+        let url = url(in: directory)
+        let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        if let modified, let cached = cache.withLock({ $0 }), cached.url == url, cached.modified == modified {
+            return cached.manifest
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return (try? decoder.decode(TrashManifest.self, from: Data(contentsOf: url(in: directory)))) ?? TrashManifest()
+        let manifest = (try? decoder.decode(TrashManifest.self, from: Data(contentsOf: url))) ?? TrashManifest()
+        if let modified { cache.withLock { $0 = (url, modified, manifest) } }
+        return manifest
     }
 
     func write(in directory: URL) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let url = Self.url(in: directory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? encoder.encode(self).write(to: Self.url(in: directory), options: .atomic)
+        try? encoder.encode(self).write(to: url, options: .atomic)
+        let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        Self.cache.withLock { $0 = modified.map { (url, $0, self) } }
     }
 }
 

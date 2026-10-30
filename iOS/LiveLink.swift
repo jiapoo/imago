@@ -161,21 +161,18 @@ private extension PHAuthorizationStatus {
     var canRead: Bool { self == .authorized || self == .limited }
 }
 
-/// Calls `changed` on the main actor whenever the Photos library changes, while it's kept.
-private final class LibraryWatcher: NSObject, PHPhotoLibraryChangeObserver, @unchecked Sendable {
-    private let changed: @MainActor () -> Void
+/// Calls `changed` on the main actor whenever the Photos library changes, while it's kept: once the
+/// library list has taken the change in (see `LibraryList`), so a list read then includes it.
+private final class LibraryWatcher: @unchecked Sendable {
+    private var token: NSObjectProtocol?
 
     init(changed: @escaping @MainActor () -> Void) {
-        self.changed = changed
-        super.init()
-        PHPhotoLibrary.shared().register(self)
+        token = NotificationCenter.default.addObserver(forName: LibraryList.changed, object: nil, queue: nil) { _ in
+            Task { @MainActor in changed() }
+        }
     }
 
-    deinit { PHPhotoLibrary.shared().unregisterChangeObserver(self) }
-
-    func photoLibraryDidChange(_ changeInstance: PHChange) {
-        Task { @MainActor in changed() }
-    }
+    deinit { token.map(NotificationCenter.default.removeObserver) }
 }
 
 /// Takes in the files of a put-back from the Mac (version 7): each asset's details, then its files in
