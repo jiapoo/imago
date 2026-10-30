@@ -61,6 +61,35 @@ extension BackupStore {
         snapshotCache = snapshotModified().map { ($0, snapshot) }
     }
 
+    /// Takes what changed on the phone since its list was last sent (`libraryChanges`, over the live
+    /// link) into the saved snapshot. Returns false when there's no snapshot to take it into.
+    @discardableResult
+    func applyLibraryChanges(changed: [ManifestEntry], removed: [String], albums: [String]) throws -> Bool {
+        guard var snapshot = savedSnapshot() else { return false }
+        let gone = Set(removed)
+        var position: [String: Int] = [:]
+        for (i, entry) in snapshot.entries.enumerated() { position[entry.metadata.assetID] = i }
+        var added: [ManifestEntry] = []
+        for entry in changed {
+            if let i = position[entry.metadata.assetID] { snapshot.entries[i] = entry } else { added.append(entry) }
+        }
+        if !gone.isEmpty { snapshot.entries.removeAll { gone.contains($0.metadata.assetID) } }
+        // Oldest first, as the phone lists them.
+        for entry in added {
+            let date = entry.metadata.creationDate ?? .distantPast
+            var low = 0, high = snapshot.entries.count
+            while low < high {
+                let mid = (low + high) / 2
+                if (snapshot.entries[mid].metadata.creationDate ?? .distantPast) <= date { low = mid + 1 } else { high = mid }
+            }
+            snapshot.entries.insert(entry, at: low)
+        }
+        snapshot.albums = albums
+        snapshot.takenAt = .now
+        try saveSnapshot(snapshot)
+        return true
+    }
+
     /// The last snapshot joined with what's stored. Nil before the phone's first version-4 backup.
     func phoneLibrary() -> PhoneLibrary? {
         guard let snapshot = savedSnapshot() else { return nil }

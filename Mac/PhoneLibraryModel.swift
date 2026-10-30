@@ -135,7 +135,7 @@ final class PhoneLibraryModel {
         }
 
         var changed = false
-        let snapshotKey = "\(server.catalogRevision)|\(await store.snapshotModified()?.timeIntervalSince1970 ?? 0)"
+        let snapshotKey = "\(server.catalogRevision)|\(server.indexRevision[device.id, default: 0])|\(await store.snapshotModified()?.timeIntervalSince1970 ?? 0)"
         if snapshotKey != loadedSnapshot {
             guard let library = await store.phoneLibrary() else { state = .noSnapshot; return }
             loadedSnapshot = snapshotKey

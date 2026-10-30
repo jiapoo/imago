@@ -66,7 +66,7 @@ struct PhoneBrowserView: View {
         .navigationTitle(device.name)
         .navigationSubtitle(subtitle)
         .toolbar { toolbar }
-        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])") {
+        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])-\(server.indexRevision[device.id, default: 0])") {
             server.loadPreviews(for: device)
             await model.load(from: server)
         }

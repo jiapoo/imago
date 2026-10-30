@@ -54,6 +54,23 @@ nonisolated final class DriveScan: @unchecked Sendable {
         listing(of: directory.lexicallyStandardized)?.folders ?? []
     }
 
+    /// The photos and videos directly in `directory` (not in folders inside it), and the folders
+    /// in it; nil when it isn't there.
+    func contents(of directory: URL) -> (media: [URL], folders: [URL])? {
+        let folder = directory.lexicallyStandardized
+        guard let listing = listing(of: folder) else { return nil }
+        return (listing.media.map { folder.appending(path: $0) },
+                listing.folders.map { folder.appending(path: $0, directoryHint: .isDirectory) })
+    }
+
+    /// Lists these folders again next time, whatever their dates say: they changed (`DriveWatcher`),
+    /// and a drive that keeps dates to the second can change twice within one.
+    func forget(_ folders: [URL]) {
+        lock.withLock {
+            for folder in folders { listings?[folder.lexicallyStandardized.path] = nil }
+        }
+    }
+
     /// Keeps the listings for next launch, if any changed. Call after a scan.
     func save() {
         let snapshot: [String: Listing]? = lock.withLock {

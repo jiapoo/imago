@@ -53,7 +53,7 @@ struct DeviceView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(device.name)
-        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])") { await model.load(from: server) }
+        .task(id: "\(server.catalogRevision)-\(server.libraryRevision[device.id, default: 0])-\(server.indexRevision[device.id, default: 0])") { await model.load(from: server) }
         .confirmationDialog("Remove “\(device.name)”?", isPresented: $confirmingRemove) {
             Button("Remove iPhone", role: .destructive) { server.remove(device) }
         } message: {

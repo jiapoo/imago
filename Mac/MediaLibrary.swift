@@ -216,12 +216,25 @@ final class MediaLibrary {
         var files: Set<URL>
     }
 
+    /// Hears about changes on the drive made outside Imago (see `DriveWatcher`, `reconcile`).
+    private var watcher: DriveWatcher?
+    /// Folders the watcher said changed, waiting for `reconcile`.
+    private var changedFolders: Set<URL> = []
+    /// The watcher lost track of what changed: the library is read again instead.
+    private var changedBelow = false
+    private var reconciling: Task<Void, Never>?
+    /// File work under way here (moves, copies). Changes on the drive wait until it's done and shown,
+    /// so its files aren't taken for new ones.
+    private var working = 0
+
     /// Items over this size show in Large Files.
     static let largeFileBytes: UInt64 = 20_000_000
 
     // MARK: Reading
 
     func load(from server: BackupServer, force: Bool = false) async {
+        server.mediaLibrary = self
+        watch(server)
         guard force || loadedRevision != server.catalogRevision else { return }
         loadedRevision = server.catalogRevision
         if let loading {
@@ -385,22 +398,100 @@ final class MediaLibrary {
             loadAgain = true
             return
         }
-        // Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now.
-        if server.acceptPhoneChanges || server.trashDays > 0 {
-            let due = server.devices.flatMap { deletedOnPhone($0.id) }
-                .filter { !restoring.contains($0.id)
-                    && (server.acceptPhoneChanges || (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0) }
-            if !due.isEmpty {
-                _ = await trash(due, server: server)
-                return
-            }
-        }
+        if await moveDeletedOnPhone(server) { return }
 
         // Past their days in Recently Deleted: gone for good.
         if server.trashDays > 0 {
             let expired = trash.filter { $0.isExpired(keeping: server.trashDays) }
             if !expired.isEmpty { await deleteNow(expired, server: server) }
         }
+    }
+
+    /// Some of an iPhone's assets changed in its index (sent to it, taken back, put back under new IDs):
+    /// just those are read again, not the whole library. `files`: files on the drive that may have
+    /// become one of its assets (they leave the page as plain files), or stopped being one (they come
+    /// back as plain files, if they're still there).
+    func assetsChanged(_ assetIDs: Set<String>, files: [URL], on device: PairedDevice, server: BackupServer) async {
+        guard state == .ready, let store = server.store(for: device) else { return }
+        let foldersURL = server.foldersURL
+        let trashURL = server.trashURL
+        let reserved = server.reservedFolderNames
+        let deviceID = device.id
+        let entries = await store.catalogEntries(of: assetIDs)
+        let (built, manifest, plain) = await Task.detached(priority: .userInitiated) {
+            let built = Self.items(from: entries, deviceID: deviceID, foldersURL: foldersURL, trashURL: trashURL, reserved: reserved)
+            let held = Set(built.files.map(\.lexicallyStandardized.path))
+            let plain = files.map(\.lexicallyStandardized)
+                .filter { !held.contains($0.path) && FileManager.default.fileExists(atPath: $0.path) }
+                .map { Self.fileItem($0, in: foldersURL, reserved: reserved) }
+            return (built, TrashManifest.read(in: trashURL), plain)
+        }.value
+
+        let ids = Set(assetIDs.map { "\(deviceID)/\($0)" })
+        let paths = Set((files + built.files).map(\.lexicallyStandardized.path))
+        func leaving(_ item: MediaItem) -> Bool {
+            ids.contains(item.id) || (item.deviceID == nil && paths.contains(item.url.lexicallyStandardized.path))
+        }
+        items.removeAll(where: leaving)
+        trash.removeAll { leaving($0.item) }
+        // Still plain files elsewhere on the page (another iPhone's index may hold them): not twice.
+        let shown = Set(items.map(\.url.lexicallyStandardized.path) + trash.map(\.item.url.lexicallyStandardized.path))
+        items += built.items
+        items += plain.filter { !Self.isInside($0.url, trashURL) && !shown.contains($0.url.path) }
+        trash += built.trashed.map { item in
+            let record = manifest.entries[item.id]
+            return TrashedItem(item: item, deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .phoneFolder)
+        }
+        trash += plain.filter { Self.isInside($0.url, trashURL) && !shown.contains($0.url.path) }.map { item in
+            var item = item
+            item.folder = nil
+            let record = manifest.entries[TrashManifest.key(forFile: item.url)]
+            return TrashedItem(item: item, deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .folder(""))
+        }
+        items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        trash.sort { $0.deletedAt > $1.deletedAt }
+        selection.formIntersection(items.map(\.id) + trash.map(\.id))
+        folders = folderTree()
+        sendingPaths.formIntersection(server.devices.flatMap { notSynced(on: $0) }.map(\.url.path))
+        changedHere()
+        findFolderCopies(server)
+    }
+
+    /// Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now (or
+    /// once its days are up). Returns whether anything moved.
+    private func moveDeletedOnPhone(_ server: BackupServer) async -> Bool {
+        guard server.acceptPhoneChanges || server.trashDays > 0 else { return false }
+        let due = server.devices.flatMap { deletedOnPhone($0.id) }
+            .filter { !restoring.contains($0.id)
+                && (server.acceptPhoneChanges || (daysUntilMoved($0, keeping: server.trashDays) ?? 1) == 0) }
+        guard !due.isEmpty else { return false }
+        _ = await trash(due, server: server)
+        return true
+    }
+
+    /// An iPhone's library list or its changes changed (over the live link): what's on it, what's
+    /// waiting for it and what it turned down are read again, and what it deleted is noted, without
+    /// reading the rest of the library.
+    func phoneListChanged(_ device: PairedDevice, server: BackupServer) async {
+        guard state == .ready, let store = server.store(for: device) else { return }
+        let prefix = device.id + "/"
+        let queue = await store.changeQueue()
+        pendingRemoval = pendingRemoval.filter { !$0.hasPrefix(prefix) }
+            .union(queue.pending.filter { $0.action == .delete }.flatMap { $0.assetIDs.map { prefix + $0 } })
+        restoring = restoring.filter { !$0.hasPrefix(prefix) }
+            .union(queue.pending.filter { $0.action == .restore }.flatMap { $0.assetIDs.map { prefix + $0 } })
+        declines = declines.filter { $0.device.id != device.id }
+            + queue.done.filter { $0.report.outcome == .declined && $0.resolution == nil }.map { Decline(device: device, done: $0) }
+        let stamp = "\(await store.snapshotModified()?.timeIntervalSince1970 ?? 0)|\(await store.resourceCount())"
+        if phoneCache[device.id]?.stamp != stamp, let library = await store.phoneLibrary() {
+            let assets = Dictionary(library.assets.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            phoneCache[device.id] = (stamp, assets)
+            onPhone[device.id] = assets
+        }
+        changedHere()
+        await noteLeftPhone(server)
+        if await settleFinalAnswers(server) { return }
+        _ = await moveDeletedOnPhone(server)
     }
 
     /// Days before an item on Deleted on iPhone moves to Recently Deleted, rounded up; nil when it isn't
@@ -700,12 +791,12 @@ final class MediaLibrary {
         let trashURL = server.trashURL
         activity = Activity(title: "Deleting for good", done: 0, total: items.count)
         defer { activity = nil }
-        await perform(server, quietly: true) {
+        await perform(server) {
             defer {
                 let gone = Set(items.map(\.id))
                 trash.removeAll { gone.contains($0.id) }
                 selection.subtract(gone)
-                revision += 1
+                changedHere()
             }
             for (deviceID, assets) in Dictionary(grouping: items.map(\.item).filter { $0.deviceID != nil }, by: { $0.deviceID! }) {
                 guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
@@ -806,7 +897,7 @@ final class MediaLibrary {
                 Thumbnails.shared.carryOver(from: was.url, to: now.url, bytes: was.bytes)
             }
         }
-        await perform(server, quietly: true) {
+        await perform(server) {
             defer { showMoves(landed, server: server) }
             let phoneMoves = wanted.filter { $0.item.deviceID != nil }
             for (key, group) in Dictionary(grouping: phoneMoves, by: { "\($0.item.deviceID!)|\(String(describing: $0.to))" }) {
@@ -984,12 +1075,13 @@ final class MediaLibrary {
         var renamed = false
         await perform(server) {
             try FileManager.default.moveItem(at: old, to: new)
+            renamed = true
             for device in server.devices {
                 await server.store(for: device)?.folderMoved(from: old, to: new)
             }
-            renamed = true
         }
         guard renamed else { return nil }
+        showRenamed(path, to: newPath, server: server)
         let oldName = (path as NSString).lastPathComponent
         return (newPath, FileHistory.Step(name: "Rename Folder") { [weak self] in
             await self?.renameFolder(newPath, to: oldName, server: server)?.undo
@@ -1056,24 +1148,203 @@ final class MediaLibrary {
         if left.isEmpty { try? FileManager.default.removeItem(at: legacy) }
     }
 
+    // MARK: Changes on the drive
+
+    func beginWork() { working += 1 }
+
+    func endWork() { working -= 1 }
+
+    /// Watches the backup location for changes made outside Imago, while it's there.
+    private func watch(_ server: BackupServer) {
+        guard server.location.isAvailable else {
+            watcher = nil
+            return
+        }
+        let root = server.location.url.lexicallyStandardized
+        guard watcher?.root != root else { return }
+        watcher = DriveWatcher(root: root) { [weak self, weak server] folders, below in
+            Task { @MainActor in
+                guard let self, let server else { return }
+                self.driveChanged(folders, below: below, server: server)
+            }
+        }
+    }
+
+    /// Folders changed on the drive: a moment later, once any work here is done, the items in just
+    /// those folders are brought up to date (`reconcile`). What's hidden (`.photobackup`, sidecars)
+    /// doesn't count.
+    private func driveChanged(_ folders: [URL], below: Bool, server: BackupServer) {
+        let root = server.location.url.lexicallyStandardized.pathComponents
+        let visible = folders.map(\.lexicallyStandardized).filter { folder in
+            let parts = folder.pathComponents
+            return parts.count >= root.count && Array(parts.prefix(root.count)) == root
+                && !parts.dropFirst(root.count).contains { $0.hasPrefix(".") }
+        }
+        guard !visible.isEmpty || below else { return }
+        changedFolders.formUnion(visible)
+        changedBelow = changedBelow || below
+        guard reconciling == nil else { return }
+        reconciling = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            while let self, !Task.isCancelled, !self.changedFolders.isEmpty || self.changedBelow {
+                // Nothing shown to bring up to date: the next read of the library shows the drive as it is.
+                if self.state != .ready {
+                    self.changedFolders = []
+                    self.changedBelow = false
+                    break
+                }
+                // After work here and any read under way: they show their own changes.
+                if self.working > 0 || self.loading != nil {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    continue
+                }
+                if self.changedBelow {
+                    self.changedBelow = false
+                    self.changedFolders = []
+                    self.refreshQuietly(server)
+                    continue
+                }
+                let folders = self.changedFolders
+                self.changedFolders = []
+                await self.reconcile(folders, server: server)
+            }
+            self?.reconciling = nil
+        }
+    }
+
+    /// Brings the items in these folders up to date with what's on the drive: files added there show,
+    /// files gone from there leave. Their own changes Imago has shown already, so for those nothing
+    /// differs. A file another iPhone's index lost (moved in Finder) has the library read again, to
+    /// show it with its iPhone's details.
+    private func reconcile(_ folders: Set<URL>, server: BackupServer) async {
+        let generation = loadGeneration
+        let root = server.foldersURL.lexicallyStandardized
+        let trashURL = server.trashURL.lexicallyStandardized
+        let reserved = server.reservedFolderNames
+        let phoneFolders = Set(server.devices.map(\.folder))
+        let shown = (items + trash.map(\.item)).map { ($0.url.lexicallyStandardized, $0.deviceID != nil) }
+
+        let (candidates, gone) = await Task.detached(priority: .userInitiated) { () -> ([URL], Set<String>) in
+            var shownIn: [String: Set<String>] = [:]
+            var knownFolders: Set<String> = []
+            for (url, _) in shown {
+                var folder = url.deletingLastPathComponent()
+                shownIn[folder.path, default: []].insert(url.path)
+                while folder.pathComponents.count > root.pathComponents.count, knownFolders.insert(folder.path).inserted {
+                    folder = folder.deletingLastPathComponent()
+                }
+            }
+            /// Where the library looks: the user's folders, the iPhones' own folders and Recently Deleted.
+            func isLookedAt(_ folder: URL) -> Bool {
+                let parts = folder.pathComponents
+                let base = root.pathComponents
+                guard parts.count > base.count, Array(parts.prefix(base.count)) == base else { return false }
+                let top = parts[base.count]
+                return !reserved.contains(top) || phoneFolders.contains(top) || Self.isInside(folder, trashURL) || folder == trashURL
+            }
+            DriveScan.shared.forget(Array(folders))
+            var candidates: [URL] = []
+            var gone: Set<String> = []
+            var goneBelow: [String] = []
+            for folder in folders {
+                guard folder == root || isLookedAt(folder) else { continue }
+                guard let contents = DriveScan.shared.contents(of: folder) else {
+                    goneBelow.append(folder.path + "/")
+                    continue
+                }
+                if folder != root {
+                    let disk = Set(contents.media.map(\.path))
+                    let here = shownIn[folder.path] ?? []
+                    candidates += contents.media.filter { !here.contains($0.path) }
+                    gone.formUnion(here.subtracting(disk))
+                }
+                // Folders new to the library (copied in, renamed in Finder): everything in them.
+                let inside = Set(contents.folders.map(\.path))
+                for sub in contents.folders where !knownFolders.contains(sub.path) && isLookedAt(sub) {
+                    candidates += DriveScan.shared.mediaFiles(in: sub)
+                }
+                // Folders that left it: everything that was in them.
+                for known in knownFolders where URL(filePath: known).deletingLastPathComponent().path == folder.path && !inside.contains(known) {
+                    goneBelow.append(known + "/")
+                }
+            }
+            for (url, _) in shown where goneBelow.contains(where: { url.path.hasPrefix($0) }) { gone.insert(url.path) }
+            DriveScan.shared.save()
+            return (candidates, gone)
+        }.value
+
+        // Files an iPhone's index holds are that iPhone's (a Live Photo's video, a received file):
+        // the index says what they are.
+        var unknown = Array(Set(candidates))
+        let stores = server.devices.compactMap { server.store(for: $0) }
+        for store in stores where !unknown.isEmpty {
+            let held = await store.held(unknown)
+            unknown.removeAll { held.contains($0) }
+        }
+        var claimed: Set<URL> = []
+        for store in stores where !unknown.isEmpty {
+            claimed.formUnion(await store.relink(unknown.filter { !claimed.contains($0) }))
+        }
+        if !claimed.isEmpty {
+            refreshQuietly(server)
+            return
+        }
+        // Gone from where an iPhone's index has them: the next read of the library sorts those out.
+        let leaving = gone.subtracting(shown.filter(\.1).map(\.0.path))
+        guard !unknown.isEmpty || !leaving.isEmpty else { return }
+        let manifest = await Task.detached(priority: .userInitiated) { TrashManifest.read(in: trashURL) }.value
+        let added = await Task.detached(priority: .userInitiated) {
+            unknown.map { Self.fileItem($0, in: root, reserved: reserved) }
+        }.value
+        // Changed here meanwhile: look at these folders again.
+        guard generation == loadGeneration else {
+            changedFolders.formUnion(folders)
+            return
+        }
+        items.removeAll { $0.deviceID == nil && leaving.contains($0.url.lexicallyStandardized.path) }
+        trash.removeAll { $0.item.deviceID == nil && leaving.contains($0.item.url.lexicallyStandardized.path) }
+        for item in added {
+            if Self.isInside(item.url, trashURL) {
+                var item = item
+                item.folder = nil
+                let record = manifest.entries[TrashManifest.key(forFile: item.url)]
+                trash.append(TrashedItem(item: item, deletedAt: record?.deletedAt ?? .now, originalPlace: record?.from ?? .folder("")))
+            } else {
+                items.append(item)
+            }
+        }
+        items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+        trash.sort { $0.deletedAt > $1.deletedAt }
+        selection.formIntersection(items.map(\.id) + trash.map(\.id))
+        await reloadFolders(server)
+        changedHere()
+        findFolderCopies(server)
+        sendNotSynced(server)
+    }
+
     // MARK: Helpers
 
-    /// Does file work, then reads the library again. `quietly`: the work already updated what's on
-    /// screen, so the re-read (every item, every folder on the drive) happens in the background.
-    private func perform(_ server: BackupServer, quietly: Bool = false, _ work: () async throws -> Void) async {
+    /// Does file work that updates what's on screen itself, as Finder does: the library isn't read
+    /// again after it. Only when the work fails partway is it read again (quietly), to show what
+    /// actually happened.
+    private func perform(_ server: BackupServer, _ work: () async throws -> Void) async {
+        working += 1
+        defer { working -= 1 }
         do {
             try await work()
         } catch {
             self.error = error.localizedDescription
-        }
-        if quietly {
             refreshQuietly(server)
-            return
         }
-        activity?.detail = "Updating the library"
-        activity?.finishing = true
-        await load(from: server, force: true)
-        await server.refreshSummaries()
+        Task { await server.refreshSummaries() }
+    }
+
+    /// What's on screen was just changed here, without reading the library (a move, a copy, an undo):
+    /// a read under way began before it, so it's dropped and runs once more.
+    private func changedHere() {
+        loadGeneration += 1
+        if loading != nil { loadAgain = true }
+        revision += 1
     }
 
     /// Files beside an iPhone's backups that it doesn't have (an edited copy saved next to its
@@ -1138,7 +1409,7 @@ final class MediaLibrary {
     }
 
     /// Shows moved items where they went, straight away: in their new folder, in Recently Deleted, or
-    /// back out of it. The quiet re-read afterwards confirms it.
+    /// back out of it. The library isn't read again after.
     private func showMoves(_ landed: [(was: MediaItem, from: Place, to: Place, url: URL)], server: BackupServer) {
         guard !landed.isEmpty else { return }
         let foldersURL = server.foldersURL
@@ -1168,35 +1439,82 @@ final class MediaLibrary {
             items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         }
         selection.subtract(oldIDs.subtracting(added.map(\.id)))
-        folders = Self.tree(Self.paths(of: folders), items: items)
-        revision += 1
+        folders = folderTree(adding: added.compactMap(\.folder))
+        changedHere()
+        findFolderCopies(server)
     }
 
-    /// Shows files just copied into folders, straight away; the quiet re-read afterwards confirms it.
+    /// Shows a renamed folder's items in it under its new name, and the folder in the sidebar.
+    private func showRenamed(_ path: String, to newPath: String, server: BackupServer) {
+        let oldBase = server.foldersURL.appending(path: path, directoryHint: .isDirectory).lexicallyStandardized.path
+        let newBase = server.foldersURL.appending(path: newPath, directoryHint: .isDirectory).lexicallyStandardized.path
+        func renamed(_ folder: String) -> String? {
+            folder == path ? newPath : folder.hasPrefix(path + "/") ? newPath + folder.dropFirst(path.count) : nil
+        }
+        var paths = Self.paths(of: folders).map { renamed($0) ?? $0 }
+        paths.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        var oldIDs: [String: String] = [:]
+        for i in items.indices {
+            guard let folder = items[i].folder, let moved = renamed(folder) else { continue }
+            let was = items[i]
+            items[i].folder = moved
+            items[i].url = URL(filePath: newBase + was.url.lexicallyStandardized.path.dropFirst(oldBase.count))
+            if was.deviceID == nil {
+                items[i].id = items[i].url.path
+                oldIDs[was.id] = items[i].id
+            }
+            Thumbnails.shared.carryOver(from: was.url, to: items[i].url, bytes: was.bytes)
+        }
+        selection = Set(selection.map { oldIDs[$0] ?? $0 })
+        folders = Self.tree(paths, items: items)
+        changedHere()
+        findFolderCopies(server)
+    }
+
+    /// Shows files just copied into folders, straight away.
     func showCopies(_ urls: [URL], server: BackupServer) {
         guard !urls.isEmpty else { return }
         let foldersURL = server.foldersURL
         let reserved = server.reservedFolderNames
-        items.append(contentsOf: urls.map { Self.fileItem($0.lexicallyStandardized, in: foldersURL, reserved: reserved) })
+        let added = urls.map { Self.fileItem($0.lexicallyStandardized, in: foldersURL, reserved: reserved) }
+        items.append(contentsOf: added)
         items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
-        folders = Self.tree(Self.paths(of: folders), items: items)
-        revision += 1
+        folders = folderTree(adding: added.compactMap { Self.folderPath(of: $0.url, in: foldersURL, reserved: reserved) })
+        changedHere()
+        findFolderCopies(server)
         sendNotSynced(server)
     }
 
-    /// Takes files that were just removed (an undone copy) off the page, then re-reads quietly.
+    /// Takes files that were just removed (an undone copy) off the page.
     func hideRemoved(_ urls: [URL], server: BackupServer) {
         let gone = Set(urls.map { $0.lexicallyStandardized.path })
         items.removeAll { $0.deviceID == nil && gone.contains($0.url.lexicallyStandardized.path) }
         selection.subtract(gone)
-        folders = Self.tree(Self.paths(of: folders), items: items)
-        revision += 1
-        refreshQuietly(server)
+        folders = folderTree()
+        changedHere()
+        findFolderCopies(server)
     }
 
     /// Every folder's path in a tree, parents first.
     private static func paths(of folders: [Folder]) -> [String] {
         folders.flatMap { [$0.path] + paths(of: $0.children ?? []) }
+    }
+
+    /// The folders again with their counts worked out anew, and `adding` (and the folders they're
+    /// in) among them: a move or copy into a folder that was just made.
+    private func folderTree(adding new: [String] = []) -> [Folder] {
+        var paths = Self.paths(of: folders)
+        var known = Set(paths)
+        for path in new where !path.isEmpty {
+            var parts: [String] = []
+            for part in path.split(separator: "/") {
+                parts.append(String(part))
+                let path = parts.joined(separator: "/")
+                if known.insert(path).inserted { paths.append(path) }
+            }
+        }
+        paths.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        return Self.tree(paths, items: items)
     }
 
     nonisolated private static func isInside(_ url: URL, _ directory: URL) -> Bool {

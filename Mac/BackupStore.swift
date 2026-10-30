@@ -4,7 +4,7 @@ import ImagoKit
 /// Owns the backup folder: partial uploads, verified moves into the dated layout, sidecars,
 /// and a fast index. The index is a cache; `rebuildIndex()` recreates it from the sidecars.
 actor BackupStore {
-    struct StoredResource: Codable {
+    struct StoredResource: Codable, Equatable {
         var assetID: String
         var relativePath: String
         var sha256: String
@@ -29,7 +29,7 @@ actor BackupStore {
         }
     }
 
-    struct AssetRecord: Codable {
+    struct AssetRecord: Codable, Equatable {
         var metadata: AssetMetadata
         /// Path of its sidecar, relative to `root`. Nil until it's been looked up.
         var sidecar: String?
@@ -99,7 +99,10 @@ actor BackupStore {
     private let layout = LibraryLayout()
     /// Read on first use, on the actor, not in `init`: the server makes stores on the main actor,
     /// and a slow or failing drive would freeze the app there.
-    private lazy var storedIndex: Index = (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
+    private lazy var storedIndex: Index = openIndex()
+    /// The index as last saved: a save writes only what differs from it (`IndexDatabase.save`).
+    private var savedIndex = Index()
+    private var database: IndexDatabase?
     /// Counts changes to the index, so what's worked out from it (`catalog`) is kept until it changes.
     /// Every change goes through `index`, so none is missed.
     private var indexVersion = 0
@@ -119,6 +122,8 @@ actor BackupStore {
     var snapshotCache: (modified: Date, snapshot: PhoneSnapshot)?
     /// For `relink`: the index's files by name, and the files already looked for in it.
     private var relinkCache: (version: Int, byName: [String: [String]], checked: Set<URL>)?
+    /// For `held`: the paths of every stored file.
+    private var heldCache: (version: Int, paths: Set<String>)?
     private var inFlight: [ResourceKey: InFlight] = [:]
     private var unsavedChanges = 0
     private var lastIndexSave = ContinuousClock.now
@@ -126,7 +131,9 @@ actor BackupStore {
 
     nonisolated var stateDirectory: URL { root.appending(path: ".photobackup", directoryHint: .isDirectory) }
     private nonisolated var partialDirectory: URL { stateDirectory.appending(path: "partial", directoryHint: .isDirectory) }
+    /// Where the index was kept before it was a database; read once, then kept as `index.json.migrated`.
     private nonisolated var indexURL: URL { stateDirectory.appending(path: "index.json") }
+    private nonisolated var databaseURL: URL { stateDirectory.appending(path: "index.sqlite") }
     private nonisolated var skipURL: URL { stateDirectory.appending(path: "skip.json") }
     /// Files moved to the Trash on the Mac, by key. The phone isn't asked for them again.
     private lazy var skipped: Set<String> = (try? JSONDecoder().decode(Set<String>.self, from: Data(contentsOf: skipURL))) ?? []
@@ -222,11 +229,10 @@ actor BackupStore {
             assetID: key.assetID, relativePath: relativePath, sha256: actual, size: size, storedAt: .now
         )
         unsavedChanges += 1
-        // The whole index is written each time (13 MB for a big library), so during a backup it's
-        // written every 50 files at most twice a minute; the rest when the session ends (`flush`).
-        // Files that arrived after the last write are still on the drive if Imago quits meanwhile:
-        // the next backup asks for them again and finds them already there.
-        if unsavedChanges >= 50, ContinuousClock.now - lastIndexSave > .seconds(30) { try saveIndex() }
+        // A save writes only the rows that changed, so every few files is cheap. Files that arrived
+        // after the last save are still on the drive if Imago quits meanwhile: the next backup asks
+        // for them again and finds them already there.
+        if unsavedChanges >= 10 || ContinuousClock.now - lastIndexSave > .seconds(5) { try saveIndex() }
         return relativePath
     }
 
@@ -342,16 +348,24 @@ actor BackupStore {
         if let catalogCache, catalogCache.version == indexVersion { return catalogCache.entries }
         let byAsset = resourcesByAsset()
         fillMissingRecords(byAsset)
-        let entries = byAsset.compactMap { assetID, keys -> CatalogEntry? in
-            guard let metadata = index.assets[assetID]?.metadata else { return nil }
-            let files = keys.compactMap { key -> CatalogEntry.File? in
-                guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
-                return .init(kind: kind, url: url(of: stored.relativePath), size: stored.size, sha256: stored.sha256)
-            }
-            return CatalogEntry(assetID: assetID, metadata: metadata, files: files)
-        }
+        let entries = byAsset.compactMap(catalogEntry)
         catalogCache = (indexVersion, entries)
         return entries
+    }
+
+    /// Just these assets as the catalog has them; ones with no files here are left out. For updating
+    /// the library after a change to a few, without building the whole catalog again.
+    func catalogEntries(of assetIDs: Set<String>) -> [CatalogEntry] {
+        resourcesByAsset(only: assetIDs).compactMap(catalogEntry)
+    }
+
+    private func catalogEntry(_ assetID: String, keys: [String]) -> CatalogEntry? {
+        guard let metadata = index.assets[assetID]?.metadata else { return nil }
+        let files = keys.compactMap { key -> CatalogEntry.File? in
+            guard let stored = index.resources[key], let kind = Self.kind(of: key, assetID: assetID) else { return nil }
+            return .init(kind: kind, url: url(of: stored.relativePath), size: stored.size, sha256: stored.sha256)
+        }
+        return CatalogEntry(assetID: assetID, metadata: metadata, files: files)
     }
 
     /// The catalog, and the version of the index it came from: the same version, the same catalog.
@@ -558,6 +572,15 @@ actor BackupStore {
         try settleSidecar(of: assetID, keys: [key], in: (path as NSString).deletingLastPathComponent)
         try saveIndex()
         return assetID
+    }
+
+    /// Which of `files` are this iPhone's stored files.
+    func held(_ files: [URL]) -> Set<URL> {
+        if heldCache?.version != indexVersion {
+            heldCache = (indexVersion, Set(index.resources.values.map { url(of: $0.relativePath).path }))
+        }
+        guard let paths = heldCache?.paths else { return [] }
+        return Set(files.filter { paths.contains($0.lexicallyStandardized.path) })
     }
 
     /// Whether a file is one of this iPhone's stored files.
@@ -815,9 +838,35 @@ actor BackupStore {
         return try? decoder.decode(Sidecar.self, from: Data(contentsOf: url))
     }
 
+    /// Opens the index's database, moving an index from before it was one into it.
+    private func openIndex() -> Index {
+        guard fileManager.fileExists(atPath: databaseURL.path) || fileManager.fileExists(atPath: indexURL.path) else { return Index() }
+        do {
+            try prepareStateDirectory()
+            let database = try IndexDatabase(url: databaseURL)
+            self.database = database
+            if database.isEmpty, let data = try? Data(contentsOf: indexURL), let old = try? JSONDecoder().decode(Index.self, from: data) {
+                try database.save(old, over: Index())
+                try? fileManager.removeItem(at: indexURL.appendingPathExtension("migrated"))
+                try? fileManager.moveItem(at: indexURL, to: indexURL.appendingPathExtension("migrated"))
+                savedIndex = old
+                return old
+            }
+            let read = try database.read()
+            savedIndex = read
+            return read
+        } catch {
+            // Unreadable: the sidecars can rebuild it (`rebuildIndex`).
+            return (try? JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))) ?? Index()
+        }
+    }
+
     private func saveIndex() throws {
         try prepareStateDirectory()
-        try JSONEncoder().encode(index).write(to: indexURL, options: .atomic)
+        if database == nil { database = try IndexDatabase(url: databaseURL) }
+        let current = index
+        try database?.save(current, over: savedIndex)
+        savedIndex = current
         unsavedChanges = 0
         lastIndexSave = .now
     }

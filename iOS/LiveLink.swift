@@ -20,6 +20,9 @@ final class LiveLink {
     private var peer: PeerConnection?
     /// Sends the library list after a change, a moment after the last one (see `scheduleLibraryList`).
     private var librarySend: Task<Void, Never>?
+    /// The library list as the Mac last got it this session, by asset ID, and its albums: after the
+    /// whole list once, only what differs from this goes (`libraryChanges`). Nil until the list went.
+    private var sentList: (entries: [String: ManifestEntry], albums: [String])?
     private var watcher: LibraryWatcher?
 
     init(client: BackupClient) {
@@ -134,26 +137,46 @@ extension LiveLink {
         librarySend = Task {
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, PHPhotoLibrary.authorizationStatus(for: .readWrite).canRead else { return }
-            let (manifest, albums) = await Task.detached(priority: .utility) {
-                (PhotoLibrary.scan(), PhotoLibrary.albumTitles())
+            let sent = sentList
+            let (manifest, albums, changes) = await Task.detached(priority: .utility) {
+                let manifest = PhotoLibrary.scan()
+                let albums = PhotoLibrary.albumTitles()
+                return (manifest, albums, sent.map { Self.changes(from: $0, to: manifest, albums: albums) })
             }.value
             guard !Task.isCancelled else { return }
             do {
-                for start in stride(from: 0, to: manifest.count, by: 500) {
-                    try await peer.send(.control(.manifest(Array(manifest[start..<min(start + 500, manifest.count)]))))
+                // The whole list once a session; after that only what changed, if anything did.
+                if let changes, changes.changed.count + changes.removed.count < 2000 {
+                    guard !changes.changed.isEmpty || !changes.removed.isEmpty || albums != sent?.albums else { return }
+                    try await peer.send(.control(.libraryChanges(changed: changes.changed, removed: changes.removed, albums: albums)))
+                    log.info("Sent \(changes.changed.count) changed and \(changes.removed.count) removed over the live link")
+                } else {
+                    for start in stride(from: 0, to: manifest.count, by: 500) {
+                        try await peer.send(.control(.manifest(Array(manifest[start..<min(start + 500, manifest.count)]))))
+                    }
+                    try await peer.send(.control(.manifestEnd(albums: albums)))
+                    log.info("Sent the library list (\(manifest.count) items) over the live link")
                 }
-                try await peer.send(.control(.manifestEnd(albums: albums)))
-                log.info("Sent the library list (\(manifest.count) items) over the live link")
+                sentList = (Dictionary(manifest.map { ($0.metadata.assetID, $0) }, uniquingKeysWith: { a, _ in a }), albums)
             } catch {
                 log.info("Couldn't send the library list: \(String(describing: error), privacy: .public)")
             }
         }
     }
 
+    /// What differs between the list as the Mac has it and `manifest`.
+    nonisolated private static func changes(from sent: (entries: [String: ManifestEntry], albums: [String]), to manifest: [ManifestEntry],
+                                            albums: [String]) -> (changed: [ManifestEntry], removed: [String]) {
+        let changed = manifest.filter { sent.entries[$0.metadata.assetID] != $0 }
+        let present = Set(manifest.map(\.metadata.assetID))
+        return (changed, sent.entries.keys.filter { !present.contains($0) })
+    }
+
     fileprivate func stopWatching() {
         librarySend?.cancel()
         librarySend = nil
         watcher = nil
+        sentList = nil
     }
 }
 

@@ -136,6 +136,15 @@ private func asset(
         #expect(String(decoding: try JSONEncoder().encode(ControlMessage.live), as: UTF8.self) == #"{"live":{}}"#)
     }
 
+    @Test func libraryChangesRoundTrip() throws {
+        let metadata = AssetMetadata(assetID: "a", originalFilename: "a", creationDate: Date(timeIntervalSince1970: 1_700_000_000), modificationDate: nil, mediaType: "photo",
+                                     pixelWidth: 1, pixelHeight: 1, duration: 0, isFavorite: true, location: nil, albums: ["Trips"])
+        let frame = Frame.control(.libraryChanges(changed: [ManifestEntry(metadata: metadata, resources: [])], removed: ["b", "c"], albums: ["Trips"]))
+        var decoder = FrameDecoder()
+        decoder.append(try FrameCodec.encode(frame))
+        #expect(try decoder.next() == frame)
+    }
+
     @Test func everyMessageNameIsListed() throws {
         let key = ResourceKey(assetID: "a", kind: .photo, revision: "original")
         let descriptor = ResourceDescriptor(key: key, originalFilename: "a", uti: "public.heic")
@@ -148,6 +157,7 @@ private func asset(
             .stored(key), .failed(key, reason: ""), .goodbye, .manifestEnd(albums: []), .changes([]), .changeReport([]),
             .live, .thumbnailRequest([]), .thumbnails([]),
             .restoreRequest(UUID()), .restoreAsset(RestoreAsset(metadata: metadata, files: [])), .restoreEnd(UUID(), missing: []),
+            .libraryChanges(changed: [ManifestEntry(metadata: metadata, resources: [descriptor])], removed: ["b"], albums: ["Trips"]),
         ]
         let names = try all.map { try (JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) as! [String: Any]).keys.first! }
         #expect(Set(names) == ControlMessage.names)

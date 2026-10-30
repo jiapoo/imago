@@ -1,10 +1,10 @@
 import Foundation
 
 public enum ProtocolVersion {
-    public static let current = 7
+    public static let current = 8
     /// Versions the Mac still accepts. A version-4 phone backs up as before; it just never opens a live
     /// session. Changes a phone's version doesn't know (`LibraryChange.Action.minimumVersion`) aren't sent to it.
-    public static let supported = 4...7
+    public static let supported = 4...8
 }
 
 /// Which file of an asset a resource is. Mirrors the PHAssetResourceType cases worth keeping.
@@ -189,6 +189,8 @@ public struct ResumePoint: Codable, Sendable, Hashable {
 ///   thumbnailRequest(Mac) → thumbnails   previews of photos the Mac hasn't backed up yet
 ///   restoreRequest → restoreAsset, chunk…, … restoreEnd (Mac)
 ///                                        version 7: the files of a `restore` change the user approved
+///   manifest…, manifestEnd               the whole library list, once per live session
+///   libraryChanges                       version 8: after that, only what changed in it
 ///   goodbye, or the connection just closes when the app leaves the screen
 public enum ControlMessage: Codable, Sendable, Equatable {
     case pairRequest(deviceID: String, deviceName: String, protocolVersion: Int)
@@ -226,11 +228,16 @@ public enum ControlMessage: Codable, Sendable, Equatable {
     /// Version 7: every asset of the restore with this change ID has been sent. Assets the Mac
     /// couldn't read (a file gone, or not matching its checksum) are listed in `missing`.
     case restoreEnd(UUID, missing: [String])
+    /// Version 8, over the live link after the whole list went once: what changed in the phone's
+    /// library since the list last sent. `changed` are the assets added or changed (whole entries),
+    /// `removed` the IDs of assets no longer there; `albums` lists every album title, as `manifestEnd`.
+    case libraryChanges(changed: [ManifestEntry], removed: [String], albums: [String])
 
     /// Every message name on the wire. A name not in here comes from a newer version and is skipped.
     public static let names: Set<String> = [
         "pairRequest", "paired", "hello", "welcome", "unavailable", "manifest", "need", "beginResource",
         "endResource", "stored", "failed", "goodbye", "manifestEnd", "changes", "changeReport",
         "live", "thumbnailRequest", "thumbnails", "restoreRequest", "restoreAsset", "restoreEnd",
+        "libraryChanges",
     ]
 }

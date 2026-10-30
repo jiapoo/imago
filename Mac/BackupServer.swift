@@ -53,6 +53,12 @@ final class BackupServer {
     private(set) var library: LibraryRecord?
     /// Bumped when files arrive or the location changes, so the library browser reloads.
     private(set) var catalogRevision = 0
+    /// Bumped when some of a phone's assets change in its index without a whole re-read (see
+    /// `assetsChanged`), so its page reads its library again.
+    private(set) var indexRevision: [String: Int] = [:]
+    /// The library, told which assets changed so it updates just those (`MediaLibrary.assetsChanged`)
+    /// instead of reading everything again.
+    @ObservationIgnored weak var mediaLibrary: MediaLibrary?
     /// Phones with Imago open right now, which get changes the moment they're made.
     private(set) var liveDevices: Set<String> = []
     /// Previews the phones sent of assets not backed up yet: device ID → asset ID → JPEG file.
@@ -389,6 +395,18 @@ final class BackupServer {
                         addLog("Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review", symbol: "iphone.and.arrow.forward")
                     }
                     libraryChanged(device.id)
+                    // A backup has the library read again when it ends.
+                    if isLive { await mediaLibrary?.phoneListChanged(device, server: self) }
+
+                case .control(.libraryChanges(let changed, let removed, let albums)):
+                    guard let store, let device else { peer.cancel(); break }
+                    do {
+                        try await store.applyLibraryChanges(changed: changed, removed: removed, albums: albums)
+                    } catch {
+                        addLog("Couldn't save \(device.name)'s library list: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                    }
+                    libraryChanged(device.id)
+                    await mediaLibrary?.phoneListChanged(device, server: self)
 
                 case .control(.changeReport(let reports)):
                     guard let store, let device else { break }
@@ -410,14 +428,17 @@ final class BackupServer {
                         let refused = Set(adds.filter { $0.report.outcome == .declined }.flatMap(\.change.assetIDs)).intersection(notAdded)
                         let files = await store.storedFiles(of: Array(refused))
                         declinedAdds.formUnion(files.values.flatMap { $0.map(\.url.path) })
+                        let notAddedFiles = await store.storedFiles(of: Array(notAdded)).values.flatMap { $0.map(\.url) }
                         try? await store.unadopt(notAdded)
-                        catalogRevision += 1
+                        await assetsChanged(notAdded, files: notAddedFiles, on: device)
                     }
                     let declined = recorded.filter { $0.report.outcome == .declined && !$0.change.addsFromMac }.map(\.change)
                     if !declined.isEmpty { MacNotifications.declined(declined, on: device.name) }
                     libraryChanged(device.id)
-                    // Put back under new IDs: the library reads the files' new names.
-                    if recorded.contains(where: { $0.report.restored?.isEmpty == false }) { catalogRevision += 1 }
+                    await mediaLibrary?.phoneListChanged(device, server: self)
+                    // Put back under new IDs: the library takes the files' new names.
+                    let restored = recorded.compactMap(\.report.restored).flatMap { $0.flatMap { [$0.key, $0.value] } }
+                    if !restored.isEmpty { await assetsChanged(restored, on: device) }
 
                 case .control(.live):
                     guard let store, let device else { peer.cancel(); break }
@@ -495,6 +516,18 @@ final class BackupServer {
         libraryRevision[deviceID, default: 0] += 1
     }
 
+    /// Some of a phone's assets changed in its index (sent to it, taken back, put back under new IDs):
+    /// the library updates just those. `files`: files on the drive that may have become, or stopped
+    /// being, one of its assets.
+    private func assetsChanged(_ assetIDs: some Sequence<String>, files: [URL] = [], on device: PairedDevice) async {
+        indexRevision[device.id, default: 0] += 1
+        if let mediaLibrary {
+            await mediaLibrary.assetsChanged(Set(assetIDs), files: files, on: device, server: self)
+        } else {
+            catalogRevision += 1
+        }
+    }
+
     /// Queues a change for the phone. It's sent at the phone's next backup and only happens once
     /// the user confirms it there.
     func request(_ action: LibraryChange.Action, for assets: [PhoneAsset], on device: PairedDevice) {
@@ -570,6 +603,7 @@ final class BackupServer {
         guard let store = store(for: device) else { return ([], []) }
         var ids: [String] = []
         var copies: [URL] = []
+        var adopted: [URL] = []
         for item in items where item.deviceID != device.id {
             let metadata = AssetMetadata(
                 assetID: "", originalFilename: item.name, creationDate: item.date, modificationDate: nil,
@@ -584,6 +618,7 @@ final class BackupServer {
                     file = try await copy(item.url, into: device, dated: metadata)
                 }
                 ids.append(try await store.adopt(file, metadata: metadata, kind: item.isVideo ? .video : .photo))
+                adopted.append(file)
                 if file != item.url { copies.append(file) }
                 declinedAdds.remove(file.path)
             } catch BackupStore.AdoptError.alreadyThere {
@@ -595,7 +630,7 @@ final class BackupServer {
         }
         guard !ids.isEmpty else { return ([], copies) }
         enqueue(LibraryChange(action: .restore, assetIDs: ids, isNew: true), on: device, store: store)
-        catalogRevision += 1
+        await assetsChanged(ids, files: adopted, on: device)
         return (ids, copies)
     }
 
@@ -626,11 +661,12 @@ final class BackupServer {
             try? await store.withdraw(assetIDs, from: .restore)
             // Files from the Mac taken back before they went: plain files here again.
             if assetIDs.contains(where: { $0.hasPrefix("mac-") }) {
+                let files = await store.storedFiles(of: Array(assetIDs)).values.flatMap { $0.map(\.url) }
                 try? await store.unadopt(assetIDs)
                 for copy in copies where !(await store.holds(copy)) {
                     try? FileManager.default.removeItem(at: copy)
                 }
-                catalogRevision += 1
+                await assetsChanged(assetIDs, files: files + copies, on: device)
             }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
@@ -701,8 +737,9 @@ final class BackupServer {
             let change = await store.changeQueue().pending.first { $0.id == id }
             try? await store.cancelChange(id)
             if let change, change.addsFromMac {
+                let files = await store.storedFiles(of: change.assetIDs).values.flatMap { $0.map(\.url) }
                 try? await store.unadopt(Set(change.assetIDs))
-                catalogRevision += 1
+                await assetsChanged(change.assetIDs, files: files, on: device)
             }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
@@ -724,8 +761,9 @@ final class BackupServer {
         Task {
             try? await store.cancelChange(change.id)
             if change.addsFromMac {
+                let files = await store.storedFiles(of: change.assetIDs).values.flatMap { $0.map(\.url) }
                 try? await store.unadopt(Set(change.assetIDs))
-                catalogRevision += 1
+                await assetsChanged(change.assetIDs, files: files, on: device)
             }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)

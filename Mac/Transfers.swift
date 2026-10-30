@@ -340,7 +340,11 @@ extension MediaLibrary {
     func copyIn(_ files: [URL], to path: String, server: BackupServer) async -> FileHistory.Step? {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
         activity = Activity(title: "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
-        defer { activity = nil }
+        beginWork()
+        defer {
+            activity = nil
+            endWork()
+        }
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var copies: [URL] = []
         for (index, file) in files.enumerated() {
@@ -361,9 +365,8 @@ extension MediaLibrary {
             if copied { copies.append(target) }
             activity?.done = index + 1
         }
-        // The copies show at once; the full re-read happens in the background.
+        // The copies show at once, without reading the library again.
         showCopies(copies, server: server)
-        refreshQuietly(server)
         guard !copies.isEmpty else { return nil }
         return FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
