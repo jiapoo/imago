@@ -8,7 +8,7 @@ Photos move over your Wi-Fi with encryption and never pass through a cloud servi
 | Path | What |
 |---|---|
 | `Packages/ImagoKit` | Shared code: wire protocol, framing, TLS-PSK networking, pairing, library layout, hashing. Has tests. |
-| AreteMedia | The photo and video viewer and editor, a package shared with Arete ([jiapoo/arete-media](https://github.com/jiapoo/arete-media)), pinned in `project.yml`. |
+| AreteMedia | The photo and video viewer and editor, a package shared with Arete ([jiapoo/apple-media](https://github.com/jiapoo/apple-media)), pinned in `project.yml`. |
 | `Mac/` | Mac app: Bonjour listener, `BackupStore` (verified writes, sidecars, index), status, pairing QR, library grid, menu bar. |
 | `iOS/` | iPhone app: PhotoKit scan and export, upload client, QR pairing, background processing task. |
 | `project.yml` | XcodeGen spec. Generates `Imago.xcodeproj` (git-ignored). |
