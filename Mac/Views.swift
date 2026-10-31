@@ -150,6 +150,7 @@ struct MainView: View {
         ), titleVisibility: .visible) {
             Button("Skip Duplicates") { library.answerDuplicates(.skip) }
             Button("Keep Both") { library.answerDuplicates(.keepBoth) }
+            Button("Replace") { library.answerDuplicates(.replace) }
             Button("Cancel", role: .cancel) { library.answerDuplicates(.cancel) }
         } message: {
             Text(duplicateMessage)
@@ -242,7 +243,7 @@ struct MainView: View {
     private var duplicateMessage: String {
         guard let question = library.duplicateQuestion else { return "" }
         let verb = question.isMove ? "moving" : "copying"
-        return "They're exactly the same as files already there. Skip them and go on \(verb) the rest, or keep both: the new ones get a numbered name."
+        return "They're exactly the same as files already there. Skip them and go on \(verb) the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted."
     }
 
     /// Copy | Move: what putting photos into a folder does. Move asks first.

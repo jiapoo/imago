@@ -165,6 +165,8 @@ enum DuplicateChoice {
     case skip
     /// Copy or move them anyway, with a numbered name.
     case keepBoth
+    /// Put them in place of the ones already there, which go to Recently Deleted.
+    case replace
     /// Do nothing.
     case cancel
 }
@@ -194,9 +196,9 @@ extension MediaLibrary {
         question.answer.resume(returning: choice)
     }
 
-    /// The files among `files` that `folder` already has, exactly the same: a file there of the same
-    /// size, then the same content.
-    func identicalFiles(_ files: [URL], inFolder path: String, server: BackupServer) async -> Set<URL> {
+    /// The files among `files` that `folder` already has, exactly the same (a file there of the same
+    /// size, then the same content), each with the file there it matches.
+    func identicalFiles(_ files: [URL], inFolder path: String, server: BackupServer) async -> [URL: URL] {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
         let present: [(url: URL, size: Int)] = ((try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey], options: [.skipsHiddenFiles]
@@ -210,40 +212,51 @@ extension MediaLibrary {
             guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
             return bySize[size] != nil && file.deletingLastPathComponent().lexicallyStandardized != folder.lexicallyStandardized
         }
-        guard !candidates.isEmpty else { return [] }
+        guard !candidates.isEmpty else { return [:] }
         activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count)
         defer { activity = nil }
-        var identical: Set<URL> = []
+        var identical: [URL: URL] = [:]
         for file in candidates {
             activity?.detail = file.lastPathComponent
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
             let others = bySize[size]?.map(\.url) ?? []
-            let same = await Task.detached(priority: .userInitiated) {
-                guard let mine = try? FileHasher.sha256(of: file) else { return false }
-                return others.contains { (try? FileHasher.sha256(of: $0)) == mine }
+            let same = await Task.detached(priority: .userInitiated) { () -> URL? in
+                guard let mine = try? FileHasher.sha256(of: file) else { return nil }
+                return others.first { (try? FileHasher.sha256(of: $0)) == mine }
             }.value
-            if same { identical.insert(file) }
+            if let same { identical[file] = same }
             activity?.done += 1
         }
         return identical
+    }
+
+    /// Replace: the files already in the folder that the new ones match go to Recently Deleted first, so
+    /// the new ones take their names. Returns the step that puts them back.
+    private func clearForReplace(_ existing: some Collection<URL>, server: BackupServer) async -> FileHistory.Step? {
+        let paths = Set(existing.map(\.lexicallyStandardized.path))
+        let there = items.filter { paths.contains($0.url.lexicallyStandardized.path) }
+        return there.isEmpty ? nil : await trash(there, server: server)
     }
 
     /// Puts items into a folder the way the toolbar says: copies, or moves and removes them from their
     /// iPhone. Asks first when the folder already has identical files. Records each step for undo.
     func transfer(_ items: [MediaItem], toFolder path: String, server: BackupServer, history: FileHistory) async {
         var items = items
+        var replaced: FileHistory.Step?
         let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
         if !identical.isEmpty {
             switch await ask(identical.count, of: items.count, in: path, isMove: TransferMode.current == .move) {
             case .cancel: return
-            case .skip: items.removeAll { identical.contains($0.url) }
+            case .skip: items.removeAll { identical[$0.url] != nil }
             case .keepBoth: break
+            case .replace: replaced = await clearForReplace(identical.values, server: server)
             }
             guard !items.isEmpty else { return }
         }
         switch TransferMode.current {
         case .copy:
-            history.record(await copy(items, toFolder: path, server: server))
+            let copied = await copy(items, toFolder: path, server: server)
+            history.record(FileHistory.combine("Copy to “\((path as NSString).lastPathComponent)”", [replaced, copied]))
         case .move:
             // One step: ⌘Z takes the iPhone's deletion back and returns the files together.
             let fromPhone = removable(items)
@@ -253,7 +266,7 @@ extension MediaLibrary {
             let leaving = fromPhone.filter { arrived.contains($0.id) }
             let removed = leaving.isEmpty ? nil : await removeFromPhone(leaving, server: server)
             let name = "Move to “\((path as NSString).lastPathComponent)”"
-            history.record(FileHistory.combine(name, [moved, removed]))
+            history.record(FileHistory.combine(name, [replaced, moved, removed]))
         }
     }
 
@@ -286,15 +299,20 @@ extension MediaLibrary {
             }
             if case .folder(let path) = place, !outside.isEmpty {
                 var files = outside
+                var replaced: FileHistory.Step?
                 let identical = await identicalFiles(files, inFolder: path, server: server)
                 if !identical.isEmpty {
                     switch await ask(identical.count, of: files.count, in: path, isMove: false) {
                     case .cancel: return
-                    case .skip: files.removeAll { identical.contains($0) }
+                    case .skip: files.removeAll { identical[$0] != nil }
                     case .keepBoth: break
+                    case .replace: replaced = await clearForReplace(identical.values, server: server)
                     }
                 }
-                if !files.isEmpty { history.record(await copyIn(files, to: path, server: server)) }
+                if !files.isEmpty {
+                    let copied = await copyIn(files, to: path, server: server)
+                    history.record(FileHistory.combine("Copy to “\((path as NSString).lastPathComponent)”", [replaced, copied]))
+                }
             }
         }
         return true
@@ -359,7 +377,9 @@ extension MediaLibrary {
             return nil
         }
         let place = path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path)
-        let written = Task { await copyFiles([staged], to: path, server: server, title: "Saving a copy to “\(place)”").undo }
+        // An edit of an iPhone's photo came from that iPhone, as the photo did.
+        let cameFrom = item.deviceID.map { [staged: $0] } ?? [:]
+        let written = Task { await copyFiles([staged], to: path, server: server, title: "Saving a copy to “\(place)”", cameFrom: cameFrom).undo }
         return (place, staged, written)
     }
 
@@ -369,7 +389,9 @@ extension MediaLibrary {
     }
 
     /// `copyIn`, and where the copies went. `title`: what the progress line says, when not "Copying to …".
-    private func copyFiles(_ files: [URL], to path: String, server: BackupServer, title: String? = nil) async -> (undo: FileHistory.Step?, copies: [URL]) {
+    /// `cameFrom`: the iPhone (by device ID) each file came from, which its copy keeps (`cameFrom(_:)`).
+    func copyFiles(_ files: [URL], to path: String, server: BackupServer, title: String? = nil,
+                   cameFrom: [URL: String] = [:]) async -> (undo: FileHistory.Step?, copies: [URL]) {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
         activity = Activity(title: title ?? "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
         beginWork()
@@ -394,7 +416,10 @@ extension MediaLibrary {
                     Task { @MainActor in self?.activity?.bytes = (done, total) }
                 }) != nil
             }.value
-            if copied { copies.append(target) }
+            if copied {
+                copies.append(target)
+                if let deviceID = cameFrom[file] { noteCameFrom(target.lexicallyStandardized, deviceID, server: server) }
+            }
             activity?.done = index + 1
         }
         // The copies show at once, without reading the library again.
@@ -403,7 +428,7 @@ extension MediaLibrary {
         let undo = FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
             self?.hideRemoved(copies, server: server)
-            return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyIn(files, to: path, server: server) }
+            return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyFiles(files, to: path, server: server, cameFrom: cameFrom).undo }
         }
         return (undo, copies.map(\.lexicallyStandardized))
     }

@@ -237,7 +237,8 @@ struct BrowserView: View {
     /// Bottom left, in a Folder and Recently Deleted: which iPhone it came from, wherever it is now.
     private func cameFrom(_ item: MediaItem) -> SourceBadge.Style? {
         switch scope {
-        case .folder, .trash: SourceBadge.Style(item.deviceID.map { .phone($0) } ?? .drive, server: server, cameFrom: true)
+        // A copy of an iPhone's photo came from that iPhone too.
+        case .folder, .trash: SourceBadge.Style(library.cameFrom(item).map { .phone($0) } ?? .drive, server: server, cameFrom: true)
         default: nil
         }
     }
@@ -256,6 +257,11 @@ struct BrowserView: View {
         case .folder, .trash:
             return nil
         default:
+            // Asked to go from its iPhone, waiting for it to agree: deleted (here too, once it does),
+            // or only removed from it to free space.
+            if library.pendingRemoval.contains(item.id) {
+                return library.deleteWhenPhoneDoes.contains(item.id) ? "Deleting" : "Removing"
+            }
             // Beside an iPhone's backups, not on it yet: an edited copy, or a file sent to it.
             guard library.waitingFor(item) != nil else { return nil }
             if item.deviceID != nil { return "Sending" }
@@ -288,7 +294,7 @@ struct BrowserView: View {
             if isTrash {
                 TrashSelectionBar(
                     items: selected,
-                    sources: SourceBadge.summary(selected.map { $0.deviceID.map { .phone($0) } ?? .drive },
+                    sources: SourceBadge.summary(selected.map { library.cameFrom($0).map { .phone($0) } ?? .drive },
                                                  devices: server.devices, cameFrom: true),
                     putBack: { putBack(selected) },
                     deleteNow: { deletingNow = selected.compactMap(library.trashed) },
@@ -300,7 +306,7 @@ struct BrowserView: View {
                     items: selected,
                     // A Folder's items are all on the drive: say which iPhones they came from.
                     sources: { if case .folder = scope {
-                        SourceBadge.summary(selected.map { $0.deviceID.map { .phone($0) } ?? .drive }, devices: server.devices, cameFrom: true)
+                        SourceBadge.summary(selected.map { library.cameFrom($0).map { .phone($0) } ?? .drive }, devices: server.devices, cameFrom: true)
                     } else {
                         SourceBadge.summary(selected.map(library.origin), devices: server.devices)
                     } }(),
@@ -314,7 +320,7 @@ struct BrowserView: View {
                     newFolder: { naming = .newFolder(moving: selected) },
                     removeFromPhone: { removing = selected },
                     deleteHelp: deletesOnPhone
-                        ? "Delete (⌫): from the iPhone too, and the backup goes to Recently Deleted. ⌘Z undoes it."
+                        ? "Delete (⌫): from the iPhone, and the backup here once the iPhone agrees; files only on this drive go to Recently Deleted. ⌘Z undoes it."
                         : "Move to Recently Deleted (⌫). ⌘Z puts it back.",
                     trash: { trash(selected) },
                     clear: { library.selection = [] }
@@ -455,13 +461,32 @@ struct BrowserView: View {
         }
     }
 
-    /// Delete: from the iPhones too on the library's own pages (the backups go to Recently Deleted);
-    /// elsewhere, to Recently Deleted.
+    /// Delete: on the library's own pages, what's on an iPhone is deleted there (and here once it
+    /// agrees); what's only on the drive goes to Recently Deleted, after asking.
     private func trash(_ items: [MediaItem]) {
+        guard Self.confirmTrash(deletesOnPhone ? items.filter { library.phoneAsset($0) == nil } : items, of: items.count) else { return }
         library.selection = []
         Task {
             history.record(deletesOnPhone ? await library.delete(items, server: server) : await library.trash(items, server: server))
         }
+    }
+
+    /// Asks before moving files only on the drive to Recently Deleted (a folder's, or among a
+    /// selection). What's on an iPhone isn't asked about here: the iPhone asks itself.
+    static func confirmTrash(_ driveOnly: [MediaItem], of total: Int) -> Bool {
+        guard !driveOnly.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = driveOnly.count == 1 ? "Move “\(driveOnly[0].name)” to Recently Deleted?"
+            : "Move \(driveOnly.count.formatted()) items to Recently Deleted?"
+        var info = driveOnly.count == 1 ? "It's only on this drive." : "They're only on this drive."
+        if total > driveOnly.count {
+            let onPhones = total - driveOnly.count
+            info += " The other \(onPhones == 1 ? "one is" : "\(onPhones.formatted()) are") on an iPhone: deleted there once the iPhone agrees, and here then."
+        }
+        alert.informativeText = info + " You can put \(driveOnly.count == 1 ? "it" : "them") back from Recently Deleted."
+        alert.addButton(withTitle: "Move to Recently Deleted")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func putBack(_ items: [MediaItem]) {
@@ -874,9 +899,10 @@ extension BrowserView {
                     return true
                 })
             },
-            deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone too; the backup goes to Recently Deleted)" : "Move to Recently Deleted",
+            deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone, and its backup here once the iPhone agrees)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
                 let item = [items[index]]
+                guard Self.confirmTrash(deletesOnPhone ? item.filter { library.phoneAsset($0) == nil } : item, of: 1) else { return false }
                 guard let step = deletesOnPhone ? await library.delete(item, server: server) : await library.trash(item, server: server)
                 else { return false }
                 history.record(step)

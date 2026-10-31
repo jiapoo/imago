@@ -253,19 +253,19 @@ struct DecisionsCard: View {
                 ? (decline.change.assetIDs.count == 1 ? "\(phone) kept 1 item you deleted" : "\(phone) kept \(decline.change.assetIDs.count.formatted()) items you deleted")
                 : "\(phone) said no: \(decline.change.summary.lowercasedFirst)",
             detail: isDelete
-                ? "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone). The \(decline.change.assetIDs.count == 1 ? "backup is" : "backups are") in Recently Deleted on this Mac: restore \(decline.change.assetIDs.count == 1 ? "it" : "them"), or ask \(phone) again."
+                ? "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so nothing was deleted: \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone) and here. Keep \(decline.change.assetIDs.count == 1 ? "it" : "them"), delete \(decline.change.assetIDs.count == 1 ? "the backup" : "the backups") from this Mac only, or ask \(phone) again."
                 : "Ask \(phone) once more, or leave it as it is."
                     + (decline.change.isAskedAgain ? " This was the second time it was asked." : "")
         ) {
             if isDelete {
-                Button(decline.change.assetIDs.count == 1 ? "Restore Backup" : "Restore Backups") {
+                Button("Keep") {
                     Task { history.record(await library.keepHereToo(decline, server: server)) }
                 }
                     .buttonStyle(.borderedProminent)
-                    .help("Take the backups out of Recently Deleted on this Mac and put them back where they were. They stay on \(phone) too.")
+                    .help("Keep them on \(phone) and on this Mac, as they are.")
                 Menu("More") {
                     Button("Ask \(phone) to Delete Again") { Task { await library.askAgain(decline, server: server) } }
-                    Button("Leave in Recently Deleted") { Task { await library.leaveAsIs(decline, server: server) } }
+                    Button("Delete from This Mac Only") { Task { history.record(await library.leaveAsIs(decline, server: server)) } }
                 }
                 .fixedSize()
             } else {

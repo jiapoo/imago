@@ -159,6 +159,11 @@ final class MediaLibrary {
     /// a second each.
     private var keptReadFrom: URL?
     private var leftPhoneReadFrom: URL?
+    /// Deleted here and waiting for their iPhone to agree, by item ID: their backups go to Recently
+    /// Deleted once it does (`phoneDeleted`), and stay where they are if it says no. In the library's
+    /// `.photobackup`, so it holds across restarts (the iPhone may answer at its next backup).
+    private(set) var deleteWhenPhoneDoes: Set<String> = []
+    private var deleteWhenPhoneDoesReadFrom: URL?
     /// Deleted on an iPhone and waiting to be put back there (a `restore` change), by item ID.
     private(set) var restoring: Set<String> = []
     /// Changes an iPhone turned down that the user hasn't decided about yet.
@@ -229,6 +234,9 @@ final class MediaLibrary {
 
     /// Each iPhone's own folder → its device ID, for `waitingFor`.
     private(set) var phoneFolderOwners: [String: String] = [:]
+    /// For `cameFrom`: copies of iPhone items, by the copy's path → the iPhone's device ID.
+    private(set) var copiedFrom: [String: String] = [:]
+    private var copiedFromReadFrom: URL?
     /// `deletedOnPhone` for each iPhone, as of a revision.
     @ObservationIgnored private var deletedOnPhoneCache: (revision: Int, byDevice: [String: [MediaItem]])?
     /// `items(in: .large)`, as of a revision.
@@ -394,6 +402,11 @@ final class MediaLibrary {
             kept = await Self.readKept(at: keptURL(server))
             keptReadFrom = keptURL(server)
         }
+        if copiedFromReadFrom != copiedFromURL(server) { await readCopiedFrom(server) }
+        if deleteWhenPhoneDoesReadFrom != deletingURL(server) {
+            deleteWhenPhoneDoes = await Self.readKept(at: deletingURL(server))
+            deleteWhenPhoneDoesReadFrom = deletingURL(server)
+        }
         revision += 1
         folders = Self.tree(folderPaths, items: items)
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
@@ -490,6 +503,14 @@ final class MediaLibrary {
     /// Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now (or
     /// once its days are up). Returns whether anything moved.
     private func moveDeletedOnPhone(_ server: BackupServer) async -> Bool {
+        // Deleted here and since on the iPhone too (its answer may have come while Imago was closed):
+        // to Recently Deleted now, as asked.
+        let agreed = server.devices.flatMap { deletedOnPhone($0.id) }.filter { deleteWhenPhoneDoes.contains($0.id) }
+        if !agreed.isEmpty {
+            await markDeleting(agreed.map(\.id), false, server: server)
+            _ = await trash(agreed, server: server)
+            return true
+        }
         guard server.acceptPhoneChanges || server.trashDays > 0 else { return false }
         let due = server.devices.flatMap { deletedOnPhone($0.id) }
             .filter { !restoring.contains($0.id)
@@ -534,22 +555,31 @@ final class MediaLibrary {
 
     // MARK: Answers from the iPhones
 
-    /// Keeps the backups of a deletion the iPhone turned down: they come back from Recently Deleted
-    /// to where they were, and both sides agree the photos stay. Returns the step that undoes it.
+    /// Keeps what a deletion the iPhone turned down was about: they stay on the iPhone and here, as
+    /// they are (backups from before, when deleting moved them to Recently Deleted at once, come back
+    /// out of it). Returns the step that undoes it.
     func keepHereToo(_ decline: Decline, server: BackupServer) async -> FileHistory.Step? {
         let ids = Set(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
         let back = trash.filter { ids.contains($0.id) }
-        // Settled first, so the question goes at once; Put Back's own reload is the only one.
+        // Settled first, so the question goes at once.
         await server.resolve(decline.change, as: .kept, on: decline.device)
         declines.removeAll { $0.id == decline.id }
+        await markDeleting(ids, false, server: server)
         return back.isEmpty ? nil : await putBack(back, server: server)
     }
 
-    /// Settles a turned-down change as it is: for a deletion, the backups stay in Recently Deleted and
-    /// the photos stay on the iPhone; for anything else, it's just noted.
-    func leaveAsIs(_ decline: Decline, server: BackupServer) async {
+    /// Settles a turned-down change as it is: for a deletion, the photos stay on the iPhone and their
+    /// backups go to Recently Deleted here (Delete from This Mac Only); for anything else, it's just
+    /// noted. Returns the step that undoes it, if anything moved.
+    @discardableResult
+    func leaveAsIs(_ decline: Decline, server: BackupServer) async -> FileHistory.Step? {
         await server.resolve(decline.change, as: decline.change.action == .delete ? .leftDeleted : .dismissed, on: decline.device)
         declines.removeAll { $0.id == decline.id }
+        guard decline.change.action == .delete else { return nil }
+        let ids = Set(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
+        await markDeleting(ids, false, server: server)
+        let here = items.filter { ids.contains($0.id) }
+        return here.isEmpty ? nil : await trash(here, server: server)
     }
 
     /// Asks the iPhone once more. If it says no again, the backups are kept (see `settleFinalAnswers`).
@@ -614,6 +644,7 @@ final class MediaLibrary {
                 let back = trash.filter { ids.contains($0.id) }
                 if !back.isEmpty { _ = await putBack(back, server: server) }
                 await server.resolve(decline.change, as: .kept, on: decline.device)
+                await markDeleting(ids, false, server: server)
                 changed = true
             case .restore:
                 kept.formUnion(decline.change.assetIDs.map { "\(decline.device.id)/\($0)" })
@@ -629,6 +660,29 @@ final class MediaLibrary {
 
     private func keptURL(_ server: BackupServer) -> URL {
         server.location.url.appending(path: ".photobackup/kept-off-iphone.json")
+    }
+
+    private func deletingURL(_ server: BackupServer) -> URL {
+        server.location.url.appending(path: ".photobackup/delete-when-iphone-does.json")
+    }
+
+    /// Marks items as deleted here once their iPhone agrees, or no longer (`deleteWhenPhoneDoes`).
+    private func markDeleting(_ ids: some Sequence<String>, _ on: Bool, server: BackupServer) async {
+        // Not before it's been read: writing then would lose the marks already there.
+        guard deleteWhenPhoneDoesReadFrom == deletingURL(server) else { return }
+        if on { deleteWhenPhoneDoes.formUnion(ids) } else { deleteWhenPhoneDoes.subtract(ids) }
+        await Self.writeKept(deleteWhenPhoneDoes, to: deletingURL(server))
+        revision += 1
+    }
+
+    /// An iPhone deleted assets this Mac asked it to (it said yes, now or at a backup): the backups of
+    /// ones deleted here go to Recently Deleted. Ones only removed from it to free space stay.
+    func phoneDeleted(_ assetIDs: [String], on device: PairedDevice, server: BackupServer) async {
+        let ids = Set(assetIDs.map { "\(device.id)/\($0)" }).intersection(deleteWhenPhoneDoes)
+        guard !ids.isEmpty else { return }
+        let due = items.filter { ids.contains($0.id) }
+        await markDeleting(ids, false, server: server)
+        if !due.isEmpty { _ = await trash(due, server: server) }
     }
 
     private nonisolated static func readKept(at url: URL) async -> Set<String> {
@@ -660,7 +714,8 @@ final class MediaLibrary {
         for id in now where known[id] == nil {
             known[id] = .now
             changed = true
-            fresh[String(id.prefix { $0 != "/" }), default: 0] += 1
+            // Not ones deleted here and gone as asked: nothing to tell.
+            if !deleteWhenPhoneDoes.contains(id) { fresh[String(id.prefix { $0 != "/" }), default: 0] += 1 }
         }
         // Newly seen deleted on an iPhone: ask what to do with the backups (unless that's automatic).
         for (deviceID, count) in fresh where !server.acceptPhoneChanges {
@@ -1062,23 +1117,30 @@ final class MediaLibrary {
         }
     }
 
-    /// Deletes items from their iPhone and from this backup: the iPhone is asked to delete them (each
-    /// checked against its backup first; the iPhone keeps them in its own Recently Deleted), and the
-    /// backed-up copies go to Imago's Recently Deleted here on the Mac, so Put Back returns them.
-    /// Returns one step that undoes both.
-    /// A backup that's already in Recently Deleted is checked there, and stays there.
+    /// Deletes items from their iPhone and then from this backup. Nothing happens until the iPhone
+    /// agrees: it's asked to delete them (each checked against its backup first; it keeps them in its
+    /// own Recently Deleted), and they stay here marked as deleting. Once it agrees, their backups go to
+    /// Recently Deleted here (`phoneDeleted`); if it says no, nothing was deleted anywhere.
+    /// Returns the step that takes the request back.
     func deleteFromPhoneAndHere(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
         let removal = await removeFromPhone(items, server: server)
-        // Only what the iPhone was asked to delete: items that failed the check stay put.
-        let asked = items.filter { pendingRemoval.contains($0.id) }
-        let toTrash = asked.filter { trashed($0) == nil }
-        let trashed = toTrash.isEmpty ? nil : await trash(toTrash, server: server)
-        return FileHistory.combine(asked.count == 1 ? "Delete" : "Delete \(asked.count) Items", [removal, trashed])
+        // Only what the iPhone was asked to delete: items that failed the check stay as they are.
+        let asked = Set(items.filter { pendingRemoval.contains($0.id) }.map(\.id))
+        guard let removal, !asked.isEmpty else { return removal }
+        await markDeleting(asked, true, server: server)
+        let name = asked.count == 1 ? "Delete" : "Delete \(asked.count) Items"
+        // Undo takes the request and the marks back; redo deletes again.
+        return FileHistory.Step(name: name) { [weak self] in
+            _ = await removal.run()
+            guard let self else { return nil }
+            await markDeleting(asked, false, server: server)
+            return FileHistory.Step(name: name) { [weak self] in await self?.deleteFromPhoneAndHere(items, server: server) }
+        }
     }
 
     /// Delete, from the library's own pages (Library, Places, On This Day, Large Files): what's still on
-    /// an iPhone is deleted there too, as on the iPhone's page, and its backup goes to Recently Deleted
-    /// here; what's only on the drive just goes to Recently Deleted. One step undoes it all.
+    /// an iPhone is deleted there, and here once it agrees (see `deleteFromPhoneAndHere`); what's only
+    /// on the drive goes to Recently Deleted. One step undoes it all.
     func delete(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
         let onPhones = items.filter { phoneAsset($0) != nil }
         let driveOnly = items.filter { phoneAsset($0) == nil }
@@ -1163,8 +1225,51 @@ final class MediaLibrary {
     /// Copies items' files into a folder (an iPhone item's backed-up original, or the file itself),
     /// leaving the items where they are. Returns the step that removes the copies.
     func copy(_ items: [MediaItem], toFolder path: String, server: BackupServer) async -> FileHistory.Step? {
-        guard let step = await copyIn(items.map(\.url), to: path, server: server) else { return nil }
-        return step
+        // Copies of an iPhone's photos keep saying which iPhone they came from.
+        let cameFrom = Dictionary(items.compactMap { item in item.deviceID.map { (item.url, $0) } }, uniquingKeysWith: { a, _ in a })
+        return await copyFiles(items.map(\.url), to: path, server: server, cameFrom: cameFrom).undo
+    }
+
+    // MARK: Where copies came from
+
+    /// Which iPhone a plain file came from, by device ID: an iPhone item's own, or for a copy of one
+    /// (copied here, an edit saved here, or found to be the same file: `findFolderCopies`), that
+    /// item's iPhone. Nil for a file from elsewhere.
+    func cameFrom(_ item: MediaItem) -> String? {
+        item.deviceID ?? copiedFrom[item.url.path]
+    }
+
+    /// Notes that the file at `url` is a copy of something from this iPhone.
+    func noteCameFrom(_ url: URL, _ deviceID: String, server: BackupServer) {
+        guard copiedFrom[url.path] != deviceID else { return }
+        copiedFrom[url.path] = deviceID
+        saveCopiedFrom(server)
+    }
+
+    private func copiedFromURL(_ server: BackupServer) -> URL {
+        server.location.url.appending(path: ".photobackup/copied-from.json")
+    }
+
+    /// Kept in the library's `.photobackup`, by paths from the top of the library, so a copy's mark
+    /// holds across restarts and wherever the drive is mounted.
+    private func saveCopiedFrom(_ server: BackupServer) {
+        let root = server.location.url.lexicallyStandardized.path + "/"
+        let relative = Dictionary(copiedFrom.compactMap { path, id in path.hasPrefix(root) ? (String(path.dropFirst(root.count)), id) : nil },
+                                  uniquingKeysWith: { a, _ in a })
+        let url = copiedFromURL(server)
+        Task.detached {
+            try? JSONEncoder().encode(relative).write(to: url, options: .atomic)
+        }
+    }
+
+    private func readCopiedFrom(_ server: BackupServer) async {
+        let url = copiedFromURL(server)
+        let root = server.location.url.lexicallyStandardized
+        let relative = await Task.detached(priority: .userInitiated) {
+            (try? JSONDecoder().decode([String: String].self, from: Data(contentsOf: url))) ?? [:]
+        }.value
+        copiedFrom = Dictionary(relative.map { (root.appending(path: $0.key).path, $0.value) }, uniquingKeysWith: { a, _ in a })
+        copiedFromReadFrom = url
     }
 
     /// Lists the folders again, without reading the phones' indexes: enough after making, renaming
@@ -1465,7 +1570,20 @@ final class MediaLibrary {
             let found = await Task.detached(priority: .utility) {
                 FolderCopies.find(phone: phone, files: files, cacheURL: cacheURL)
             }.value
-            guard !Task.isCancelled, let self, found != self.inFolders else { return }
+            guard !Task.isCancelled, let self else { return }
+            // The same file as an iPhone item, elsewhere in the folders: a copy of it, from its iPhone
+            // (one copied before Imago noted it, or in Finder). What was noted already stands.
+            let own = Set(phone.map(\.url.path))
+            var noted = false
+            for (id, copies) in found {
+                let deviceID = String(id.prefix { $0 != "/" })
+                for copy in copies where !own.contains(copy.url.path) && copiedFrom[copy.url.path] == nil {
+                    copiedFrom[copy.url.path] = deviceID
+                    noted = true
+                }
+            }
+            if noted { saveCopiedFrom(server) }
+            guard noted || found != self.inFolders else { return }
             self.inFolders = found
             self.revision += 1
         }
@@ -1502,8 +1620,11 @@ final class MediaLibrary {
         for move in landed {
             var item = move.was
             item.url = move.url
-            // A file from elsewhere is known by its path.
-            if item.deviceID == nil { item.id = move.url.path }
+            // A file from elsewhere is known by its path. A copy still came from its iPhone.
+            if item.deviceID == nil {
+                item.id = move.url.path
+                if let deviceID = copiedFrom[move.was.url.path] { copiedFrom[move.url.path] = deviceID }
+            }
             if move.to == .trash {
                 item.folder = nil
                 trash.insert(TrashedItem(item: item, deletedAt: .now, originalPlace: move.from), at: 0)
@@ -1519,6 +1640,7 @@ final class MediaLibrary {
             items.sort { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
         }
         selection.subtract(oldIDs.subtracting(added.map(\.id)))
+        if landed.contains(where: { $0.was.deviceID == nil && copiedFrom[$0.was.url.path] != nil }) { saveCopiedFrom(server) }
         folders = folderTree(adding: added.compactMap(\.folder))
         changedHere()
         findFolderCopies(server)
@@ -1542,10 +1664,12 @@ final class MediaLibrary {
             if was.deviceID == nil {
                 items[i].id = items[i].url.path
                 oldIDs[was.id] = items[i].id
+                if let deviceID = copiedFrom[was.url.path] { copiedFrom[items[i].url.path] = deviceID }
             }
             Thumbnails.shared.carryOver(from: was.url, to: items[i].url, bytes: was.bytes)
         }
         selection = Set(selection.map { oldIDs[$0] ?? $0 })
+        if !oldIDs.isEmpty { saveCopiedFrom(server) }
         folders = Self.tree(paths, items: items)
         changedHere()
         findFolderCopies(server)

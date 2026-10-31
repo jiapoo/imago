@@ -438,6 +438,9 @@ final class BackupServer {
                     let declined = recorded.filter { $0.report.outcome == .declined && !$0.change.addsFromMac }.map(\.change)
                     if !declined.isEmpty { MacNotifications.declined(declined, on: device.name) }
                     libraryChanged(device.id)
+                    // Deleted there as asked: what was deleted here too now goes to Recently Deleted.
+                    let deleted = recorded.filter { $0.report.outcome == .applied && $0.change.action == .delete }.flatMap(\.change.assetIDs)
+                    if !deleted.isEmpty { await mediaLibrary?.phoneDeleted(deleted, on: device, server: self) }
                     await mediaLibrary?.phoneListChanged(device, server: self)
                     // Put back under new IDs: the library takes the files' new names.
                     let restored = recorded.compactMap(\.report.restored).flatMap { $0.flatMap { [$0.key, $0.value] } }

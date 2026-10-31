@@ -664,7 +664,9 @@ struct PhoneGrid: View {
                 Button(notSynced.count == 1 ? "Move Not Synced File to Recently Deleted" : "Move \(notSynced.count) Not Synced Files to Recently Deleted",
                        role: .destructive) {
                     let items = actions.libraryItems(notSynced)
-                    Task { history.record(await library.trash(items, server: server)) }
+                    if BrowserView.confirmTrash(items, of: items.count) {
+                        Task { history.record(await library.trash(items, server: server)) }
+                    }
                 }
             }
         }
@@ -727,12 +729,12 @@ struct PhoneGrid: View {
             },
             // Only the backed-up file: a preview is too small to edit.
             canEdit: { model.files[ids[$0]] != nil },
-            deleteTitle: "Delete from iPhone (the backup goes to Recently Deleted on this Mac)",
+            deleteTitle: "Delete from iPhone (and the backup on this Mac once the iPhone agrees)",
             delete: { [library, server, history] index in
                 if let file = model.asset(ids[index]), file.isUnsynced {
                     // Not on the iPhone: only the file here goes, to Recently Deleted.
                     let items = library.items.filter { $0.url.path == file.id.dropFirst(PhoneAsset.unsyncedPrefix.count) }
-                    guard let step = await library.trash(items, server: server) else { return false }
+                    guard BrowserView.confirmTrash(items, of: items.count), let step = await library.trash(items, server: server) else { return false }
                     history.record(step)
                     return true
                 }
@@ -917,8 +919,8 @@ struct PhoneActions {
         }
     }
 
-    /// Deletes them from the iPhone (it keeps them in its own Recently Deleted) and moves the backed-up
-    /// copies to Imago's Recently Deleted on the Mac, so Put Back returns them. Undo takes both back.
+    /// Deletes them from the iPhone (it keeps them in its own Recently Deleted), and their backed-up
+    /// copies here once it agrees (see `MediaLibrary.deleteFromPhoneAndHere`). Undo takes the request back.
     func delete(_ assets: [PhoneAsset]) {
         let items = libraryItems(assets, includingDeleted: true)
         guard !items.isEmpty else {
@@ -1144,7 +1146,7 @@ struct PhoneDialogs: ViewModifier {
     private func deleteMessage(skipped: Int) -> String {
         let when = actions.isLive ? "now" : "when you next open Imago on it, or at its next backup"
         var text = "\(actions.device.name) asks you to confirm \(when); then they go to Recently Deleted on the iPhone for 30 days. "
-            + "The backed-up copies go to Recently Deleted in Imago on this Mac, where Put Back returns them; each is checked against them first. "
+            + "Nothing changes on this Mac until it does: then the backed-up copies go to Recently Deleted in Imago, where Put Back returns them. If it says no, nothing is deleted. Each is checked against its backup first. "
             + "If iCloud Photos is on, they're removed from your other devices too."
         if skipped > 0 { text += " \(skipped) selected \(skipped == 1 ? "item isn't" : "items aren't") fully backed up yet and will be left alone." }
         return text
