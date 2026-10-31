@@ -6,6 +6,8 @@ struct ContentView: View {
     @Environment(BackupClient.self) private var client
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingPairing = false
+    /// The Mac's changes, open for review from the question about them.
+    @State private var reviewingChanges = false
 
     var body: some View {
         NavigationStack {
@@ -45,7 +47,13 @@ struct ContentView: View {
                     client.askAboutChanges()
                 }
             }
+            .sheet(isPresented: $reviewingChanges) { ChangesReviewSheet() }
             .alert(askTitle, isPresented: Binding(get: { !client.askPrompt.isEmpty }, set: { if !$0 { client.answerChanges(nil) } })) {
+                // Each change with a preview, to pick which to make.
+                Button("Review…") {
+                    client.answerChanges(nil)
+                    reviewingChanges = true
+                }
                 Button("Apply") { client.answerChanges(true) }
                 Button("Don't Apply", role: .destructive) { client.answerChanges(false) }
                 Button("Not Now", role: .cancel) { client.answerChanges(nil) }
@@ -87,10 +95,13 @@ extension View {
 
 struct StatusHero: View {
     @Environment(BackupClient.self) private var client
+    @Environment(LiveLink.self) private var live
 
     var body: some View {
         let state = heroState
         VStack(spacing: 18) {
+            MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? "Mac")
+                .chip()
             ProgressRing(progress: state.progress, symbol: state.symbol, tint: state.tint, busy: client.phase.isRunning)
                 .padding(.top, 8)
             VStack(spacing: 6) {
@@ -482,10 +493,8 @@ struct MacCard: View {
                     .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(client.credential?.serverName ?? "Mac").font(.headline)
-                    HStack(spacing: 6) {
-                        Circle().fill(statusColor).frame(width: 7, height: 7)
-                        Text(statusText).font(.caption).foregroundStyle(.secondary)
-                    }
+                    MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? "Mac", short: true)
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Menu {
@@ -516,20 +525,49 @@ struct MacCard: View {
         }
     }
 
-    private var statusColor: Color {
-        switch live.state {
-        case .connected: .green
-        case .connecting: .orange
-        case .off: Color(.systemGray3)
+}
+
+/// Whether this iPhone is connected to its Mac: a dot (green, orange while looking, gray) and what it
+/// means. Backing up counts as connected.
+struct MacConnection: View {
+    let live: LiveLink.State
+    let backingUp: Bool
+    let mac: String
+    /// Without the Mac's name, where it's shown beside it.
+    var short = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(text)
         }
+        .animation(.smooth, value: live)
     }
 
-    private var statusText: String {
-        switch live.state {
-        case .connected: "Connected"
-        case .connecting: "Looking for it…"
-        case .off: "Not connected · backs up on the same Wi-Fi"
+    private var connected: Bool { backingUp || live == .connected }
+
+    private var color: Color {
+        if connected { return .green }
+        return live == .connecting ? .orange : Color(.systemGray3)
+    }
+
+    private var text: String {
+        if backingUp { return short ? "Backing up" : "Backing up to \(mac)" }
+        switch live {
+        case .connected: return short ? "Connected" : "Connected to \(mac)"
+        case .connecting: return short ? "Looking for it…" : "Looking for \(mac)…"
+        case .off: return short ? "Not connected · backs up on the same Wi-Fi" : "\(mac) not connected"
         }
+    }
+}
+
+extension View {
+    /// A small pill, for a status line at the top of a card.
+    func chip() -> some View {
+        font(.footnote.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Color(.tertiarySystemFill), in: Capsule())
     }
 }
 
