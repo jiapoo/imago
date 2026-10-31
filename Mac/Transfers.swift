@@ -358,8 +358,9 @@ extension MediaLibrary {
             self.error = error.localizedDescription
             return nil
         }
-        let written = Task { await copyFiles([staged], to: path, server: server, quietly: true).undo }
-        return (path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path), staged, written)
+        let place = path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path)
+        let written = Task { await copyFiles([staged], to: path, server: server, title: "Saving a copy to “\(place)”").undo }
+        return (place, staged, written)
     }
 
     /// Edited copies waiting to be written to the drive, and shown from here meanwhile. Emptied at launch.
@@ -367,10 +368,10 @@ extension MediaLibrary {
         FileManager.default.temporaryDirectory.appending(path: "Edited copies", directoryHint: .isDirectory)
     }
 
-    /// `copyIn`, and where the copies went. `quietly`: no progress card (it would cover the viewer).
-    private func copyFiles(_ files: [URL], to path: String, server: BackupServer, quietly: Bool = false) async -> (undo: FileHistory.Step?, copies: [URL]) {
+    /// `copyIn`, and where the copies went. `title`: what the progress line says, when not "Copying to …".
+    private func copyFiles(_ files: [URL], to path: String, server: BackupServer, title: String? = nil) async -> (undo: FileHistory.Step?, copies: [URL]) {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        if !quietly { activity = Activity(title: "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count) }
+        activity = Activity(title: title ?? "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
         beginWork()
         defer {
             activity = nil

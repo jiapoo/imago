@@ -129,9 +129,9 @@ struct FolderRow: View {
                 .foregroundStyle(.tint)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .dropsFiles { urls in
+        .sidebarDrop(targeted: $targeted) { urls in
             library.drop(urls, onto: .folder(folder.path), server: server, history: history)
-        } isTargeted: { targeted = $0 }
+        }
     }
 }
 
@@ -156,9 +156,9 @@ struct TrashRow: View {
                 .foregroundStyle(.tint)
                 .contentTransition(.symbolEffect(.replace))
         }
-        .dropsFiles { urls in
+        .sidebarDrop(targeted: $targeted) { urls in
             library.drop(urls, onto: .trash, server: server, history: history)
-        } isTargeted: { targeted = $0 }
+        }
         .contextMenu {
             Button("Show in Finder") { server.revealInFinder(server.trashURL) }
         }
@@ -257,9 +257,9 @@ struct PhoneRow: View {
             Spacer(minLength: 0)
             status
         }
-        .dropsFiles { urls in
+        .sidebarDrop(targeted: $targeted) { urls in
             library.drop(urls, onto: device, server: server, history: history)
-        } isTargeted: { targeted = $0 }
+        }
         .help(help)
         .contextMenu { DeviceColorMenu(device: device) { pickingColor = true } }
         .popover(isPresented: $pickingColor, arrowEdge: .trailing) { DeviceColorPicker(device: device) }
@@ -428,5 +428,22 @@ struct StorageRow: View {
                 .foregroundStyle(server.location.isAvailable ? Color.secondary : Color.orange)
                 .lineLimit(1)
         }
+    }
+}
+
+extension View {
+    /// A sidebar row that takes dropped photos and videos. The whole row takes the drop, its padding
+    /// too, not just its icon and name, so it lights up as soon as the pointer is on the row; and it
+    /// lights up the way Finder's sidebar does.
+    func sidebarDrop(targeted: Binding<Bool>, perform action: @escaping @MainActor ([URL]) -> Bool) -> some View {
+        padding(.vertical, 4).padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.accentColor.opacity(targeted.wrappedValue ? 0.25 : 0))
+            }
+            .contentShape(Rectangle())
+            .dropsFiles(action) { targeted.wrappedValue = $0 }
+            .padding(.vertical, -4).padding(.horizontal, -6)
     }
 }

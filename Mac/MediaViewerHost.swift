@@ -78,8 +78,8 @@ final class MediaViewerHost {
     var showingInfo = false
     /// The item on screen is open in the editor.
     var editing = false
-    /// Said briefly over the viewer, e.g. where an edited copy went.
-    private(set) var notice: String?
+    /// Said briefly over the viewer, e.g. where an edited copy went, and whether it went.
+    private(set) var notice: (text: String, failed: Bool)?
     /// Closing: the viewer is shrinking back into its thumbnail.
     private(set) var isClosing = false
 
@@ -135,18 +135,22 @@ final class MediaViewerHost {
         let date = request.date(index)
         open(.init(urls: [saved.url], index: 0, thumbnailBytes: [:], date: { _ in date }, name: { _ in saved.url.lastPathComponent },
                    info: { _ in [.init(label: "Name", value: saved.url.lastPathComponent), .init(label: "Saved to", value: saved.place)] }))
-        show("Saving a copy to “\(saved.place)”…")
+        // While it's written to the drive, the progress line at the bottom says so; then this.
         Task {
-            show(await saved.written.value ? "Saved a copy to “\(saved.place)”" : "Couldn't save the copy to “\(saved.place)”")
+            if await saved.written.value {
+                show("Saved a copy to “\(saved.place)”")
+            } else {
+                show("Couldn't save the copy to “\(saved.place)”", failed: true)
+            }
         }
         return true
     }
 
-    private func show(_ text: String) {
-        notice = text
+    private func show(_ text: String, failed: Bool = false) {
+        notice = (text, failed)
         Task {
             try? await Task.sleep(for: .seconds(3))
-            if notice == text { notice = nil }
+            if notice?.text == text { notice = nil }
         }
     }
 
@@ -267,15 +271,12 @@ private struct MediaViewerOverlay: ViewModifier {
             browsing(request)
                 .overlay(alignment: .bottom) {
                     if let notice = host.notice {
-                        Text(notice)
-                            .font(.callout.weight(.medium))
-                            .padding(.horizontal, 16).padding(.vertical, 9)
-                            .background(.regularMaterial, in: Capsule())
+                        StatusPill(text: notice.text, mark: notice.failed ? .failed : .done)
                             .padding(.bottom, 24)
-                            .transition(.opacity)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: host.notice)
+                .animation(.snappy(duration: 0.3), value: host.notice?.text)
         }
     }
 

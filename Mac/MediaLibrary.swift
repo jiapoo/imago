@@ -234,6 +234,8 @@ final class MediaLibrary {
     /// `items(in: .large)`, as of a revision.
     @ObservationIgnored private var largeCache: (revision: Int, items: [MediaItem])?
 
+    private var durationFill: Task<Void, Never>?
+
     /// Items over this size show in Large Files.
     static let largeFileBytes: UInt64 = 20_000_000
 
@@ -397,6 +399,7 @@ final class MediaLibrary {
         selection.formIntersection(items.map(\.id) + trash.map(\.id))
         state = .ready
         findFolderCopies(server)
+        fillDurations()
         // Sent and now the iPhone's (or gone): no longer waiting to be sent.
         sendingPaths.formIntersection(server.devices.flatMap { notSynced(on: $0) }.map(\.url.path))
         sendNotSynced(server)
@@ -473,6 +476,7 @@ final class MediaLibrary {
         sendingPaths.formIntersection(server.devices.flatMap { notSynced(on: $0) }.map(\.url.path))
         changedHere()
         findFolderCopies(server)
+        fillDurations()
     }
 
     /// Large Files, worked out once per change: Home shows its count on every redraw.
@@ -1373,6 +1377,7 @@ final class MediaLibrary {
         await reloadFolders(server)
         changedHere()
         findFolderCopies(server)
+        fillDurations()
         sendNotSynced(server)
     }
 
@@ -1424,6 +1429,27 @@ final class MediaLibrary {
             // Kept until a reload shows them as the iPhone's: until then they still look Not synced.
             sendingPaths.formUnion(waiting.map(\.url.path))
             Task { await server.send(waiting, to: device) }
+        }
+    }
+
+    /// Videos whose length isn't known (ones no iPhone's index describes: edited copies, copies in
+    /// folders, files from Finder) get it, read in the background (see `VideoDurations`), so their
+    /// tiles show it like the rest.
+    func fillDurations() {
+        let unknown = (items + trash.map(\.item)).filter { $0.isVideo && $0.duration == 0 }.map(\.url)
+        guard !unknown.isEmpty else { return }
+        durationFill?.cancel()
+        durationFill = Task { [weak self] in
+            let found = await VideoDurations.lengths(of: unknown)
+            guard !Task.isCancelled, let self, !found.isEmpty else { return }
+            var changed = false
+            for i in items.indices where items[i].isVideo && items[i].duration == 0 {
+                if let seconds = found[items[i].url] { items[i].duration = seconds; changed = true }
+            }
+            for i in trash.indices where trash[i].item.isVideo && trash[i].item.duration == 0 {
+                if let seconds = found[trash[i].item.url] { trash[i].item.duration = seconds; changed = true }
+            }
+            if changed { revision += 1 }
         }
     }
 
@@ -1536,6 +1562,7 @@ final class MediaLibrary {
         folders = folderTree(adding: added.compactMap { Self.folderPath(of: $0.url, in: foldersURL, reserved: reserved) })
         changedHere()
         findFolderCopies(server)
+        fillDurations()
         sendNotSynced(server)
     }
 

@@ -94,11 +94,13 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .windowBackgroundColor))
             .mediaViewerOverlay()
-            // What's under way (copying a big video, moving hundreds, the library catching up): a ring in
-            // the middle of the page, above everything. Quick work never shows it.
-            // An undo or redo that takes a while (putting many back, the library catching up) turns the
-            // ring too, with what it's doing.
-            .overlay { ActivityOverlay(activity: library.activity ?? history.running.map { .init(title: $0, done: 0, total: 0, finishing: true) }) }
+            // What's under way (copying a big video, moving hundreds, saving an edited copy, an undo that
+            // takes a while): one line at the bottom, above everything. Quick work never shows it.
+            .overlay {
+                ActivityOverlay(activity: library.activity ?? history.running.map { .init(title: $0, done: 0, total: 0, finishing: true) },
+                                // Above a page's selection bar; in the viewer there's none.
+                                bottomInset: viewer.isOpen ? 24 : 84)
+            }
             .toolbar {
                 // On every page, the viewer too: what Edit › Undo and Redo do, named in their help. In a
                 // group of their own, apart from the viewer's Back.
@@ -262,20 +264,25 @@ struct MainView: View {
     }
 }
 
-/// What's under way, while it lasts: what, how far (a bar), and the file being worked on.
-/// Long work in the middle of the page: a ring that fills as it goes and keeps turning while it works,
-/// with what it's doing beneath. It appears only once the work has taken a moment, and fades.
+/// Long work (copying, moving, deleting, saving an edited copy, the library catching up): one line at
+/// the bottom of the window, in the pill every notice uses (`StatusPill`), with the Mac's own small
+/// spinner. It never covers the photos, and appears only once the work has taken a moment.
 struct ActivityOverlay: View {
     let activity: MediaLibrary.Activity?
+    /// Room left below it: above the selection bar, when there may be one.
+    var bottomInset: CGFloat = 24
     @State private var shown: MediaLibrary.Activity?
 
     var body: some View {
         ZStack {
             if let shown {
-                ActivityCard(activity: shown)
-                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                StatusPill(text: Self.line(shown),
+                           mark: .progress(shown.total > 0 && !shown.finishing && (shown.total > 1 || shown.bytes != nil) ? shown.fraction : nil))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.bottom, bottomInset)
         .animation(.snappy(duration: 0.3), value: shown == nil)
         .allowsHitTesting(false)
         .task(id: activity == nil) {
@@ -291,74 +298,76 @@ struct ActivityOverlay: View {
             if shown != nil, let now { shown = now }
         }
     }
-}
 
-private struct ActivityCard: View {
-    let activity: MediaLibrary.Activity
-
-    var body: some View {
-        VStack(spacing: 14) {
-            ActivityRing(fraction: activity.total > 0 && !activity.finishing ? activity.fraction : nil)
-                .frame(width: 76, height: 76)
-            VStack(spacing: 4) {
-                Text(activity.title).font(.headline)
-                if activity.total > 1, !activity.finishing {
-                    Text("\(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())")
-                        .font(.callout.monospacedDigit()).foregroundStyle(.secondary)
-                        .contentTransition(.numericText())
-                }
-                if let detail = activity.detail {
-                    Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                }
-                if let bytes = activity.bytes {
-                    Text("\(bytes.done.bytes) of \(bytes.total.bytes)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
-                }
-            }
-            .multilineTextAlignment(.center)
+    /// "Copying to “Tennis” · 2 of 3", or how far one big file has got.
+    static func line(_ activity: MediaLibrary.Activity) -> String {
+        guard !activity.finishing else { return activity.title }
+        if activity.total > 1 {
+            return "\(activity.title) · \(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())"
         }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 24)
-        .frame(width: 280)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Color.primary.opacity(0.07)))
-        .shadow(color: .black.opacity(0.18), radius: 30, y: 12)
-        .animation(.snappy(duration: 0.25), value: activity.done)
+        if let bytes = activity.bytes, bytes.total > 0 {
+            return "\(activity.title) · \((Double(bytes.done) / Double(bytes.total)).formatted(.percent.precision(.fractionLength(0))))"
+        }
+        return activity.title
     }
 }
 
-/// A progress ring in Imago's red: the arc fills with `fraction`, and a bright comet keeps circling it
-/// so the ring never looks stuck. Without a fraction, the comet alone.
-struct ActivityRing: View {
-    var fraction: Double?
-    var lineWidth: CGFloat = 7
+/// How far long work has got, in the pill: a thin silver ring that fills, the weight of the text beside
+/// it. (The system's determinate circle draws a filled wedge.)
+private struct ProgressRing: View {
+    let fraction: Double
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let turn = timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2
-            ZStack {
-                Circle().stroke(Color.imago.opacity(0.12), lineWidth: lineWidth)
-                if let fraction {
-                    Circle()
-                        .trim(from: 0, to: max(0.02, fraction))
-                        .stroke(LinearGradient(colors: [Color.imago.mix(with: .white, by: 0.25), .imago], startPoint: .top, endPoint: .bottom),
-                                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.snappy(duration: 0.4), value: fraction)
-                }
-                Circle()
-                    .trim(from: 0, to: 0.22)
-                    .stroke(AngularGradient(colors: [Color.imago.opacity(0), Color.imago.opacity(fraction == nil ? 1 : 0.55)],
-                                            center: .center, startAngle: .degrees(0), endAngle: .degrees(79)),
-                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(turn * 360))
-                if let fraction {
-                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText())
-                }
-            }
-            .padding(lineWidth / 2)
+        ZStack {
+            Circle().stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: max(0.04, min(1, fraction)))
+                .stroke(Color.secondary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
         }
+        .frame(width: 14, height: 14)
+        .animation(.easeOut(duration: 0.3), value: fraction)
+    }
+}
+
+/// The one way Imago says what it's doing or has done: a small pill with one line, floating at the
+/// bottom. Long work shows the Mac's spinner (filling when it knows how far it is); a finished thing a
+/// check mark.
+struct StatusPill: View {
+    enum Mark: Equatable {
+        /// Under way: how far, when known.
+        case progress(Double?)
+        case done
+        case failed
+    }
+
+    let text: String
+    var mark: Mark = .done
+
+    var body: some View {
+        HStack(spacing: 9) {
+            switch mark {
+            case .progress(let fraction?):
+                ProgressRing(fraction: fraction)
+            case .progress(nil):
+                ProgressView().controlSize(.small)
+            case .done:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.secondary)
+            case .failed:
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.secondary)
+            }
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .contentTransition(.numericText())
+        }
+        .font(.callout)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08)))
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        .animation(.snappy(duration: 0.25), value: text)
     }
 }
 
