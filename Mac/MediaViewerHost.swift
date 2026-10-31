@@ -198,6 +198,9 @@ private struct MediaViewerOverlay: ViewModifier {
     /// The real viewer is showing (it's hidden during the flight).
     @State private var showingViewer = false
     @State private var backdrop: Double = 0
+    /// The viewer has the keyboard while it's open, not the grid under it: a key the viewer or editor
+    /// doesn't use (Delete, Esc) would otherwise act on the grid's selection.
+    @FocusState private var focused: Bool
 
     private static let grow = Animation.spring(duration: 0.34, bounce: 0.1)
     private static let shrink = Animation.spring(duration: 0.28, bounce: 0)
@@ -225,7 +228,19 @@ private struct MediaViewerOverlay: ViewModifier {
                                     .allowsHitTesting(false)
                             }
                         }
-                        .onAppear { open(request, in: geo.size) }
+                        .focusable()
+                        .focusEffectDisabled()
+                        .focused($focused)
+                        // Delete deletes what's on screen (⌘⌫ too, in the toolbar); not while editing.
+                        .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { press in
+                            guard !host.editing, request.delete != nil, press.modifiers.isEmpty else { return .ignored }
+                            Task { await host.deleteCurrent() }
+                            return .handled
+                        }
+                        .onAppear {
+                            focused = true
+                            open(request, in: geo.size)
+                        }
                         .onChange(of: request.id) { open(request, in: geo.size) }
                         .onChange(of: host.isClosing) { _, closing in if closing { close(request, in: geo.size) } }
                     }
@@ -276,12 +291,6 @@ private struct MediaViewerOverlay: ViewModifier {
                 onClose: { host.close() }
             )
             .id("\(request.id)-\(host.viewerRevision)")
-            // Delete (and ⌘⌫, in the toolbar) deletes what's on screen.
-            .onKeyPress(characters: ["\u{7F}", "\u{08}", "\u{F728}"]) { press in
-                guard request.delete != nil, press.modifiers.isEmpty else { return .ignored }
-                Task { await host.deleteCurrent() }
-                return .handled
-            }
             if host.showingInfo {
                 Divider()
                 InfoPanel(rows: request.info(host.index))
