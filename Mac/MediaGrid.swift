@@ -492,27 +492,39 @@ struct FloatingBar<Actions: View>: View {
     }
 }
 
-/// A selected tile's ring in the accent color, as in Photos: no checkmark, no tint over the photo.
-/// A thin light line inside keeps it clear against dark photos.
+/// A selected tile, softer than a plain border (the same as Arete's): the photo eases in a little,
+/// a ring in the accent color wraps it with a sliver of the page between them, glowing faintly,
+/// and a check badge sits in the corner.
 struct SelectedOverlay: ViewModifier {
     let selected: Bool
     var cornerRadius: CGFloat = 6
 
     func body(content: Content) -> some View {
         content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .scaleEffect(selected ? 0.9 : 1)
             .overlay {
                 if selected {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(.tint, lineWidth: 3.5)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: max(cornerRadius - 3.5, 0), style: .continuous)
-                                .strokeBorder(.white.opacity(0.85), lineWidth: 1)
-                                .padding(3.5)
-                        )
+                    RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
+                        .strokeBorder(.tint, lineWidth: 2.5)
+                        .shadow(color: Color.accentColor.opacity(0.35), radius: 6)
                         .transition(.opacity)
                 }
             }
-            .animation(.snappy(duration: 0.12), value: selected)
+            .overlay(alignment: .bottomTrailing) {
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 18, height: 18)
+                        .background(.tint, in: Circle())
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+                        .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                        .padding(7)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: selected)
     }
 }
 
