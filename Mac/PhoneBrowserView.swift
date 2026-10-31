@@ -556,6 +556,15 @@ struct PhoneGrid: View {
             }
         }
         .overlay(alignment: .bottom) { bar }
+        // ⌘E or ⌘T: the one selected backed-up photo or video, open in the editor.
+        .background {
+            Group {
+                Button("") { editSelected() }.keyboardShortcut("e", modifiers: .command)
+                Button("") { editSelected() }.keyboardShortcut("t", modifiers: .command)
+            }
+            .disabled(viewer.isOpen || selected.count != 1 || selected.first.map { model.files[$0.id] == nil } ?? true)
+            .hidden()
+        }
         .animation(.snappy(duration: 0.25), value: selection.selected.isEmpty)
         .modifier(GridKeys(
             focused: $focused,
@@ -688,6 +697,13 @@ struct PhoneGrid: View {
 
     /// Opens the viewer on `asset`, stepping through the grid's items that have something to show:
     /// the backed-up file, or the phone's preview until there is one.
+    /// Opens the one selected item in the editor (through the viewer, which it returns to).
+    private func editSelected() {
+        guard selected.count == 1, let asset = selected.first, model.files[asset.id] != nil else { return }
+        openViewer(on: asset)
+        viewer.editing = true
+    }
+
     private func openViewer(on asset: PhoneAsset?) {
         guard let asset else { return }
         let previews = server.previews[device.id] ?? [:]

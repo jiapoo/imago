@@ -95,6 +95,15 @@ struct BrowserView: View {
         grid(items)
             .overlay { emptyState(isEmpty: items.isEmpty) }
             .overlay(alignment: .bottom) { selectionBar }
+            // ⌘E or ⌘T: the one selected photo or video, open in the editor. In the viewer, its own.
+            .background {
+                Group {
+                    Button("") { editSelected() }.keyboardShortcut("e", modifiers: .command)
+                    Button("") { editSelected() }.keyboardShortcut("t", modifiers: .command)
+                }
+                .disabled(viewer.isOpen || isTrash || selected.count != 1)
+                .hidden()
+            }
             .animation(.snappy(duration: 0.25), value: selected.isEmpty)
             .modifier(keyHandling(items))
             .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
@@ -851,6 +860,13 @@ extension BrowserView {
         }
         library.selection = selection.selected
         anchor = selection.anchor
+    }
+
+    /// Opens the one selected item in the editor (through the viewer, which it returns to).
+    private func editSelected() {
+        guard selected.count == 1 else { return }
+        openViewer(on: selected.first)
+        viewer.editing = true
     }
 
     /// Opens the viewer on `item`, stepping through this grid.

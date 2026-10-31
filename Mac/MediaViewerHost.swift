@@ -392,7 +392,11 @@ private struct ViewerToolbar: ToolbarContent {
                     Label("Edit", systemImage: "slider.horizontal.3")
                 }
                 .keyboardShortcut("e", modifiers: .command)
-                .help("Turn, flip, crop or trim a copy (⌘E). The original stays as it is.")
+                .help("Turn, flip, crop or trim a copy (⌘E or ⌘T). The original stays as it is.")
+                // ⌘T too.
+                .background {
+                    Button("") { host.editing = true }.keyboardShortcut("t", modifiers: .command).hidden()
+                }
             }
             if request.urls.indices.contains(index) {
                 ShareButton(urls: [request.urls[index]])
