@@ -82,6 +82,13 @@ struct MainView: View {
             .onChange(of: server.liveDevices) { library.sendNotSynced(server) }
             // Turned to automatic: what's waiting on Deleted on iPhone is dealt with now.
             .onChange(of: server.acceptPhoneChanges) { Task { await library.load(from: server, force: true) } }
+            // The folder on screen is gone (deleted or renamed in Finder): to the nearest folder it was
+            // in that's still there, or Home.
+            .onChange(of: library.folders) {
+                guard library.state == .ready, case .folder(var path) = selection, !library.hasFolder(path) else { return }
+                while !path.isEmpty, !library.hasFolder(path) { path = (path as NSString).deletingLastPathComponent }
+                selection = path.isEmpty ? .home : .folder(path)
+            }
             // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
             .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

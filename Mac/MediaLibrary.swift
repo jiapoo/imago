@@ -1549,6 +1549,11 @@ final class MediaLibrary {
         findFolderCopies(server)
     }
 
+    /// Whether the folder at this path ("Tennis/Serve") is there.
+    func hasFolder(_ path: String) -> Bool {
+        Self.paths(of: folders).contains(path)
+    }
+
     /// Every folder's path in a tree, parents first.
     private static func paths(of folders: [Folder]) -> [String] {
         folders.flatMap { [$0.path] + paths(of: $0.children ?? []) }
