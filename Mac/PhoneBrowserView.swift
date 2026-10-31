@@ -622,6 +622,7 @@ struct PhoneGrid: View {
             Button("Open") { openViewer(on: asset) }
             OpenWithMenu(urls: targets.compactMap { model.files[$0.id] })
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.compactMap { model.files[$0.id] }) }
+            Button("Share…") { MediaShare.present(targets.compactMap { model.files[$0.id] }) }
             let copies = actions.folderCopies(targets)
             if !copies.isEmpty {
                 Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
@@ -1007,6 +1008,8 @@ struct PhoneSelectionBar: View {
         FloatingBar(count: selected.count,
                     detail: selected.reduce(0) { $0 + $1.bytes }.bytes + (skipped > 0 && !isDeleting ? " · \(skipped) not backed up" : ""),
                     clear: clear) {
+            // The backed-up files: ones not backed up yet have none to share.
+            ShareButton(urls: selected.compactMap { actions.model.files[$0.id] })
             if isDeleting {
                 Button {
                     actions.keep(selected)

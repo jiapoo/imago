@@ -385,10 +385,7 @@ private struct ViewerToolbar: ToolbarContent {
                 .help("Turn, flip, crop or trim a copy (⌘E). The original stays as it is.")
             }
             if request.urls.indices.contains(index) {
-                ShareLink(item: request.urls[index]) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                .help("Share")
+                ShareButton(urls: [request.urls[index]])
             }
             if let isFavorite = request.isFavorite, let toggle = request.toggleFavorite {
                 let favorite = isFavorite(index)

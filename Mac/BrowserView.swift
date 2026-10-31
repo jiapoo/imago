@@ -770,6 +770,7 @@ extension BrowserView {
         Button("Open") { openViewer(on: item) }
         OpenWithMenu(urls: targets.map(\.url))
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
+        Button("Share…") { MediaShare.present(targets.map(\.url)) }
         let copies = targets.flatMap(otherFolders(holding:)).map(\.url)
         if !copies.isEmpty {
             Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }
@@ -1264,6 +1265,8 @@ private struct SelectionBar: View {
 
     var body: some View {
         FloatingBar(count: items.count, detail: "\(items.reduce(0) { $0 + $1.bytes }.bytes) · \(sources)", clear: clear) {
+            ShareButton(urls: items.map(\.url))
+
             Menu {
                 ForEach(folders, id: \.self) { folder in
                     Button(folder) { move(folder) }
