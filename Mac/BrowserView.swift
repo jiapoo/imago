@@ -849,10 +849,12 @@ extension BrowserView {
             sourceFrame: item.id == anchor ? anchorFrame : nil,
             saveEdit: isTrash ? nil : { [library, server, history] index, copy in
                 // Beside the original: in its folder, or its iPhone's own dated folder.
-                let path = library.editedCopyFolder(for: items[index], server: server)
-                guard let step = await library.copyIn([copy], to: path, server: server) else { return nil }
-                history.record(step)
-                return path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path)
+                guard let saving = library.saveEditedCopy(copy, of: items[index], server: server) else { return nil }
+                return .init(place: saving.place, url: saving.staged, written: Task {
+                    guard let undo = await saving.written.value else { return false }
+                    history.record(undo)
+                    return true
+                })
             },
             deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone too; the backup goes to Recently Deleted)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in

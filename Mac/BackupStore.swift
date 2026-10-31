@@ -576,11 +576,12 @@ actor BackupStore {
 
     /// Which of `files` are this iPhone's stored files.
     func held(_ files: [URL]) -> Set<URL> {
+        // By the paths as the index keeps them: making a URL of every stored file takes a while.
         if heldCache?.version != indexVersion {
-            heldCache = (indexVersion, Set(index.resources.values.map { url(of: $0.relativePath).path }))
+            heldCache = (indexVersion, Set(index.resources.values.map(\.relativePath)))
         }
         guard let paths = heldCache?.paths else { return [] }
-        return Set(files.filter { paths.contains($0.lexicallyStandardized.path) })
+        return Set(files.filter { paths.contains(relativePath(of: $0)) })
     }
 
     /// Whether a file is one of this iPhone's stored files.

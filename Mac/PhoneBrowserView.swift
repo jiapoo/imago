@@ -716,11 +716,13 @@ struct PhoneGrid: View {
             // Edits are saved as a new file beside the backup, as in Library. The iPhone's photo stays
             // as it is.
             saveEdit: { [library, server, history] index, copy in
-                guard let item = model.asset(ids[index]).flatMap({ actions.libraryItems([$0]).first }) else { return nil }
-                let path = library.editedCopyFolder(for: item, server: server)
-                guard let step = await library.copyIn([copy], to: path, server: server) else { return nil }
-                history.record(step)
-                return FolderMark.name(path)
+                guard let item = model.asset(ids[index]).flatMap({ actions.libraryItems([$0]).first }),
+                      let saving = library.saveEditedCopy(copy, of: item, server: server) else { return nil }
+                return .init(place: saving.place, url: saving.staged, written: Task {
+                    guard let undo = await saving.written.value else { return false }
+                    history.record(undo)
+                    return true
+                })
             },
             // Only the backed-up file: a preview is too small to edit.
             canEdit: { model.files[ids[$0]] != nil },

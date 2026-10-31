@@ -227,6 +227,11 @@ final class MediaLibrary {
     /// so its files aren't taken for new ones.
     private var working = 0
 
+    /// `deletedOnPhone` for each iPhone, as of a revision.
+    @ObservationIgnored private var deletedOnPhoneCache: (revision: Int, byDevice: [String: [MediaItem]])?
+    /// `items(in: .large)`, as of a revision.
+    @ObservationIgnored private var largeCache: (revision: Int, items: [MediaItem])?
+
     /// Items over this size show in Large Files.
     static let largeFileBytes: UInt64 = 20_000_000
 
@@ -361,6 +366,10 @@ final class MediaLibrary {
         }.value
         loaded += files
         trashed += trashedFiles
+        // Tens of thousands of items: sorted away from the main thread.
+        let (sortedItems, sortedTrash) = await Task.detached(priority: .userInitiated) { [loaded, trashed] in
+            (loaded.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }, trashed.sorted { $0.deletedAt > $1.deletedAt })
+        }.value
         // Something changed on screen meanwhile (a move): this read is out of date. The re-read that
         // change asked for follows.
         guard generation == loadGeneration else { return }
@@ -370,8 +379,8 @@ final class MediaLibrary {
             return
         }
 
-        items = loaded.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
-        trash = trashed.sorted { $0.deletedAt > $1.deletedAt }
+        items = sortedItems
+        trash = sortedTrash
         onPhone = phones
         pendingRemoval = pending
         restoring = putBack
@@ -412,7 +421,11 @@ final class MediaLibrary {
     /// become one of its assets (they leave the page as plain files), or stopped being one (they come
     /// back as plain files, if they're still there).
     func assetsChanged(_ assetIDs: Set<String>, files: [URL], on device: PairedDevice, server: BackupServer) async {
-        guard state == .ready, let store = server.store(for: device) else { return }
+        guard state == .ready, let store = server.store(for: device) else {
+            // A read under way may have begun before the change: it runs once more.
+            if loading != nil { loadAgain = true }
+            return
+        }
         let foldersURL = server.foldersURL
         let trashURL = server.trashURL
         let reserved = server.reservedFolderNames
@@ -430,12 +443,14 @@ final class MediaLibrary {
         let ids = Set(assetIDs.map { "\(deviceID)/\($0)" })
         let paths = Set((files + built.files).map(\.lexicallyStandardized.path))
         func leaving(_ item: MediaItem) -> Bool {
-            ids.contains(item.id) || (item.deviceID == nil && paths.contains(item.url.lexicallyStandardized.path))
+            ids.contains(item.id) || (item.deviceID == nil && paths.contains(item.url.path))
         }
         items.removeAll(where: leaving)
         trash.removeAll { leaving($0.item) }
         // Still plain files elsewhere on the page (another iPhone's index may hold them): not twice.
-        let shown = Set(items.map(\.url.lexicallyStandardized.path) + trash.map(\.item.url.lexicallyStandardized.path))
+        // Items' files are kept standardized already, so their paths are compared as they are.
+        let wanted = Set(plain.map(\.url.path))
+        let shown = wanted.isEmpty ? [] : Set((items.lazy.map(\.url.path) + trash.lazy.map(\.item.url.path)).filter(wanted.contains))
         items += built.items
         items += plain.filter { !Self.isInside($0.url, trashURL) && !shown.contains($0.url.path) }
         trash += built.trashed.map { item in
@@ -455,6 +470,14 @@ final class MediaLibrary {
         sendingPaths.formIntersection(server.devices.flatMap { notSynced(on: $0) }.map(\.url.path))
         changedHere()
         findFolderCopies(server)
+    }
+
+    /// Large Files, worked out once per change: Home shows its count on every redraw.
+    private func largeItems() -> [MediaItem] {
+        if largeCache?.revision != revision {
+            largeCache = (revision, items.filter { $0.bytes >= Self.largeFileBytes }.sorted { $0.bytes > $1.bytes })
+        }
+        return largeCache?.items ?? []
     }
 
     /// Changes from the iPhones made automatically: deleted there, so to Recently Deleted here now (or
@@ -658,7 +681,7 @@ final class MediaLibrary {
     func items(in scope: Scope, deviceID: String? = nil, kind: Kind = .all) -> [MediaItem] {
         let source: [MediaItem] = switch scope {
         case .trash: trash.map(\.item)
-        case .large: items.filter { $0.bytes >= Self.largeFileBytes }.sorted { $0.bytes > $1.bytes }
+        case .large: largeItems()
         case .deletedOnPhone(let deviceID): deletedOnPhone(deviceID)
         case .onThisDay: items.filter { Self.isOnThisDay($0.date) }
         case .items(let ids): items.filter { [wanted = Set(ids)] in wanted.contains($0.id) }
@@ -734,12 +757,19 @@ final class MediaLibrary {
     /// ones still in its own folder: ones moved into a folder or deleted here were dealt with already.
     /// Empty until the iPhone has sent its library list.
     func deletedOnPhone(_ deviceID: String) -> [MediaItem] {
-        guard let phone = onPhone[deviceID] else { return [] }
-        return items.filter { item in
-            // Not files from the Mac on their way to it (`BackupServer.send`): they were never on it.
-            item.deviceID == deviceID && item.folder == nil && item.assetID.map { phone[$0] == nil && !$0.hasPrefix("mac-") } == true
-                && !kept.contains(item.id)
+        // Worked out for every iPhone in one pass, once per change: the sidebar asks on every redraw,
+        // and going through every item for each iPhone each time took a sixth of a second.
+        if deletedOnPhoneCache?.revision != revision {
+            var found: [String: [MediaItem]] = [:]
+            for item in items where item.folder == nil {
+                // Not files from the Mac on their way to it (`BackupServer.send`): they were never on it.
+                guard let id = item.deviceID, let phone = onPhone[id], let assetID = item.assetID,
+                      phone[assetID] == nil, !assetID.hasPrefix("mac-"), !kept.contains(item.id) else { continue }
+                found[id, default: []].append(item)
+            }
+            deletedOnPhoneCache = (revision, found)
         }
+        return deletedOnPhoneCache?.byDevice[deviceID] ?? []
     }
 
     /// Taken on today's month and day, in an earlier year.
@@ -1222,16 +1252,21 @@ final class MediaLibrary {
         let trashURL = server.trashURL.lexicallyStandardized
         let reserved = server.reservedFolderNames
         let phoneFolders = Set(server.devices.map(\.folder))
-        let shown = (items + trash.map(\.item)).map { ($0.url.lexicallyStandardized, $0.deviceID != nil) }
-
-        let (candidates, gone) = await Task.detached(priority: .userInitiated) { () -> ([URL], Set<String>) in
+        // Worked out away from the main thread: tens of thousands of paths. Items' files are kept
+        // standardized, so their paths are used as they are.
+        let (all, trashed) = (items, trash)
+        let (candidates, gone, shownPhone) = await Task.detached(priority: .userInitiated) { () -> ([URL], Set<String>, Set<String>) in
             var shownIn: [String: Set<String>] = [:]
             var knownFolders: Set<String> = []
-            for (url, _) in shown {
-                var folder = url.deletingLastPathComponent()
-                shownIn[folder.path, default: []].insert(url.path)
-                while folder.pathComponents.count > root.pathComponents.count, knownFolders.insert(folder.path).inserted {
-                    folder = folder.deletingLastPathComponent()
+            var shownPhone: Set<String> = []
+            let rootPath = root.path
+            for item in all + trashed.map(\.item) {
+                let path = item.url.path
+                if item.deviceID != nil { shownPhone.insert(path) }
+                var folder = (path as NSString).deletingLastPathComponent
+                shownIn[folder, default: []].insert(path)
+                while folder.count > rootPath.count, knownFolders.insert(folder).inserted {
+                    folder = (folder as NSString).deletingLastPathComponent
                 }
             }
             /// Where the library looks: the user's folders, the iPhones' own folders and Recently Deleted.
@@ -1264,13 +1299,17 @@ final class MediaLibrary {
                     candidates += DriveScan.shared.mediaFiles(in: sub)
                 }
                 // Folders that left it: everything that was in them.
-                for known in knownFolders where URL(filePath: known).deletingLastPathComponent().path == folder.path && !inside.contains(known) {
+                for known in knownFolders where (known as NSString).deletingLastPathComponent == folder.path && !inside.contains(known) {
                     goneBelow.append(known + "/")
                 }
             }
-            for (url, _) in shown where goneBelow.contains(where: { url.path.hasPrefix($0) }) { gone.insert(url.path) }
+            if !goneBelow.isEmpty {
+                for paths in shownIn.values {
+                    for path in paths where goneBelow.contains(where: { path.hasPrefix($0) }) { gone.insert(path) }
+                }
+            }
             DriveScan.shared.save()
-            return (candidates, gone)
+            return (candidates, gone, shownPhone)
         }.value
 
         // Files an iPhone's index holds are that iPhone's (a Live Photo's video, a received file):
@@ -1290,7 +1329,7 @@ final class MediaLibrary {
             return
         }
         // Gone from where an iPhone's index has them: the next read of the library sorts those out.
-        let leaving = gone.subtracting(shown.filter(\.1).map(\.0.path))
+        let leaving = gone.subtracting(shownPhone)
         guard !unknown.isEmpty || !leaving.isEmpty else { return }
         let manifest = await Task.detached(priority: .userInitiated) { TrashManifest.read(in: trashURL) }.value
         let added = await Task.detached(priority: .userInitiated) {
@@ -1301,8 +1340,8 @@ final class MediaLibrary {
             changedFolders.formUnion(folders)
             return
         }
-        items.removeAll { $0.deviceID == nil && leaving.contains($0.url.lexicallyStandardized.path) }
-        trash.removeAll { $0.item.deviceID == nil && leaving.contains($0.item.url.lexicallyStandardized.path) }
+        items.removeAll { $0.deviceID == nil && leaving.contains($0.url.path) }
+        trash.removeAll { $0.item.deviceID == nil && leaving.contains($0.item.url.path) }
         for item in added {
             if Self.isInside(item.url, trashURL) {
                 var item = item

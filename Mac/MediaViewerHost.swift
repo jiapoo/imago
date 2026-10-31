@@ -41,14 +41,22 @@ final class MediaViewerHost {
         /// back into it. Nil to fade instead.
         var sourceFrame: CGRect? = nil
         /// Files an edited copy of the item at this index (a new file; the original is never changed).
-        /// Returns where it went ("Tennis"), or nil when it couldn't. Nil where editing doesn't apply.
-        var saveEdit: ((Int, URL) async -> String?)? = nil
+        /// Nil when it couldn't; nil where editing doesn't apply.
+        var saveEdit: ((Int, URL) async -> SavedCopy?)? = nil
         /// Whether the item at this index can be edited: not a preview of one that isn't backed up yet.
         var canEdit: (Int) -> Bool = { _ in true }
         /// The delete button's help, e.g. "Move to Recently Deleted"; nil where there's nothing to delete.
         var deleteTitle: String? = nil
         /// Deletes the item at this index. Returns whether it went, so the viewer moves to the next one.
         var delete: ((Int) async -> Bool)? = nil
+    }
+
+    /// An edited copy on its way to the drive: where it's going ("Tennis"), the copy to show
+    /// meanwhile, and whether it got there.
+    struct SavedCopy {
+        var place: String
+        var url: URL
+        var written: Task<Bool, Never>
     }
 
     private(set) var request: Request?
@@ -122,9 +130,15 @@ final class MediaViewerHost {
 
     /// Files the editor's copy of the item on screen, then leaves the editor and says where it went.
     func saveEdit(_ copy: URL) async -> Bool {
-        guard let save = request?.saveEdit, let place = await save(index, copy) else { return false }
-        editing = false
-        show("Saved a copy to “\(place)”")
+        guard let request, let save = request.saveEdit, let saved = await save(index, copy) else { return false }
+        // The copy, at once, as Photos shows it after an edit; it's written to the drive meanwhile.
+        let date = request.date(index)
+        open(.init(urls: [saved.url], index: 0, thumbnailBytes: [:], date: { _ in date }, name: { _ in saved.url.lastPathComponent },
+                   info: { _ in [.init(label: "Name", value: saved.url.lastPathComponent), .init(label: "Saved to", value: saved.place)] }))
+        show("Saving a copy to “\(saved.place)”…")
+        Task {
+            show(await saved.written.value ? "Saved a copy to “\(saved.place)”" : "Couldn't save the copy to “\(saved.place)”")
+        }
         return true
     }
 

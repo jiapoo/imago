@@ -20,6 +20,8 @@ final class BackupServer {
         let id: UUID
         var deviceID: String?
         var received = 0
+        /// The assets files arrived for, for the library to show (`assetsChanged`).
+        var receivedAssets: Set<String> = []
         var total = 0
         var currentFile: String?
     }
@@ -334,7 +336,7 @@ final class BackupServer {
                         break
                     }
                     if known.name != deviceName { rename(known, to: deviceName) }
-                    refreshLocation()
+                    refreshLocationIfChanged()
                     guard let deviceStore = self.store(for: known) else {
                         try await peer.send(.control(.unavailable(
                             reason: "Your Mac's backup drive “\(location.volumeName)” isn't connected."
@@ -369,6 +371,7 @@ final class BackupServer {
                     do {
                         try await store?.finish(key, sha256: sha256)
                         sessions[id]?.received += 1
+                        sessions[id]?.receivedAssets.insert(key.assetID)
                         try await peer.send(.control(.stored(key)))
                         // Keep the counts on screen moving during a long backup.
                         if let device, let store, (sessions[id]?.received ?? 0) % 20 == 0 {
@@ -482,14 +485,19 @@ final class BackupServer {
             libraryChanged(device.id)
         }
         await store?.flush()
-        if let session = sessions.removeValue(forKey: id), let device, session.received > 0 {
+        let session = sessions.removeValue(forKey: id)
+        if let session, let device, session.received > 0 {
             addLog("\(device.name): backed up \(session.received) files", symbol: "checkmark.circle")
             if let store { warmThumbnails(store, since: started) }
         }
         updateSleepAssertion()
-        guard !isLive else { return }
+        // A connection that never said which iPhone it was (one turned away, a stale pairing trying
+        // again and again) changed nothing here.
+        guard !isLive, let device else { return }
         await refreshSummaries()
-        catalogRevision += 1
+        // Just what arrived, and the iPhone's list: not the whole library again.
+        if let received = session?.receivedAssets, !received.isEmpty { await assetsChanged(received, on: device) }
+        await mediaLibrary?.phoneListChanged(device, server: self)
     }
 
     /// Keeps the Mac from idle-sleeping mid-transfer. It can't wake a sleeping Mac; for overnight
@@ -980,6 +988,15 @@ final class BackupServer {
     }
 
     /// Re-reads the chosen folder, e.g. after a drive is plugged in or removed.
+    /// At each iPhone's hello: the drive may have gone or come back since. Only a change is acted on;
+    /// reading `library.json` and the whole library again at every connection stalled the app each
+    /// time an iPhone connected.
+    private func refreshLocationIfChanged() {
+        let info = LocationInfo(url: resolveLocationURL())
+        guard info.url != location.url || info.isAvailable != location.isAvailable || library == nil else { return }
+        refreshLocation()
+    }
+
     func refreshLocation() {
         let url = resolveLocationURL()
         let info = LocationInfo(url: url)

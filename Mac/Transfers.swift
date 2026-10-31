@@ -338,8 +338,39 @@ extension MediaLibrary {
 
     /// Copies files from outside the library into a folder. Returns the step that removes the copies.
     func copyIn(_ files: [URL], to path: String, server: BackupServer) async -> FileHistory.Step? {
+        await copyFiles(files, to: path, server: server).undo
+    }
+
+    /// Files an edited copy of `item` beside it (in its folder, or its iPhone's own dated folder), in
+    /// the background, as Photos does: a backup drive can take seconds to write a big video, and
+    /// meanwhile the copy can be watched where the editor made it (`staged`, on the Mac's own disk).
+    /// `written` gives the step that removes the copy once it's on the drive, or nil if it couldn't be.
+    func saveEditedCopy(_ copy: URL, of item: MediaItem, server: BackupServer) -> (place: String, staged: URL, written: Task<FileHistory.Step?, Never>)? {
+        let path = editedCopyFolder(for: item, server: server)
+        // Out of the editor's temporary folder, which goes as soon as the save returns. The same disk,
+        // so it's a rename.
+        let staged = Self.stagingFolder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+            .appending(path: copy.lastPathComponent)
+        do {
+            try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: copy, to: staged)
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+        let written = Task { await copyFiles([staged], to: path, server: server, quietly: true).undo }
+        return (path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path), staged, written)
+    }
+
+    /// Edited copies waiting to be written to the drive, and shown from here meanwhile. Emptied at launch.
+    nonisolated static var stagingFolder: URL {
+        FileManager.default.temporaryDirectory.appending(path: "Edited copies", directoryHint: .isDirectory)
+    }
+
+    /// `copyIn`, and where the copies went. `quietly`: no progress card (it would cover the viewer).
+    private func copyFiles(_ files: [URL], to path: String, server: BackupServer, quietly: Bool = false) async -> (undo: FileHistory.Step?, copies: [URL]) {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        activity = Activity(title: "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
+        if !quietly { activity = Activity(title: "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count) }
         beginWork()
         defer {
             activity = nil
@@ -367,12 +398,13 @@ extension MediaLibrary {
         }
         // The copies show at once, without reading the library again.
         showCopies(copies, server: server)
-        guard !copies.isEmpty else { return nil }
-        return FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
+        guard !copies.isEmpty else { return (nil, []) }
+        let undo = FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
             self?.hideRemoved(copies, server: server)
             return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyIn(files, to: path, server: server) }
         }
+        return (undo, copies.map(\.lexicallyStandardized))
     }
 
     /// Copies one file. A big one goes in 8 MB pieces with `progress` (bytes so far, size), so a long

@@ -8,6 +8,8 @@ struct ImagoMacApp: App {
     @State private var history = FileHistory()
 
     init() {
+        // Edited copies left from last time were written to the drive then, or never will be.
+        try? FileManager.default.removeItem(at: MediaLibrary.stagingFolder)
         let server = BackupServer()
         server.start()
         // To tell the user when an iPhone said no to a change, or photos were deleted on one.
@@ -56,3 +58,4 @@ struct ImagoMacApp: App {
         .menuBarExtraStyle(.window)
     }
 }
+
