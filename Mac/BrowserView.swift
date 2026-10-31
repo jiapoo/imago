@@ -36,6 +36,7 @@ struct BrowserView: View {
     @State private var anchorFrame: CGRect?
     /// Where each tile is, for the selection box.
     @State private var tileFrames = TileFrames()
+    @State private var tooltip = GridTooltip()
     /// Recently Deleted: items to delete for good, while the confirmation is up.
     @State private var deletingNow: [TrashedItem]?
     /// Items to ask their iPhone to remove, while the confirmation is up.
@@ -146,6 +147,7 @@ struct BrowserView: View {
           .modifier(FillsViewport())
           .modifier(SelectionBox(frames: tileFrames, ids: { shown.ids },
                                  selection: Binding(get: { library.selection }, set: { library.selection = $0 })))
+          .overlay(alignment: .topLeading) { GridTooltipView(tooltip: tooltip, frames: tileFrames) }
           .dragsSelection(tileFrames, selection: { library.selection }) { ids in
               // From the library, not this page's items: those are as the page was when it appeared.
               (library.items + library.trash.map(\.item)).filter { ids.contains($0.id) }.map(\.url)
@@ -184,6 +186,7 @@ struct BrowserView: View {
             pendingRemoval: library.pendingRemoval.contains(item.id)
                 ? item.deviceID.map { SourceBadge.Style(.phone($0), server: server, waiting: true) } : nil,
             badge: badge(for: item),
+            hover: { hover(item, $0) },
             source: source(of: item),
             cameFrom: cameFrom(item),
             folders: otherFolders(holding: item)
@@ -250,13 +253,27 @@ struct BrowserView: View {
         case .deletedOnPhone:
             guard let days = library.daysUntilMoved(item, keeping: server.trashDays) else { return nil }
             return days == 1 ? "1 day" : "\(days) days"
-        case .folder(let path):
-            // With subfolders shown: which one each item is in.
-            guard let folder = item.folder, folder != path else { return nil }
-            return FolderMark.name(String(folder.dropFirst(path.count + 1)))
-        default:
+        case .folder, .trash:
             return nil
+        default:
+            // Beside an iPhone's backups, not on it yet: an edited copy, or a file sent to it.
+            guard library.waitingFor(item) != nil else { return nil }
+            if item.deviceID != nil { return "Sending" }
+            return item.name.contains("(Edited)") ? "Edited" : "Not synced"
         }
+    }
+
+    private func hover(_ item: MediaItem, _ inside: Bool) {
+        tooltip.hover(item.id, inside, text: help(for: item))
+    }
+
+    /// The tooltip's text: in a folder showing its subfolders, the subfolder it's in ("sports › serve");
+    /// otherwise its name.
+    private func help(for item: MediaItem) -> String {
+        if case .folder(let path) = scope, let folder = item.folder, folder != path {
+            return FolderMark.name(String(folder.dropFirst(path.count + 1)))
+        }
+        return item.name
     }
 
     /// Drags the item, or the whole selection when it's part of it.
@@ -883,6 +900,48 @@ private final class GridCache {
     var ids: Set<String> = []
 }
 
+// MARK: - Tooltip
+
+/// The grid's tooltip: after the pointer rests on a tile a moment, what it says shows below it. Drawn
+/// by Imago, as the system's tooltips don't show over the grid's tiles. Its own object, so only the
+/// tooltip redraws as the pointer moves, not the grid.
+@MainActor @Observable
+final class GridTooltip {
+    private(set) var tip: (id: String, text: String)?
+    @ObservationIgnored private var wait: Task<Void, Never>?
+
+    func hover(_ id: String, _ inside: Bool, text: String) {
+        wait?.cancel()
+        guard inside else {
+            if tip?.id == id { tip = nil }
+            return
+        }
+        wait = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            if !Task.isCancelled { tip = (id, text) }
+        }
+    }
+}
+
+private struct GridTooltipView: View {
+    let tooltip: GridTooltip
+    let frames: TileFrames
+
+    var body: some View {
+        if let tip = tooltip.tip, let frame = frames.frames[tip.id] {
+            Text(tip.text)
+                .font(.callout)
+                .fixedSize()
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.separator))
+                .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                .position(x: frame.midX, y: frame.maxY + 14)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
 // MARK: - Tile
 
 private struct MediaTile: View {
@@ -890,8 +949,11 @@ private struct MediaTile: View {
     let selected: Bool
     /// Still on its iPhone, waiting to be deleted there: the iPhone's dot, with a clock.
     let pendingRemoval: SourceBadge.Style?
-    /// Top left: days left in Recently Deleted, or the size in Large Files.
+    /// Top left: days left in Recently Deleted, the size in Large Files, or that it's waiting to go
+    /// to its iPhone.
     var badge: String? = nil
+    /// The pointer came onto it (true) or left it.
+    var hover: (Bool) -> Void = { _ in }
     /// Bottom right: which iPhone it's on, or that it's only on the drive.
     var source: SourceBadge.Style? = nil
     /// Bottom left: which iPhone it came from.
@@ -942,7 +1004,7 @@ private struct MediaTile: View {
             }
             .modifier(SelectedOverlay(selected: selected))
             .contentShape(Rectangle())
-            .help(item.name)
+            .onHover(perform: hover)
     }
 }
 

@@ -227,6 +227,8 @@ final class MediaLibrary {
     /// so its files aren't taken for new ones.
     private var working = 0
 
+    /// Each iPhone's own folder → its device ID, for `waitingFor`.
+    private(set) var phoneFolderOwners: [String: String] = [:]
     /// `deletedOnPhone` for each iPhone, as of a revision.
     @ObservationIgnored private var deletedOnPhoneCache: (revision: Int, byDevice: [String: [MediaItem]])?
     /// `items(in: .large)`, as of a revision.
@@ -381,6 +383,7 @@ final class MediaLibrary {
 
         items = sortedItems
         trash = sortedTrash
+        phoneFolderOwners = Dictionary(server.devices.map { ($0.folder, $0.id) }, uniquingKeysWith: { a, _ in a })
         onPhone = phones
         pendingRemoval = pending
         restoring = putBack
@@ -728,12 +731,24 @@ final class MediaLibrary {
     }
 
     /// Keeps the items `source` shows.
+    /// Waiting files show with their iPhone's photos too (an edited copy: see `waitingFor`).
     func filter(_ items: [MediaItem], by source: Source) -> [MediaItem] {
         switch source {
         case .drive: items
-        case .phones: items.filter { phoneAsset($0) != nil }
-        case .phone(let id): items.filter { $0.deviceID == id && phoneAsset($0) != nil }
+        case .phones: items.filter { phoneAsset($0) != nil || waitingFor($0) != nil }
+        case .phone(let id): items.filter { ($0.deviceID == id && phoneAsset($0) != nil) || waitingFor($0) == id }
         }
+    }
+
+    /// The iPhone a file beside its backups is waiting to go to (an edited copy saved next to its
+    /// original: Not synced until sent, then on its way until the iPhone has it), by device ID. Nil
+    /// for everything else.
+    func waitingFor(_ item: MediaItem) -> String? {
+        if let deviceID = item.deviceID {
+            return item.assetID?.hasPrefix("mac-") == true && phoneAsset(item) == nil ? deviceID : nil
+        }
+        guard let top = item.folder?.split(separator: "/").first else { return nil }
+        return phoneFolderOwners[String(top)]
     }
 
     /// Where an item is from: on an iPhone (at its last backup), or only on the drive.
