@@ -179,11 +179,13 @@ A double-click or Space opens it in Imago's viewer, inside the window like the P
 it is in the grid, with Info, Share and, for iPhone items, Favorite. It opens at once on the thumbnail and
 sharpens when the full photo is decoded; it grows out of its thumbnail and shrinks back into it, as in
 Photos. Pinch or double-click to zoom a photo. Videos have the native floating controls (as in Photos and
-QuickTime), start while their details load, and read ahead so a slow drive doesn't stutter; `,` and `.` step
-one frame. ← and → or a two-finger swipe move through the grid; Esc, the back button or Space on a photo go
-back.
+QuickTime), start while their details load, and read ahead so a slow drive doesn't stutter. Keys are
+Movist's: Space plays, ← → skip 5 s (⌥ 30 s, ⌥⇧ 5 min), `,` and `.` step one frame, X C Z set the speed,
+↑ ↓ M the volume. ← → (on a photo), ⌘← ⌘→ or a two-finger swipe move through the grid; Esc, the back
+button or Space on a photo go back.
 
-**Edit** (⌘E) turns, flips and crops a photo or video and trims a video (AreteMedia's `MediaEditView`).
+**Edit** (⌘E) turns, flips and crops a photo or video and trims a video (AreteMedia's `MediaEditView`;
+[ and ] trim at the playhead, ⇧⌘L / ⇧⌘R turn, ⇧⌘H / ⇧⌘V flip).
 The backup is never changed: Save as Copy writes a new file, "IMG_4821 (Edited).HEIC" (a video becomes
 a `.mov`), keeping when and where it was taken. It goes beside the original in its folder; for an item in an
 iPhone's own folder, into a folder named "Edited". ⌘Z removes the copy. The trash button (⌘⌫ or Delete) deletes what's on screen and moves to the next. Playback is logged (Console, category "media") with when it started, stalls and dropped frames.
