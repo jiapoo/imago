@@ -26,6 +26,11 @@ struct MainView: View {
     @Environment(MediaViewerHost.self) private var viewer
     @Environment(FileHistory.self) private var history
     @State private var selection: SidebarItem? = .home
+    /// Pages visited before this one and after it, for Back and Forward, as in Finder.
+    @State private var backList: [SidebarItem] = []
+    @State private var forwardList: [SidebarItem] = []
+    /// The page changes because of Back or Forward: not a visit of its own.
+    @State private var steppingHistory = false
     @State private var showingAddPhone = false
     /// The toolbar bell's list of what needs an answer.
     @State private var showingDecisions = false
@@ -89,6 +94,16 @@ struct MainView: View {
                 while !path.isEmpty, !library.hasFolder(path) { path = (path as NSString).deletingLastPathComponent }
                 selection = path.isEmpty ? .home : .folder(path)
             }
+            // Each page visited, for Back; a new visit clears Forward, as in Finder.
+            .onChange(of: selection) { old, new in
+                if steppingHistory {
+                    steppingHistory = false
+                } else if let old, old != new {
+                    backList.append(old)
+                    if backList.count > 100 { backList.removeFirst() }
+                    forwardList.removeAll()
+                }
+            }
             // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
             .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -102,12 +117,29 @@ struct MainView: View {
                                 bottomInset: viewer.isOpen ? 24 : 84)
             }
             .toolbar {
-                // On every page, the viewer too: what Edit › Undo and Redo do, named in their help. In a
-                // group of their own, apart from the viewer's Back.
-                if #available(macOS 26.0, *) {
-                    ToolbarSpacer(.fixed, placement: .navigation)
+                // Back and Forward through the pages visited, as in Finder (⌘[ and ⌘]). The viewer has
+                // its own Back.
+                if !viewer.isOpen {
+                    if #available(macOS 26.0, *) {
+                        ToolbarSpacer(.fixed, placement: .navigation)
+                    }
+                    ToolbarItem(placement: .navigation) {
+                        ControlGroup {
+                            Button(action: goBack) { Label("Back", systemImage: "chevron.left") }
+                                .keyboardShortcut("[", modifiers: .command)
+                                .disabled(backList.isEmpty)
+                                .help("See the previous page (⌘[)")
+                            Button(action: goForward) { Label("Forward", systemImage: "chevron.right") }
+                                .keyboardShortcut("]", modifiers: .command)
+                                .disabled(forwardList.isEmpty)
+                                .help("See the next page (⌘])")
+                        }
+                        .controlGroupStyle(.navigation)
+                    }
                 }
-                ToolbarItemGroup(placement: .navigation) {
+                // On every page, the viewer too: what Edit › Undo and Redo do, named in their help.
+                // Beside Copy | Move.
+                ToolbarItemGroup(placement: .primaryAction) {
                     Button { Task { await history.undo() } } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
@@ -118,9 +150,6 @@ struct MainView: View {
                     }
                     .disabled(!history.canRedo)
                     .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : "Nothing to redo")
-                }
-                if #available(macOS 26.0, *) {
-                    ToolbarSpacer(.fixed, placement: .navigation)
                 }
                 if !viewer.isOpen {
                     if pageHasPhotos {
@@ -230,6 +259,34 @@ struct MainView: View {
         case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay: true
         case .home, .storage, .device, .places: false
         }
+    }
+
+    /// Back: the page before, skipping folders that have gone since.
+    private func goBack() {
+        while let page = backList.popLast() {
+            guard isThere(page), page != selection else { continue }
+            if let selection { forwardList.append(selection) }
+            steppingHistory = true
+            selection = page
+            return
+        }
+    }
+
+    /// Forward: the page Back left, skipping folders that have gone since.
+    private func goForward() {
+        while let page = forwardList.popLast() {
+            guard isThere(page), page != selection else { continue }
+            if let selection { backList.append(selection) }
+            steppingHistory = true
+            selection = page
+            return
+        }
+    }
+
+    /// Whether a page in the history can still be shown: a folder may have been deleted or renamed.
+    private func isThere(_ page: SidebarItem) -> Bool {
+        if case .folder(let path) = page { return library.hasFolder(path) }
+        return true
     }
 
     private var duplicateTitle: String {
