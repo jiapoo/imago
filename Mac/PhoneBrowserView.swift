@@ -588,6 +588,8 @@ struct PhoneGrid: View {
         }
         .onAppear { if byDay { days = Day.group(assets) } }
         .onChange(of: model.revision) { if byDay { days = Day.group(assets) } }
+        // Other photos to show (another place on the map): their days.
+        .onChange(of: assets.map(\.id)) { if byDay { days = Day.group(assets) } }
         .modifier(PhoneDialogs(actions: actions, selected: selected, confirmingDelete: $confirmingDelete,
                                namingAlbum: $namingAlbum, done: { selection.selected = [] }))
     }
