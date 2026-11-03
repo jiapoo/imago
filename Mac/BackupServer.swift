@@ -222,12 +222,12 @@ final class BackupServer {
             do {
                 try await peer.start()
                 var frames = peer.frames.makeAsyncIterator()
-                guard case .control(.pairRequest(let deviceID, let deviceName, let version))? = try await frames.next(),
+                guard case .control(.pairRequest(let deviceID, let deviceName, let version, let kind))? = try await frames.next(),
                       ProtocolVersion.supported.contains(version)
                 else { return }
 
                 let key = Secret.random()
-                let device = register(deviceID: deviceID, name: deviceName, key: key)
+                let device = register(deviceID: deviceID, name: deviceName, kind: kind, key: key)
                 try await peer.send(.control(.paired(deviceKey: key, serverName: serverName)))
                 justPaired = device
                 addLog("Paired \(device.name)", symbol: "checkmark.circle")
@@ -240,15 +240,16 @@ final class BackupServer {
     }
 
     /// Adds the phone, or gives an already-known phone a new key and keeps its folder.
-    private func register(deviceID: String, name: String, key: Data) -> PairedDevice {
+    private func register(deviceID: String, name: String, kind: String?, key: Data) -> PairedDevice {
         let device: PairedDevice
         if let index = devices.firstIndex(where: { $0.id == deviceID }) {
             devices[index].name = name
+            if let kind { devices[index].kind = kind }
         } else {
             let folder = DeviceRegistry.folderName(
                 for: name, taken: Set(devices.map(\.folder)), in: location.url
             )
-            devices.append(PairedDevice(id: deviceID, name: name, folder: folder, pairedAt: .now))
+            devices.append(PairedDevice(id: deviceID, name: name, folder: folder, pairedAt: .now, kind: kind))
             // Paired with another Mac before, or with this one before it was removed.
             if let known = library?.device(deviceID) {
                 addLog("Found \(name)'s earlier backups in “\(known.folder)”", symbol: "folder")
@@ -291,6 +292,13 @@ final class BackupServer {
         DeviceRegistry.saveDevices(devices)
     }
 
+    /// Lists the device as an iPhone or an iPad, as chosen in its menu.
+    func setKind(_ kind: String, for device: PairedDevice) {
+        guard let index = devices.firstIndex(where: { $0.id == device.id }), devices[index].kind != kind else { return }
+        devices[index].kind = kind
+        DeviceRegistry.saveDevices(devices)
+    }
+
     func rename(_ device: PairedDevice, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = devices.firstIndex(where: { $0.id == device.id }) else { return }
@@ -318,7 +326,7 @@ final class BackupServer {
             try await peer.start()
             for try await frame in peer.frames {
                 switch frame {
-                case .control(.hello(let deviceID, let deviceName, let version, let proof)):
+                case .control(.hello(let deviceID, let deviceName, let version, let proof, let kind)):
                     guard ProtocolVersion.supported.contains(version) else {
                         try await peer.send(.control(.unavailable(
                             reason: "Update Imago on this iPhone and on your Mac so both are on the same version."
@@ -336,6 +344,11 @@ final class BackupServer {
                         break
                     }
                     if known.name != deviceName { rename(known, to: deviceName) }
+                    // Paired before devices said what they are: learnt now.
+                    if let kind, known.kind != kind, let index = devices.firstIndex(where: { $0.id == deviceID }) {
+                        devices[index].kind = kind
+                        DeviceRegistry.saveDevices(devices)
+                    }
                     refreshLocationIfChanged()
                     guard let deviceStore = self.store(for: known) else {
                         try await peer.send(.control(.unavailable(

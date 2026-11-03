@@ -12,6 +12,7 @@ struct Sidebar: View {
     @Binding var showingAddPhone: Bool
     @AppStorage("sidebarFoldersExpanded") private var foldersExpanded = true
     @AppStorage("sidebarPhonesExpanded") private var phonesExpanded = true
+    @AppStorage("sidebarPadsExpanded") private var padsExpanded = true
     /// iPhones whose rows are open, by ID, comma-separated.
     @AppStorage("sidebarOpenPhones") private var openPhones = ""
 
@@ -39,18 +40,35 @@ struct Sidebar: View {
                 .disabled(!server.location.isAvailable)
             }
 
+            // iPads apart from iPhones, once there's one; Add Device below the last of them.
+            let pads = server.devices.filter(\.isPad)
             Section("iPhones", isExpanded: $phonesExpanded) {
-                ForEach(server.devices) { device in
+                ForEach(server.devices.filter { !$0.isPad }) { device in
                     PhoneSidebarItem(device: device, isOpen: openBinding(device.id), selection: selection)
                 }
-                Button { showingAddPhone = true } label: {
-                    Label("Add iPhone", systemImage: "plus.circle.fill")
+                if pads.isEmpty { addDevice }
+            }
+            if !pads.isEmpty {
+                Section("iPads", isExpanded: $padsExpanded) {
+                    ForEach(pads) { device in
+                        PhoneSidebarItem(device: device, isOpen: openBinding(device.id), selection: selection)
+                    }
+                    addDevice
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
             }
         }
         .navigationSplitViewColumnWidth(min: 210, ideal: 240)
+    }
+
+    private var addDevice: some View {
+        Button { showingAddPhone = true } label: {
+            Label("Add Device", systemImage: "plus.circle.fill")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.tint)
+        // In line with the section titles above it, not indented like the devices.
+        .padding(.leading, -16)
+        .help("Pair an iPhone or iPad with this Mac")
     }
 
     private func openBinding(_ id: String) -> Binding<Bool> {
@@ -255,7 +273,7 @@ struct PhoneRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: targeted ? "iphone.and.arrow.forward" : "iphone")
+            Image(systemName: targeted ? (device.isPad ? "ipad.and.arrow.forward" : "iphone.and.arrow.forward") : (device.isPad ? "ipad" : "iphone"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(server.color(of: device.id).ink)
                 .frame(width: 22, height: 22)
@@ -315,6 +333,14 @@ struct DeviceColorMenu: View {
         }
         .pickerStyle(.palette)
         Button("More Colors…", action: more)
+        Divider()
+        // Which section it's in. Devices say themselves once their app is up to date; this is for one
+        // that hasn't yet, or said wrong.
+        if device.isPad {
+            Button("Show as iPhone") { server.setKind("iPhone", for: device) }
+        } else {
+            Button("Show as iPad") { server.setKind("iPad", for: device) }
+        }
     }
 
     /// A round swatch, lit from the top. Menus draw SF Symbols in the text color, so the color needs an

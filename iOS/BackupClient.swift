@@ -254,7 +254,7 @@ final class BackupClient {
             throw ClientError.pairingRejected
         }
         try await peer.send(.control(.pairRequest(
-            deviceID: Self.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current
+            deviceID: Self.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current, deviceKind: Device.kind
         )))
         var replies = peer.frames.makeAsyncIterator()
         guard case .control(.paired(let key, let serverName))? = try await replies.next() else {
@@ -636,7 +636,8 @@ final class BackupClient {
             guard let binding = peer.keyingMaterial(label: HelloProof.exporterLabel) else { throw ClientError.unexpectedReply }
             try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.hello(
                 deviceID: credential.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current,
-                proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding)
+                proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding),
+                deviceKind: Device.kind
             ))) }
             switch try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) {
             case .control(.welcome)?: return (peer, replies)

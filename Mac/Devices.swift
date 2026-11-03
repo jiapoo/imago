@@ -13,6 +13,10 @@ struct PairedDevice: Codable, Identifiable, Hashable {
     /// Its color in the sidebar and on tiles, as hex ("DD1B3F"): one from `palette`, or any the user
     /// mixed. Nil: by the order it was paired.
     var colorHex: String? = nil
+    /// "iPhone" or "iPad", as it says when it pairs and connects; nil until it has (apps before it).
+    var kind: String? = nil
+
+    var isPad: Bool { kind == "iPad" }
 
     /// A color in the palette. The name is for VoiceOver; the picker shows only the color.
     struct Swatch: Identifiable {

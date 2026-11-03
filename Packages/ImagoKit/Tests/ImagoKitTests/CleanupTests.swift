@@ -145,6 +145,16 @@ private func asset(
         #expect(try decoder.next() == frame)
     }
 
+    @Test func helloFromBeforeDeviceKindStillDecodes() throws {
+        var body = Data([0])
+        body.append(Data(#"{"hello":{"deviceID":"d","deviceName":"n","protocolVersion":7}}"#.utf8))
+        guard case .control(.hello(let id, _, _, let proof, let kind)) = try FrameCodec.decodeBody(body) else {
+            Issue.record("not a hello")
+            return
+        }
+        #expect(id == "d" && proof == nil && kind == nil)
+    }
+
     @Test func everyMessageNameIsListed() throws {
         let key = ResourceKey(assetID: "a", kind: .photo, revision: "original")
         let descriptor = ResourceDescriptor(key: key, originalFilename: "a", uti: "public.heic")

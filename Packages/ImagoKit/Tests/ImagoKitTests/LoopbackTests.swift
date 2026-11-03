@@ -106,7 +106,7 @@ import Testing
     @Test func phoneCanOnlyClaimItsOwnDeviceID() async throws {
         let keys: [String: Data] = ["phone-a": Secret.random(), "phone-b": Secret.random()]
         let (listener, port) = try await startListener(keys: keys.map { .init(identity: $0.key, key: $0.value) }) { peer in
-            guard case .control(.hello(let deviceID, _, _, let proof?))? = try await peer.frames.first(where: { _ in true }),
+            guard case .control(.hello(let deviceID, _, _, let proof?, _))? = try await peer.frames.first(where: { _ in true }),
                   let key = keys[deviceID], let binding = peer.keyingMaterial(label: HelloProof.exporterLabel)
             else { return }
             let ok = HelloProof.isValid(proof, key: key, deviceID: deviceID, binding: binding)

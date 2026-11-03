@@ -193,11 +193,12 @@ public struct ResumePoint: Codable, Sendable, Hashable {
 ///   libraryChanges                       version 8: after that, only what changed in it
 ///   goodbye, or the connection just closes when the app leaves the screen
 public enum ControlMessage: Codable, Sendable, Equatable {
-    case pairRequest(deviceID: String, deviceName: String, protocolVersion: Int)
+    /// `deviceKind`: "iPhone" or "iPad", so the Mac lists it with its kind; absent from apps before it.
+    case pairRequest(deviceID: String, deviceName: String, protocolVersion: Int, deviceKind: String? = nil)
     case paired(deviceKey: Data, serverName: String)
     /// `proof` is `HelloProof.make(…)`. Optional only so a phone from before version 3 still
     /// decodes and gets a readable "update the app" reply; the Mac refuses a hello without it.
-    case hello(deviceID: String, deviceName: String, protocolVersion: Int, proof: Data?)
+    case hello(deviceID: String, deviceName: String, protocolVersion: Int, proof: Data?, deviceKind: String? = nil)
     case welcome(serverName: String)
     /// The Mac can't take backups right now, e.g. its backup drive is unplugged.
     case unavailable(reason: String)
