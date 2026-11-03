@@ -627,7 +627,7 @@ final class BackupClient {
             } catch let error as NWError {
                 // A TLS failure means the Mac doesn't know this phone's key. Anything else is network trouble.
                 if case .tls = error {
-                    throw ClientError.refused("Your Mac didn't accept this iPhone. If you removed it on the Mac, unpair here and pair again.")
+                    throw ClientError.refused("Your Mac didn't accept this \(Device.kind). If you removed it on the Mac, unpair here and pair again.")
                 }
                 throw error
             }

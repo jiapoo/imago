@@ -25,8 +25,11 @@ struct ContentView: View {
                         MacCard()
                     }
                 }
+                // A readable column on iPad, centered, rather than cards stretched across the screen.
+                .frame(maxWidth: 640)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 32)
+                .frame(maxWidth: .infinity)
             }
             .background(alignment: .top) {
                 LinearGradient(
@@ -74,7 +77,7 @@ extension ContentView {
         let changes = client.askPrompt
         var lines = changes.count == 1 ? ["\(mac) asks for this change."] : changes.prefix(6).map(\.summary)
         if changes.count > 6 { lines.append("and \(changes.count - 6) more") }
-        if changes.contains(where: { $0.addsFromMac }) { lines.append("New items are photos or videos this iPhone doesn't have, such as an edit made on the Mac.") }
+        if changes.contains(where: { $0.addsFromMac }) { lines.append("New items are photos or videos this \(Device.kind) doesn't have, such as an edit made on the Mac.") }
         if changes.contains(where: { $0.action == .delete }) { lines.append("iOS asks once more before deleting.") }
         lines.append("To make changes from \(mac) without asking, turn on “Apply changes from Mac automatically” in Imago.")
         return lines.joined(separator: "\n")
@@ -153,7 +156,7 @@ struct StatusHero: View {
         if #available(iOS 26, *) {
             return "You can leave the app; progress shows at the top of the screen. If anything stops it, it picks up where it left off."
         }
-        return "Keep Imago open; your iPhone won't lock while it backs up. If anything stops it, it picks up where it left off."
+        return "Keep Imago open; your \(Device.kind) won't lock while it backs up. If anything stops it, it picks up where it left off."
     }
 
     private struct HeroState {
@@ -297,7 +300,7 @@ struct StorageCard: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("iPhone Storage").font(.headline)
+                    Text("\(Device.kind) Storage").font(.headline)
                     if let storage, storage.totalBytes > 0 {
                         Text("\(byteText(storage.totalBytes - storage.freeBytes)) of \(byteText(storage.totalBytes)) used")
                             .font(.caption)
@@ -509,7 +512,7 @@ struct MacCard: View {
             }
             HStack {
                 Text("Name on Mac").foregroundStyle(.secondary)
-                TextField("iPhone", text: $client.deviceName)
+                TextField(Device.kind, text: $client.deviceName)
                     .multilineTextAlignment(.trailing)
                     .font(.body.weight(.medium))
                     .submitLabel(.done)
@@ -679,13 +682,13 @@ private struct NameStep: View {
 
             VStack(spacing: 6) {
                 Text("Pair with \(code.serverName)").font(.title2.bold()).multilineTextAlignment(.center)
-                Text("Your Mac shows this iPhone by this name and saves its photos in a folder with the same name.")
+                Text("Your Mac shows this \(Device.kind) by this name and saves its photos in a folder with the same name.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("iPhone name").font(.footnote.weight(.medium)).foregroundStyle(.secondary)
-                TextField("e.g. Jia's iPhone", text: $client.deviceName)
+                Text("\(Device.kind) name").font(.footnote.weight(.medium)).foregroundStyle(.secondary)
+                TextField("e.g. Jia's \(Device.kind)", text: $client.deviceName)
                     .font(.title3.weight(.medium))
                     .padding(14)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -693,7 +696,7 @@ private struct NameStep: View {
                     .submitLabel(.go)
                     .onSubmit { if !client.hasGenericName { pair() } }
                 if client.hasGenericName {
-                    Label("Give it a name you'll recognize, especially if you pair more than one iPhone.", systemImage: "info.circle")
+                    Label("Give it a name you'll recognize, especially if you pair more than one.", systemImage: "info.circle")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }

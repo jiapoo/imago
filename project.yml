@@ -63,6 +63,8 @@ targets:
         CFBundleDisplayName: Imago
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # On iPad every way round, as iPad apps are (and as split view needs).
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSPhotoLibraryUsageDescription: Imago copies your photos and videos to your Mac.
         NSCameraUsageDescription: The camera scans the pairing code shown on your Mac.
         NSLocalNetworkUsageDescription: Imago finds your Mac on your local network to send photos to it.
@@ -80,4 +82,5 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.ios
         PRODUCT_NAME: Imago
-        TARGETED_DEVICE_FAMILY: "1"
+        # iPhone and iPad.
+        TARGETED_DEVICE_FAMILY: "1,2"

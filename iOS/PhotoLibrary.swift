@@ -49,7 +49,7 @@ enum PhotoLibrary {
     }
 
     /// Writes one resource to a temporary file, downloading the original from iCloud if needed.
-    /// `progress` gets 0...1 while the original downloads from iCloud; it isn't called for files already on the iPhone.
+    /// `progress` gets 0...1 while the original downloads from iCloud; it isn't called for files already on the device.
     static func export(_ key: ResourceKey, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> URL {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [key.assetID], options: nil).firstObject,
               let resource = PHAssetResource.assetResources(for: asset).first(where: { ResourceKind($0.type) == key.kind })
@@ -66,7 +66,7 @@ enum PhotoLibrary {
 
     enum ExportError: LocalizedError {
         case missing(ResourceKey)
-        var errorDescription: String? { "This item was deleted or changed on the iPhone." }
+        var errorDescription: String? { "This item was deleted or changed on the \(Device.kind)." }
     }
 
     fileprivate static func entry(for asset: PHAsset, albums: [String]) -> ManifestEntry? {
@@ -161,11 +161,11 @@ enum PhotoLibrary {
         let found = PHAsset.fetchAssets(withLocalIdentifiers: change.assetIDs, options: nil).count
         guard found > 0 else {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "These items are no longer on the iPhone.")
+                                detail: "These items are no longer on the \(Device.kind).")
         }
         if case .removeFromAlbum(let title) = change.action, editableAlbum(titled: title) == nil {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "There's no album named “\(title)” on the iPhone that can be changed.")
+                                detail: "There's no album named “\(title)” on the \(Device.kind) that can be changed.")
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
@@ -200,7 +200,7 @@ enum PhotoLibrary {
     private static func deleteAlbum(titled title: String, change: LibraryChange) async -> ChangeReport {
         guard let album = editableAlbum(titled: title) else {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "There's no album named “\(title)” on the iPhone that can be deleted.")
+                                detail: "There's no album named “\(title)” on the \(Device.kind) that can be deleted.")
         }
         let identifier = album.localIdentifier
         do {

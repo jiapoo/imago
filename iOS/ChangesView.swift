@@ -81,7 +81,7 @@ struct ChangesReviewSheet: View {
                 if client.macChanges.contains(where: { $0.action == .restore }) {
                     Section {
                         Label {
-                            Text("Items to put back were deleted on this iPhone. Your Mac sends the backed-up originals, and they're added to your library with their dates, places and albums. Keep Imago open until they're in.")
+                            Text("Items to put back were deleted on this \(Device.kind). Your Mac sends the backed-up originals, and they're added to your library with their dates, places and albums. Keep Imago open until they're in.")
                         } icon: {
                             Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.orange)
                         }

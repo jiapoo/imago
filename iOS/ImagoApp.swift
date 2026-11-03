@@ -8,6 +8,7 @@ struct ImagoApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        Device.kind = UIDevice.current.model
         let client = BackupClient()
         BackgroundBackup.register(client: client)
         _client = State(initialValue: client)
@@ -150,4 +151,9 @@ enum ContinuedBackup {
 
 private struct UncheckedSendable<Value>: @unchecked Sendable {
     let value: Value
+}
+
+/// What this device is, for what Imago says about it: "iPhone" or "iPad". Read once at launch.
+enum Device {
+    nonisolated(unsafe) static var kind = "iPhone"
 }
