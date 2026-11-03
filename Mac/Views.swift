@@ -244,8 +244,9 @@ struct MainView: View {
 
     private var pageHasPhotos: Bool {
         switch selection ?? .home {
-        case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay: true
-        case .home, .storage, .device, .places: false
+        // Places too: a place's photos open beside the map in a grid, to copy or move from.
+        case .library, .large, .folder, .trash, .manage, .deletedOnPhone, .onThisDay, .places: true
+        case .home, .storage, .device: false
         }
     }
 

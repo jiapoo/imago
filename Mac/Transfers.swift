@@ -221,10 +221,13 @@ extension MediaLibrary {
             return bySize[size] != nil && file.deletingLastPathComponent().lexicallyStandardized != folder.lexicallyStandardized
         }
         guard !candidates.isEmpty else { return [:] }
-        activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count)
+        activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count, canCancel: true)
         defer { activity = nil }
+        stopFlag.set(false)
         var identical: [URL: URL] = [:]
         for file in candidates {
+            // Cancel: the copy or move doesn't go ahead (see `transfer`).
+            if stopFlag.isSet { break }
             activity?.detail = file.lastPathComponent
             let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
             let others = bySize[size]?.map(\.url) ?? []
@@ -252,6 +255,7 @@ extension MediaLibrary {
         var items = items
         var replaced: FileHistory.Step?
         let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
+        if stopFlag.isSet { return }
         if !identical.isEmpty {
             switch await ask(identical.count, of: items.count, in: path, isMove: TransferMode.current == .move) {
             case .cancel: return
@@ -269,9 +273,10 @@ extension MediaLibrary {
             // One step: ⌘Z takes the iPhone's deletion back and returns the files together.
             let fromPhone = removable(items)
             let moved = await move(items, to: .folder(path), server: server)
-            // Only what's now in the folder: the iPhone keeps anything that didn't move.
+            // Only what's now in the folder: the iPhone keeps anything that didn't move, and everything
+            // when the move was cancelled.
             let arrived = Set(self.items.filter { $0.folder == path }.map(\.id))
-            let leaving = fromPhone.filter { arrived.contains($0.id) }
+            let leaving = stopFlag.isSet ? [] : fromPhone.filter { arrived.contains($0.id) }
             let removed = leaving.isEmpty ? nil : await removeFromPhone(leaving, server: server)
             let name = "Move to “\((path as NSString).lastPathComponent)”"
             history.record(FileHistory.combine(name, [replaced, moved, removed]))
@@ -309,6 +314,7 @@ extension MediaLibrary {
                 var files = outside
                 var replaced: FileHistory.Step?
                 let identical = await identicalFiles(files, inFolder: path, server: server)
+                if stopFlag.isSet { return }
                 if !identical.isEmpty {
                     switch await ask(identical.count, of: files.count, in: path, isMove: false) {
                     case .cancel: return
@@ -448,8 +454,23 @@ extension MediaLibrary {
     /// Copies one file. A big one goes in 8 MB pieces with `progress` (bytes so far, size), so a long
     /// copy shows how far it's got; a small one in one go. The copy keeps the original's dates.
     /// `shouldStop`: asked between pieces of a big file; once it says yes, the part copied is removed.
+    /// It's written under a hidden name beside the destination and takes its name only once whole, so
+    /// a copy cut short (Imago quit, the drive pulled) leaves no half file that looks like a photo.
     nonisolated static func copyFile(_ source: URL, to destination: URL, shouldStop: () -> Bool = { false },
                                      progress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
+        let partial = destination.deletingLastPathComponent().appending(path: ".\(destination.lastPathComponent).imago-partial")
+        try? FileManager.default.removeItem(at: partial)
+        do {
+            try copyWhole(source, to: partial, shouldStop: shouldStop, progress: progress)
+            try FileManager.default.moveItem(at: partial, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: partial)
+            throw error
+        }
+    }
+
+    nonisolated private static func copyWhole(_ source: URL, to destination: URL, shouldStop: () -> Bool,
+                                              progress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
         let size = UInt64((try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         guard size > 64_000_000 else {
             try FileManager.default.copyItem(at: source, to: destination)

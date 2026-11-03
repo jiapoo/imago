@@ -115,6 +115,13 @@ final class MediaViewerHost {
     func deleteCurrent() async {
         guard let request, let delete = request.delete else { return }
         let deleting = index
+        // Asked first, whatever it does (Delete key or ⌘⌫): it's the photo on screen, gone at one key.
+        let alert = NSAlert()
+        alert.messageText = "Delete “\(request.name(deleting))”?"
+        alert.informativeText = (request.deleteTitle ?? "Move to Recently Deleted") + ". ⌘Z undoes it."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
         guard await delete(deleting) else { return }
         let before = shown
         guard let at = before.firstIndex(of: deleting) else { return }

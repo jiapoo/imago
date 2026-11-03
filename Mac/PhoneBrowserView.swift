@@ -570,7 +570,8 @@ struct PhoneGrid: View {
             focused: $focused,
             clear: { selection.selected = [] },
             selectAll: { selection.selected = Set(assets.map(\.id)) },
-            preview: { openViewer(on: assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first) },
+            // The one selected; of several, the one last clicked (a box selection leaves that behind).
+            preview: { openViewer(on: selected.count == 1 ? selected.first : (assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first)) },
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
             deleteTitle: "Delete from iPhone…",
@@ -579,6 +580,8 @@ struct PhoneGrid: View {
         ))
         // Back from the viewer: the keys work on the grid again.
         .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
+        // A selection made here (a click, the selection box) gives the grid the keyboard, so Space opens it.
+        .onChange(of: selection.selected) { if !viewer.isOpen && !selection.selected.isEmpty { focused = true } }
         .onChange(of: selectMode) { old, new in
             // Select All pressed (the request changed while in select mode), or select mode left.
             if case .on(let request) = new, case .on(let before) = old, request != before {
@@ -752,7 +755,7 @@ struct PhoneGrid: View {
                 if let file = model.asset(ids[index]), file.isUnsynced {
                     // Not on the iPhone: only the file here goes, to Recently Deleted.
                     let items = library.items.filter { $0.url.path == file.id.dropFirst(PhoneAsset.unsyncedPrefix.count) }
-                    guard BrowserView.confirmTrash(items, of: items.count), let step = await library.trash(items, server: server) else { return false }
+                    guard let step = await library.trash(items, server: server) else { return false }
                     history.record(step)
                     return true
                 }

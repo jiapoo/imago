@@ -1084,15 +1084,20 @@ final class MediaLibrary {
     func removeFromPhone(_ items: [MediaItem], server: BackupServer) async -> FileHistory.Step? {
         var requested: [(device: PairedDevice, assets: [PhoneAsset])] = []
         var failed = 0
+        stopFlag.set(false)
+        let stop = stopFlag
         for (deviceID, removable) in Dictionary(grouping: removable(items), by: { $0.deviceID! }) {
+            if stop.isSet { break }
             guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
             let ids = removable.compactMap(\.assetID)
             verifying += ids.count
-            activity = Activity(title: "Checking against the backup", done: 0, total: ids.count)
+            activity = Activity(title: "Checking against the backup", done: 0, total: ids.count, canCancel: true)
             let files = await store.storedFiles(of: ids)
             var verified: Set<String> = []
             // One asset at a time, so the progress panel moves; reading a big video takes a while.
             for (assetID, assetFiles) in files {
+                // Cancel: nothing more is checked, and the iPhone isn't asked about these.
+                if stop.isSet { break }
                 activity?.detail = assetFiles.first?.url.lastPathComponent
                 // A big video takes a while to read: the ring follows its bytes.
                 let size = assetFiles.reduce(UInt64(0)) { $0 + ((try? $1.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0) }
@@ -1114,6 +1119,7 @@ final class MediaLibrary {
             }
             activity = nil
             verifying -= ids.count
+            if stop.isSet { break }
             failed += ids.count - verified.count
             let assets = removable.filter { verified.contains($0.assetID ?? "") }.compactMap(phoneAsset)
             guard !assets.isEmpty else { continue }
@@ -1581,7 +1587,8 @@ final class MediaLibrary {
     /// holds is kept in `.photobackup/folder-hashes.json` until the file changes.
     func findFolderCopies(_ server: BackupServer) {
         folderCopySearch?.cancel()
-        let phone = items.filter { $0.deviceID != nil }
+        // An iPhone item whose backup is in Recently Deleted still has its copies in the folders.
+        let phone = (items + trash.map(\.item)).filter { $0.deviceID != nil }
         let files = items.filter { $0.deviceID == nil && $0.folder != nil }
         let cacheURL = server.location.url.appending(path: ".photobackup/folder-hashes.json")
         folderCopySearch = Task { [weak self] in

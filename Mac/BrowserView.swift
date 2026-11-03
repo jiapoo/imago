@@ -107,6 +107,9 @@ struct BrowserView: View {
             .animation(.snappy(duration: 0.25), value: selected.isEmpty)
             .modifier(keyHandling(items))
             .onChange(of: viewer.isOpen) { _, open in if !open { focused = true } }
+            // A selection made here (a click, the selection box) gives the grid the keyboard, so Space
+            // opens it rather than reaching the sidebar.
+            .onChange(of: library.selection) { if !viewer.isOpen && !library.selection.isEmpty { focused = true } }
             .modifier(dialogs)
             .confirmationDialog(deleteAllTitle, isPresented: $confirmingDeleteAll) {
                 Button("Move to Recently Deleted", role: .destructive) { trash(library.items(in: scope)) }
@@ -431,7 +434,8 @@ struct BrowserView: View {
             focused: $focused,
             clear: { library.selection = [] },
             selectAll: { library.selection = Set(items.map(\.id)) },
-            preview: { openViewer(on: (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)) },
+            // The one selected; of several, the one last clicked (a box selection leaves that behind).
+            preview: { openViewer(on: selected.count == 1 ? selected.first : (items.first { $0.id == anchor && library.selection.contains($0.id) } ?? selected.first)) },
             open: { selected.forEach { NSWorkspace.shared.open($0.url) } },
             delete: {
                 guard !selected.isEmpty else { return }
@@ -918,7 +922,6 @@ extension BrowserView {
             deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone, and its backup here once the iPhone agrees)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
                 let item = [items[index]]
-                guard Self.confirmTrash(deletesOnPhone ? item.filter { library.phoneAsset($0) == nil } : item, of: 1) else { return false }
                 guard let step = deletesOnPhone ? await library.delete(item, server: server) : await library.trash(item, server: server)
                 else { return false }
                 history.record(step)
@@ -1120,6 +1123,8 @@ struct FolderMark: View {
             if folders.count == 1 {
                 Button { Self.reveal(folders[0]) } label: { capsule }
                     .buttonStyle(.plain)
+                    // Space opens the selected item, never this.
+                    .focusable(false)
             } else {
                 Menu {
                     ForEach(folders, id: \.self) { copy in
@@ -1130,6 +1135,7 @@ struct FolderMark: View {
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    .focusable(false)
             }
         }
         .help(Self.help(folders))

@@ -71,7 +71,11 @@ struct DayHeader<Item: Dated>: View {
             Spacer()
             Button("Select", action: selectAll)
                 .buttonStyle(.borderless)
+                // Never the keyboard's: Space pressed it (selecting the whole day) instead of opening
+                // the selected item. And not there while it can't be seen.
+                .focusable(false)
                 .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
         }
         .padding(.horizontal, 4)
         .padding(.top, 16)
