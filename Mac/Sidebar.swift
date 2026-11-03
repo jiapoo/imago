@@ -2,7 +2,8 @@ import ImagoKit
 import SwiftUI
 
 /// The window's sidebar: Home and the library's views, then two sections that fold. **Folders** is the
-/// backup drive's folders as a tree, with Recently Deleted; drop photos on any of them. **iPhones** has a
+/// backup drive's folders as a tree, with Recently Deleted; drop photos on any of them, or drag a folder
+/// into another (or onto Folders, for the top). **iPhones** has a
 /// compact row per iPhone that opens to its Photos and how its backup stands.
 struct Sidebar: View {
     @Environment(BackupServer.self) private var server
@@ -27,7 +28,7 @@ struct Sidebar: View {
                 StorageRow().tag(SidebarItem.storage)
             }
 
-            Section("Folders", isExpanded: $foldersExpanded) {
+            Section(isExpanded: $foldersExpanded) {
                 ForEach(library.folders) { folder in
                     FolderTree(folder: folder, selection: $selection, naming: $naming)
                 }
@@ -38,6 +39,8 @@ struct Sidebar: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.tint)
                 .disabled(!server.location.isAvailable)
+            } header: {
+                FoldersHeader()
             }
 
             // iPads apart from iPhones, once there's one; Add Device below the last of them.
@@ -156,8 +159,41 @@ struct FolderRow: View {
                 .contentTransition(.symbolEffect(.replace))
         }
         .sidebarDrop(targeted: $targeted) { urls in
-            library.drop(urls, onto: .folder(folder.path), server: server, history: history)
+            // A folder dragged here from the sidebar moves in; photos and videos copy or move in.
+            let folders = library.draggedFolders(urls, server: server)
+            if !folders.isEmpty { return library.dropFolders(folders, into: folder.path, server: server, history: history) }
+            return library.drop(urls, onto: .folder(folder.path), server: server, history: history)
         }
+        // Drag it onto another folder to move it there, or onto Folders for the top; to Finder, a copy.
+        // The list's own drag, not `onDrag`, whose gesture can take the click that opens a folder.
+        .itemProvider {
+            // Only where the folder is: `NSItemProvider(contentsOf:)` would offer the folder's contents,
+            // read into memory whole when asked for (gigabytes for a folder of videos).
+            NSItemProvider(object: server.foldersURL.appending(path: folder.path, directoryHint: .isDirectory) as NSURL)
+        }
+    }
+}
+
+/// The Folders heading. Drop a folder dragged from below on it to move that folder to the top.
+private struct FoldersHeader: View {
+    @Environment(BackupServer.self) private var server
+    @Environment(MediaLibrary.self) private var library
+    @Environment(FileHistory.self) private var history
+    @State private var targeted = false
+
+    var body: some View {
+        Text("Folders")
+            .padding(.vertical, 2).padding(.horizontal, 4)
+            .background {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.accentColor.opacity(targeted ? 0.25 : 0))
+            }
+            .padding(.vertical, -2).padding(.horizontal, -4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .dropsFiles({ urls in
+                library.dropFolders(library.draggedFolders(urls, server: server), into: "", server: server, history: history)
+            }) { targeted = $0 }
     }
 }
 

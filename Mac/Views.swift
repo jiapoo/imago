@@ -91,6 +91,8 @@ struct MainView: View {
             // in that's still there, or Home.
             .onChange(of: library.folders) {
                 guard library.state == .ready, case .folder(var path) = selection, !library.hasFolder(path) else { return }
+                // Moved here (dragged into another folder in the sidebar): to where it went.
+                if let moved = library.movedFolder(path), library.hasFolder(moved) { selection = .folder(moved); return }
                 while !path.isEmpty, !library.hasFolder(path) { path = (path as NSString).deletingLastPathComponent }
                 selection = path.isEmpty ? .home : .folder(path)
             }

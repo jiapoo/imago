@@ -76,7 +76,9 @@ actor Thumbnails {
         let oldKey = Self.key(old, bytes: bytes), newKey = Self.key(new, bytes: bytes)
         guard oldKey != newKey else { return }
         if let image = memory.object(forKey: oldKey as NSString) { memory.setObject(image, forKey: newKey as NSString) }
-        try? FileManager.default.moveItem(at: directory.appending(path: oldKey + ".jpg"), to: directory.appending(path: newKey + ".jpg"))
+        // The file in the background: a folder of hundreds moved holds up nothing.
+        let from = directory.appending(path: oldKey + ".jpg"), to = directory.appending(path: newKey + ".jpg")
+        Task.detached(priority: .utility) { try? FileManager.default.moveItem(at: from, to: to) }
     }
 
     func holdBackgroundWork(_ held: Bool) {

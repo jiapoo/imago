@@ -1217,7 +1217,15 @@ final class MediaLibrary {
             self.error = error.localizedDescription
             return nil
         }
-        await reloadFolders(server)
+        // Shown at once, without listing the drive's folders again (slow on a slow drive).
+        var paths = Self.paths(of: folders)
+        var added = path
+        while !added.isEmpty, !paths.contains(added) {
+            paths.append(added)
+            added = (added as NSString).deletingLastPathComponent
+        }
+        paths.sort { $0.localizedStandardCompare($1) == .orderedAscending }
+        folders = Self.tree(paths, items: items)
         return (path, removeFolderStep(path, server: server))
     }
 
@@ -1238,7 +1246,8 @@ final class MediaLibrary {
         let new = server.foldersURL.appending(path: newPath, directoryHint: .isDirectory)
         var renamed = false
         await perform(server) {
-            try FileManager.default.moveItem(at: old, to: new)
+            // Off the main thread: a slow drive takes its time.
+            try await Task.detached(priority: .userInitiated) { try FileManager.default.moveItem(at: old, to: new) }.value
             renamed = true
             for device in server.devices {
                 await server.store(for: device)?.folderMoved(from: old, to: new)
@@ -1250,6 +1259,80 @@ final class MediaLibrary {
         return (newPath, FileHistory.Step(name: "Rename Folder") { [weak self] in
             await self?.renameFolder(newPath, to: oldName, server: server)?.undo
         })
+    }
+
+    /// Where folders moved here last went, old path to new (their folders inside too): the page of one
+    /// on screen follows it.
+    private(set) var movedFolders: [String: String] = [:]
+
+    /// The path a folder moved here is at now, if it moved.
+    func movedFolder(_ path: String) -> String? {
+        if let new = movedFolders[path] { return new }
+        for (old, new) in movedFolders where path.hasPrefix(old + "/") { return new + path.dropFirst(old.count) }
+        return nil
+    }
+
+    /// Moves a folder, with what's in it, into another (`parent`; "" for the top of Folders), as a drag
+    /// in the sidebar does. Not into itself or a folder inside it, nor over a folder of the same name.
+    /// Returns its new path and the step that moves it back.
+    func moveFolder(_ path: String, into parent: String, server: BackupServer) async -> (path: String, undo: FileHistory.Step?)? {
+        let name = (path as NSString).lastPathComponent
+        let oldParent = (path as NSString).deletingLastPathComponent
+        guard parent != oldParent, parent != path, !parent.hasPrefix(path + "/") else { return nil }
+        let newPath = parent.isEmpty ? name : "\(parent)/\(name)"
+        let old = server.foldersURL.appending(path: path, directoryHint: .isDirectory)
+        let new = server.foldersURL.appending(path: newPath, directoryHint: .isDirectory)
+        guard !server.reservedFolderNames.contains(newPath) else { return nil }
+        var moved = false
+        await perform(server) {
+            // Off the main thread, the check too: a slow drive takes its time.
+            moved = try await Task.detached(priority: .userInitiated) {
+                guard !FileManager.default.fileExists(atPath: new.path) else { return false }
+                try FileManager.default.moveItem(at: old, to: new)
+                return true
+            }.value
+            guard moved else { return }
+            // Shown as soon as it's moved; the iPhones' indexes catch up after.
+            movedFolders[path] = newPath
+            showRenamed(path, to: newPath, server: server)
+            for device in server.devices {
+                await server.store(for: device)?.folderMoved(from: old, to: new)
+            }
+        }
+        guard moved else {
+            if error == nil {
+                error = "There's already a folder named “\(name)” in “\(parent.isEmpty ? "Folders" : (parent as NSString).lastPathComponent)”."
+            }
+            return nil
+        }
+        return (newPath, FileHistory.Step(name: "Move Folder") { [weak self] in
+            await self?.moveFolder(newPath, into: oldParent, server: server)?.undo
+        })
+    }
+
+    /// Folders dragged from the sidebar, among `urls`, by path: none for photos and videos.
+    func draggedFolders(_ urls: [URL], server: BackupServer) -> [String] {
+        let root = server.foldersURL.lexicallyStandardized.path + "/"
+        return urls.compactMap { url in
+            let full = url.lexicallyStandardized.path
+            guard full.hasPrefix(root) else { return nil }
+            let path = String(full.dropFirst(root.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return hasFolder(path) ? path : nil
+        }
+    }
+
+    /// Moves the dragged folders into `parent`. Returns whether any were dragged folders.
+    func dropFolders(_ paths: [String], into parent: String, server: BackupServer, history: FileHistory) -> Bool {
+        guard !paths.isEmpty else { return false }
+        // A folder dragged with one it's in goes along with that one.
+        let paths = paths.filter { path in !paths.contains { path.hasPrefix($0 + "/") } }
+        movedFolders = [:]
+        Task {
+            var steps: [FileHistory.Step?] = []
+            for path in paths { steps.append(await moveFolder(path, into: parent, server: server)?.undo) }
+            history.record(FileHistory.combine(paths.count == 1 ? "Move Folder" : "Move Folders", steps))
+        }
+        return true
     }
 
     /// Removes an empty folder. Returns the step that makes it again.
@@ -1267,7 +1350,7 @@ final class MediaLibrary {
             self.error = error.localizedDescription
             return nil
         }
-        await reloadFolders(server)
+        folders = Self.tree(Self.paths(of: folders).filter { $0 != path && !$0.hasPrefix(path + "/") }, items: items)
         return FileHistory.Step(name: "Delete Folder") { [weak self] in
             let parent = (path as NSString).deletingLastPathComponent
             guard let made = await self?.createFolder((path as NSString).lastPathComponent, in: parent, server: server) else { return nil }
