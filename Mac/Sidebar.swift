@@ -94,6 +94,14 @@ private struct FolderTree: View {
         FolderRow(folder: folder)
             .tag(SidebarItem.folder(folder.path))
             .contextMenu {
+                // Photos and videos copied in Finder or here (⌘C): into this folder, as a paste into its grid.
+                let pasted = Clipboard.shared.media
+                if !pasted.isEmpty {
+                    Button(pasted.count == 1 ? "Paste Item" : "Paste \(pasted.count) Items") {
+                        _ = library.drop(pasted, onto: .folder(folder.path), server: server, history: history)
+                    }
+                    Divider()
+                }
                 Button("New Folder Inside…") { naming = .newFolder(moving: [], in: folder.path) }
                 Button("Rename…") { naming = .rename(folder.path) }
                 Button("Show in Finder") { server.revealInFinder(server.foldersURL.appending(path: folder.path)) }
@@ -445,5 +453,32 @@ extension View {
             .contentShape(Rectangle())
             .dropsFiles(action) { targeted.wrappedValue = $0 }
             .padding(.vertical, -4).padding(.horizontal, -6)
+    }
+}
+
+/// The photos and videos on the clipboard, for Paste in a folder's menu. A menu is drawn ahead of
+/// time, so this follows the clipboard (its change count, once a second) rather than reading it when
+/// the menu opens.
+@MainActor @Observable
+final class Clipboard {
+    static let shared = Clipboard()
+    private(set) var media: [URL] = []
+    @ObservationIgnored private var changeCount = -1
+    @ObservationIgnored private var timer: Timer?
+
+    private init() {
+        read()
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            MainActor.assumeIsolated { Clipboard.shared.read() }
+        }
+    }
+
+    private func read() {
+        let board = NSPasteboard.general
+        guard board.changeCount != changeCount else { return }
+        changeCount = board.changeCount
+        let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        let found = urls.filter(MediaLibrary.isMedia)
+        if found != media { media = found }
     }
 }

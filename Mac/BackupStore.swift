@@ -380,8 +380,10 @@ actor BackupStore {
     /// of a big move would take longer than the moves. The index is read once for the whole move;
     /// `progress` hears each asset's name as it's done.
     /// Returns where each moved asset's photo or video is now, and what stopped it, if anything did.
+    /// `shouldStop`: asked before each asset; once it says yes (Cancel), the rest stay where they are.
     func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true,
-              progress: (@Sendable (String) -> Void)? = nil) -> (moved: [String: URL?], error: Error?) {
+              progress: (@Sendable (String) -> Void)? = nil,
+              shouldStop: @Sendable () -> Bool = { false }) -> (moved: [String: URL?], error: Error?) {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
         defer { if saving { try? saveIndex() } else { unsavedChanges += 1 } }
         // Two assets can share one file (the iPhone had the same video twice, and the backup kept one
@@ -391,6 +393,7 @@ actor BackupStore {
         var moved: [String: URL?] = [:]
         // In the order asked, so the progress follows the selection.
         for assetID in assetIDs {
+            if shouldStop() { break }
             guard let keys = byAsset[assetID], let metadata = index.assets[assetID]?.metadata else { continue }
             let target = directory.map(relativePath(of:))
                 ?? (layout.sidecarPath(for: metadata) as NSString).deletingLastPathComponent

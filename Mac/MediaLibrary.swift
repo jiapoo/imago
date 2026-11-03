@@ -132,6 +132,8 @@ final class MediaLibrary {
         var bytes: (done: UInt64, total: UInt64)?
         /// The work is done and the library is catching up: no way to tell how far, so the ring just turns.
         var finishing = false
+        /// The pill offers Cancel (`cancelActivity`): copying and moving stop after the file under way.
+        var canCancel = false
 
         var fraction: Double {
             guard total > 0 else { return 0 }
@@ -142,10 +144,22 @@ final class MediaLibrary {
         static func == (a: Activity, b: Activity) -> Bool {
             a.title == b.title && a.detail == b.detail && a.done == b.done && a.total == b.total
                 && a.bytes?.done == b.bytes?.done && a.bytes?.total == b.bytes?.total && a.finishing == b.finishing
+                && a.canCancel == b.canCancel
         }
     }
 
     var activity: Activity?
+    /// Set by Cancel on the progress pill; the work under way checks it between files.
+    @ObservationIgnored let stopFlag = StopFlag()
+
+    /// Cancel, from the progress pill: copying or moving stops after the file under way. What's done
+    /// stays done, and Undo takes it back.
+    func cancelActivity() {
+        guard activity?.canCancel == true else { return }
+        stopFlag.set(true)
+        activity?.title = "Stopping…"
+        activity?.canCancel = false
+    }
     /// Files about to go into a folder that already has identical ones: what to do, asked in the window.
     var duplicateQuestion: DuplicateQuestion?
     /// When Imago first saw each item missing from its iPhone (by item ID): Deleted on iPhone moves it
@@ -990,8 +1004,10 @@ final class MediaLibrary {
             case .phoneFolder: "Moving back to the iPhone's folder"
             case .folder(let path): "Moving to “\((path as NSString).lastPathComponent)”"
             }
-            activity = Activity(title: title, done: 0, total: wanted.count)
+            activity = Activity(title: title, done: 0, total: wanted.count, canCancel: true)
         }
+        stopFlag.set(false)
+        let stop = stopFlag
         defer {
             activity = nil
             // Thumbnails follow their files, so moved items don't make them again from the drive.
@@ -1010,12 +1026,13 @@ final class MediaLibrary {
                       let to = group.first?.to else { continue }
                 if let target = directory(to) { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
                 // All in one go, reading the index once; the ring moves with each item as it's done.
-                let result = await store.move(group.compactMap(\.item.assetID), to: directory(to), saving: false) { name in
+                if stop.isSet { break }
+                let result = await store.move(group.compactMap(\.item.assetID), to: directory(to), saving: false, progress: { name in
                     Task { @MainActor [weak self] in
                         self?.activity?.detail = name
                         self?.activity?.done += 1
                     }
-                }
+                }, shouldStop: { stop.isSet })
                 for move in group {
                     guard let assetID = move.item.assetID, result.moved.keys.contains(assetID) else { continue }
                     done.append((Self.ref(move.item), move.from))
@@ -1026,6 +1043,7 @@ final class MediaLibrary {
                 if let error = result.error { throw error }
             }
             for move in wanted where move.item.deviceID == nil {
+                if stop.isSet { break }
                 guard let target = directory(move.to) else { continue }
                 try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
                 let destination = Self.unusedURL(target.appending(path: move.item.url.lastPathComponent))

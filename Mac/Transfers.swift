@@ -1,7 +1,15 @@
 import AppKit
 import ImagoKit
 import SwiftUI
+import Synchronization
 import UniformTypeIdentifiers
+
+/// Cancel, for long file work: set from the progress pill, read by the work wherever it runs.
+final class StopFlag: Sendable {
+    private let value = Mutex(false)
+    var isSet: Bool { value.withLock { $0 } }
+    func set(_ stop: Bool) { value.withLock { $0 = stop } }
+}
 
 /// What's being dragged out of a grid: the whole selection when the dragged item is part of it.
 /// A drag of one tile is SwiftUI's (`onDrag`) and carries one file URL; a drop looks here for the
@@ -393,7 +401,9 @@ extension MediaLibrary {
     func copyFiles(_ files: [URL], to path: String, server: BackupServer, title: String? = nil,
                    cameFrom: [URL: String] = [:]) async -> (undo: FileHistory.Step?, copies: [URL]) {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        activity = Activity(title: title ?? "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count)
+        activity = Activity(title: title ?? "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count, canCancel: true)
+        stopFlag.set(false)
+        let stop = stopFlag
         beginWork()
         defer {
             activity = nil
@@ -402,6 +412,8 @@ extension MediaLibrary {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var copies: [URL] = []
         for (index, file) in files.enumerated() {
+            // Cancel: what's copied stays (and Undo removes it); the rest isn't copied.
+            if stop.isSet { break }
             var target = folder.appending(path: file.lastPathComponent)
             var n = 2
             while FileManager.default.fileExists(atPath: target.path) {
@@ -412,7 +424,7 @@ extension MediaLibrary {
             activity?.bytes = nil
             let destination = target
             let copied = await Task.detached(priority: .userInitiated) { [weak self] in
-                (try? Self.copyFile(file, to: destination) { done, total in
+                (try? Self.copyFile(file, to: destination, shouldStop: { stop.isSet }) { done, total in
                     Task { @MainActor in self?.activity?.bytes = (done, total) }
                 }) != nil
             }.value
@@ -435,7 +447,9 @@ extension MediaLibrary {
 
     /// Copies one file. A big one goes in 8 MB pieces with `progress` (bytes so far, size), so a long
     /// copy shows how far it's got; a small one in one go. The copy keeps the original's dates.
-    nonisolated static func copyFile(_ source: URL, to destination: URL, progress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
+    /// `shouldStop`: asked between pieces of a big file; once it says yes, the part copied is removed.
+    nonisolated static func copyFile(_ source: URL, to destination: URL, shouldStop: () -> Bool = { false },
+                                     progress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
         let size = UInt64((try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         guard size > 64_000_000 else {
             try FileManager.default.copyItem(at: source, to: destination)
@@ -452,6 +466,7 @@ extension MediaLibrary {
             var copied: UInt64 = 0
             var lastReport = Date.distantPast
             while let chunk = try input.read(upToCount: 8 << 20), !chunk.isEmpty {
+                if shouldStop() { throw CancellationError() }
                 try output.write(contentsOf: chunk)
                 copied += UInt64(chunk.count)
                 if Date.now.timeIntervalSince(lastReport) > 0.1 {

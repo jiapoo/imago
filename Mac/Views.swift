@@ -95,15 +95,7 @@ struct MainView: View {
                 selection = path.isEmpty ? .home : .folder(path)
             }
             // Each page visited, for Back; a new visit clears Forward, as in Finder.
-            .onChange(of: selection) { old, new in
-                if steppingHistory {
-                    steppingHistory = false
-                } else if let old, old != new {
-                    backList.append(old)
-                    if backList.count > 100 { backList.removeFirst() }
-                    forwardList.removeAll()
-                }
-            }
+            .onChange(of: selection) { old, new in visited(old, then: new) }
             // Going to another page closes the viewer: it covers the page, so the new page wouldn't show.
             .onChange(of: selection) { if viewer.isOpen { viewer.finishClosing() } }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -111,11 +103,7 @@ struct MainView: View {
             .mediaViewerOverlay()
             // What's under way (copying a big video, moving hundreds, saving an edited copy, an undo that
             // takes a while): one line at the bottom, above everything. Quick work never shows it.
-            .overlay {
-                ActivityOverlay(activity: library.activity ?? history.running.map { .init(title: $0, done: 0, total: 0, finishing: true) },
-                                // Above a page's selection bar; in the viewer there's none.
-                                bottomInset: viewer.isOpen ? 24 : 84)
-            }
+            .overlay { activityOverlay }
             .toolbar {
                 // Back and Forward through the pages visited, as in Finder (⌘[ and ⌘]). The viewer has
                 // its own Back.
@@ -261,6 +249,24 @@ struct MainView: View {
         }
     }
 
+    private var activityOverlay: some View {
+        ActivityOverlay(activity: library.activity ?? history.running.map { .init(title: $0, done: 0, total: 0, finishing: true) },
+                        cancel: { library.cancelActivity() },
+                        // Above a page's selection bar; in the viewer there's none.
+                        bottomInset: viewer.isOpen ? 24 : 84)
+    }
+
+    /// A page was left for another: it goes on the Back list, unless Back or Forward did it.
+    private func visited(_ old: SidebarItem?, then new: SidebarItem?) {
+        if steppingHistory {
+            steppingHistory = false
+        } else if let old, old != new {
+            backList.append(old)
+            if backList.count > 100 { backList.removeFirst() }
+            forwardList.removeAll()
+        }
+    }
+
     /// Back: the page before, skipping folders that have gone since.
     private func goBack() {
         while let page = backList.popLast() {
@@ -327,6 +333,8 @@ struct MainView: View {
 /// spinner. It never covers the photos, and appears only once the work has taken a moment.
 struct ActivityOverlay: View {
     let activity: MediaLibrary.Activity?
+    /// Cancel, for work that can stop part-way (copying, moving).
+    var cancel: (() -> Void)? = nil
     /// Room left below it: above the selection bar, when there may be one.
     var bottomInset: CGFloat = 24
     @State private var shown: MediaLibrary.Activity?
@@ -335,14 +343,14 @@ struct ActivityOverlay: View {
         ZStack {
             if let shown {
                 StatusPill(text: Self.line(shown),
-                           mark: .progress(shown.total > 0 && !shown.finishing && (shown.total > 1 || shown.bytes != nil) ? shown.fraction : nil))
+                           mark: .progress(shown.total > 0 && !shown.finishing && (shown.total > 1 || shown.bytes != nil) ? shown.fraction : nil),
+                           cancel: shown.canCancel ? cancel : nil)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.bottom, bottomInset)
         .animation(.snappy(duration: 0.3), value: shown == nil)
-        .allowsHitTesting(false)
         .task(id: activity == nil) {
             guard activity != nil else {
                 shown = nil
@@ -401,6 +409,8 @@ struct StatusPill: View {
 
     let text: String
     var mark: Mark = .done
+    /// A Cancel button at the end, for work that can stop.
+    var cancel: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 9) {
@@ -418,6 +428,13 @@ struct StatusPill: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .contentTransition(.numericText())
+            if let cancel {
+                Button(action: cancel) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Stop after the file under way. What's done stays, and Undo takes it back.")
+            }
         }
         .font(.callout)
         .padding(.horizontal, 14)
