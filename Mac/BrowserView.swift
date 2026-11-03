@@ -477,16 +477,16 @@ struct BrowserView: View {
     /// Delete: on the library's own pages, what's on an iPhone is deleted there (and here once it
     /// agrees); what's only on the drive goes to Recently Deleted, after asking.
     private func trash(_ items: [MediaItem]) {
-        guard Self.confirmTrash(deletesOnPhone ? items.filter { library.phoneAsset($0) == nil } : items, of: items.count) else { return }
-        library.selection = []
         Task {
+            guard await Self.confirmTrash(deletesOnPhone ? items.filter { library.phoneAsset($0) == nil } : items, of: items.count) else { return }
+            library.selection = []
             history.record(deletesOnPhone ? await library.delete(items, server: server) : await library.trash(items, server: server))
         }
     }
 
     /// Asks before moving files only on the drive to Recently Deleted (a folder's, or among a
     /// selection). What's on an iPhone isn't asked about here: the iPhone asks itself.
-    static func confirmTrash(_ driveOnly: [MediaItem], of total: Int) -> Bool {
+    static func confirmTrash(_ driveOnly: [MediaItem], of total: Int) async -> Bool {
         guard !driveOnly.isEmpty else { return true }
         let alert = NSAlert()
         alert.messageText = driveOnly.count == 1 ? "Move “\(driveOnly[0].name)” to Recently Deleted?"
@@ -499,7 +499,7 @@ struct BrowserView: View {
         alert.informativeText = info + " You can put \(driveOnly.count == 1 ? "it" : "them") back from Recently Deleted."
         alert.addButton(withTitle: "Move to Recently Deleted")
         alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn
+        return await alert.askOnWindow()
     }
 
     private func putBack(_ items: [MediaItem]) {
@@ -1409,8 +1409,9 @@ enum FolderNaming: Identifiable {
 
 extension View {
     /// Asks for a Folder's name, to create one (moving `moving` into it) or rename one.
+    /// `renamed` hears the folder's old path and its new one.
     func folderNameAlert(_ naming: Binding<FolderNaming?>, library: MediaLibrary, server: BackupServer,
-                         renamed: @escaping (String) -> Void = { _ in }) -> some View {
+                         renamed: @escaping (String, String) -> Void = { _, _ in }) -> some View {
         modifier(FolderNameAlert(naming: naming, library: library, server: server, renamed: renamed))
     }
 }
@@ -1420,7 +1421,7 @@ private struct FolderNameAlert: ViewModifier {
     @Binding var naming: FolderNaming?
     let library: MediaLibrary
     let server: BackupServer
-    var renamed: (String) -> Void
+    var renamed: (String, String) -> Void
     @State private var name = ""
 
     func body(content: Content) -> some View {
@@ -1456,7 +1457,7 @@ private struct FolderNameAlert: ViewModifier {
             case .rename(let old):
                 guard let new = await library.renameFolder(old, to: name, server: server) else { return }
                 history.record(new.undo)
-                renamed(new.path)
+                renamed(old, new.path)
             case nil:
                 break
             }

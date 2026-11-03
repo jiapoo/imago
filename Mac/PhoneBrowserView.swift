@@ -678,8 +678,9 @@ struct PhoneGrid: View {
                 Button(notSynced.count == 1 ? "Move Not Synced File to Recently Deleted" : "Move \(notSynced.count) Not Synced Files to Recently Deleted",
                        role: .destructive) {
                     let items = actions.libraryItems(notSynced)
-                    if BrowserView.confirmTrash(items, of: items.count) {
-                        Task { history.record(await library.trash(items, server: server)) }
+                    Task {
+                        guard await BrowserView.confirmTrash(items, of: items.count) else { return }
+                        history.record(await library.trash(items, server: server))
                     }
                 }
             }
@@ -957,8 +958,7 @@ struct PhoneActions {
         // A file the iPhone doesn't have is known by its path.
         let ids = Set(assets.filter { !$0.isUnsynced }.map { "\(device.id)/\($0.id)" })
         let paths = Set(assets.filter(\.isUnsynced).map { String($0.id.dropFirst(PhoneAsset.unsyncedPrefix.count)) })
-        let items = includingDeleted ? library.items + library.trash.map(\.item) : library.items
-        return items.filter { ids.contains($0.id) || paths.contains($0.url.path) }
+        return library.items(ids: ids, paths: paths, includingDeleted: includingDeleted)
     }
 
     /// Copies their backed-up files into a folder on the drive, or moves them there and removes them

@@ -221,6 +221,9 @@ actor BackupStore {
             try? fileManager.setAttributes([.creationDate: date, .modificationDate: date], ofItemAtPath: destination.path)
         }
 
+        // Read whole just now, for its checksum: the check before the phone deletes its copy needn't
+        // read it again soon.
+        VerifiedFiles.note(destination, sha256: actual)
         let sidecar = try writeSidecar(for: file.metadata, file: .init(
             kind: key.kind, revision: key.revision, name: destination.lastPathComponent, sha256: actual, size: size
         ))
@@ -248,6 +251,7 @@ actor BackupStore {
     }
 
     func flush() {
+        VerifiedFiles.save()
         for file in inFlight.values { try? file.handle.close() }
         inFlight.removeAll()
         if unsavedChanges > 0 { try? saveIndex() }

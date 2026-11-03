@@ -160,7 +160,13 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showingAddPhone) { AddPhoneSheet() }
-        .folderNameAlert($naming, library: library, server: server) { selection = .folder($0) }
+        // Renamed: the page stays where it is, following the folder only when it's the one (or one
+        // inside it) on screen.
+        .folderNameAlert($naming, library: library, server: server) { old, new in
+            if case .folder(let path) = selection, path == old || path.hasPrefix(old + "/") {
+                selection = .folder(new + path.dropFirst(old.count))
+            }
+        }
         .confirmationDialog(duplicateTitle, isPresented: Binding(
             get: { library.duplicateQuestion != nil },
             set: { if !$0 { library.answerDuplicates(.cancel) } }

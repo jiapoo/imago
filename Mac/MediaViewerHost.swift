@@ -121,7 +121,7 @@ final class MediaViewerHost {
         alert.informativeText = (request.deleteTitle ?? "Move to Recently Deleted") + ". ⌘Z undoes it."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard await alert.askOnWindow() else { return }
         guard await delete(deleting) else { return }
         let before = shown
         guard let at = before.firstIndex(of: deleting) else { return }
@@ -534,5 +534,20 @@ enum PlaceNames {
         // The full name with the town, when the title shows less: "Shenzhen Bay Sports Center, Nanshan, Shenzhen".
         let parts = [full, p.subLocality, p.locality].compactMap(\.self).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
         return Place(short: short, full: parts.joined(separator: ", "))
+    }
+}
+
+extension NSAlert {
+    /// Asks as a sheet on Imago's window, and waits for the answer without stopping the app. A modal
+    /// alert (`runModal`) shown while the viewer was closing could open where it wasn't seen, and then
+    /// held up the whole app until answered: it looked frozen. With no window, it asks on its own.
+    @MainActor
+    func askOnWindow() async -> Bool {
+        guard let window = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first(where: \.isVisible) else {
+            return runModal() == .alertFirstButtonReturn
+        }
+        return await withCheckedContinuation { answer in
+            beginSheetModal(for: window) { answer.resume(returning: $0 == .alertFirstButtonReturn) }
+        }
     }
 }

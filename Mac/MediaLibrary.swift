@@ -253,6 +253,9 @@ final class MediaLibrary {
     private var copiedFromReadFrom: URL?
     /// `deletedOnPhone` for each iPhone, as of a revision.
     @ObservationIgnored private var deletedOnPhoneCache: (revision: Int, byDevice: [String: [MediaItem]])?
+    /// Items by ID and by file path, Recently Deleted's apart, as of a revision (see `items(ids:paths:)`).
+    @ObservationIgnored private var lookupCache: (revision: Int, byID: [String: MediaItem], byPath: [String: MediaItem],
+                                                  trashedByID: [String: MediaItem], trashedByPath: [String: MediaItem])?
     /// `items(in: .large)`, as of a revision.
     @ObservationIgnored private var largeCache: (revision: Int, items: [MediaItem])?
 
@@ -504,6 +507,28 @@ final class MediaLibrary {
         changedHere()
         findFolderCopies(server)
         fillDurations()
+    }
+
+    /// The items with these IDs or at these paths (and in Recently Deleted too, with `includingDeleted`),
+    /// looked up rather than searched for: a page asks for one tile's at a time (its menu, built as it
+    /// scrolls into view), and going through every item for each made scrolling stutter.
+    func items(ids: Set<String>, paths: Set<String>, includingDeleted: Bool = false) -> [MediaItem] {
+        if lookupCache?.revision != revision {
+            func index(_ list: [MediaItem]) -> (byID: [String: MediaItem], byPath: [String: MediaItem]) {
+                (Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }),
+                 Dictionary(list.map { ($0.url.path, $0) }, uniquingKeysWith: { a, _ in a }))
+            }
+            let live = index(items)
+            let gone = index(trash.map(\.item))
+            lookupCache = (revision, live.byID, live.byPath, gone.byID, gone.byPath)
+        }
+        guard let cache = lookupCache else { return [] }
+        var found = ids.compactMap { cache.byID[$0] } + paths.compactMap { cache.byPath[$0] }
+        if includingDeleted {
+            found += ids.compactMap { cache.trashedByID[$0] } + paths.compactMap { cache.trashedByPath[$0] }
+        }
+        var seen: Set<String> = []
+        return found.filter { seen.insert($0.id).inserted }
     }
 
     /// Large Files, worked out once per change: Home shows its count on every redraw.
@@ -1105,11 +1130,14 @@ final class MediaLibrary {
                 let matches = await Task.detached(priority: .userInitiated) { [weak self] in
                     var before: UInt64 = 0
                     return !assetFiles.isEmpty && assetFiles.allSatisfy { file in
+                        // Read and found whole recently, and unchanged since: not read again.
+                        if VerifiedFiles.isVerified(file.url, sha256: file.sha256) { return true }
                         let sum = try? FileHasher.sha256(of: file.url) { read in
                             let done = before + read
                             Task { @MainActor in if self?.activity?.bytes != nil { self?.activity?.bytes = (done, size) } }
                         }
                         before += (try? file.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0
+                        if sum == file.sha256 { VerifiedFiles.note(file.url, sha256: file.sha256) }
                         return sum == file.sha256
                     }
                 }.value
@@ -1119,6 +1147,7 @@ final class MediaLibrary {
             }
             activity = nil
             verifying -= ids.count
+            Task.detached { VerifiedFiles.save() }
             if stop.isSet { break }
             failed += ids.count - verified.count
             let assets = removable.filter { verified.contains($0.assetID ?? "") }.compactMap(phoneAsset)
