@@ -83,6 +83,7 @@ struct MainView: View {
             }
             // A fresh view per sidebar item, so the last page's title and toolbar don't linger.
             .id(selection)
+            .environment(\.page, selection)
             // An iPhone that connects gets its Not synced files.
             .onChange(of: server.liveDevices) { library.sendNotSynced(server) }
             // Turned to automatic: what's waiting on Deleted on iPhone is dealt with now.
@@ -270,6 +271,7 @@ struct MainView: View {
         if steppingHistory {
             steppingHistory = false
         } else if let old, old != new {
+            ScrollMemory.returningTo = nil
             backList.append(old)
             if backList.count > 100 { backList.removeFirst() }
             forwardList.removeAll()
@@ -282,6 +284,7 @@ struct MainView: View {
             guard isThere(page), page != selection else { continue }
             if let selection { forwardList.append(selection) }
             steppingHistory = true
+            ScrollMemory.returningTo = page
             selection = page
             return
         }
@@ -293,6 +296,7 @@ struct MainView: View {
             guard isThere(page), page != selection else { continue }
             if let selection { backList.append(selection) }
             steppingHistory = true
+            ScrollMemory.returningTo = page
             selection = page
             return
         }

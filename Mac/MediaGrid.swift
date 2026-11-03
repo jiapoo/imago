@@ -209,6 +209,74 @@ final class TileFrames {
     var frames: [String: CGRect] = [:]
     /// Day headers on screen. Pinned ones sit over tiles: a drag starting on one draws a box.
     var headers: [String: CGRect] = [:]
+
+    /// The first tile wholly in view with the grid scrolled to `top`: the top row's first.
+    func first(below top: CGFloat) -> String? {
+        frames.filter { $0.value.minY >= top - 1 }
+            .min { ($0.value.minY, $0.value.minX) < ($1.value.minY, $1.value.minX) }?.key
+    }
+}
+
+// MARK: - Back to where it was
+
+extension EnvironmentValues {
+    /// The sidebar page a view is on, for what it remembers about it.
+    @Entry var page: SidebarItem?
+}
+
+/// Where each page's grid was scrolled when it was left, by its top row's first tile: Back and Forward
+/// come back to there, as in Finder. A page picked in the sidebar opens at the top.
+@MainActor
+enum ScrollMemory {
+    private static var spots: [SidebarItem: String] = [:]
+    /// The page Back or Forward is going to, set just before it comes up; nil for any other way there.
+    static var returningTo: SidebarItem?
+
+    static func remember(_ tile: String?, for page: SidebarItem) {
+        spots[page] = tile
+    }
+
+    /// Where the page coming up goes back to: only when Back or Forward brought it up.
+    static func spot(for page: SidebarItem) -> String? {
+        guard returningTo == page else { return nil }
+        returningTo = nil
+        return spots[page]
+    }
+}
+
+/// A grid that comes back to where it was scrolled (see `ScrollMemory`). On the grid's ScrollView.
+struct RemembersScroll: ViewModifier {
+    @Environment(\.page) private var page
+    let frames: TileFrames
+    let proxy: ScrollViewProxy
+    /// How far down it's scrolled, and the page it's on; kept aside, as nothing needs redrawing for it.
+    @State private var scrolled = Scrolled()
+
+    final class Scrolled {
+        var top: CGFloat = 0
+        /// As it was when the grid appeared: by the time it goes, the environment says the next page.
+        var page: SidebarItem?
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, top in
+                scrolled.top = top
+            }
+            .onAppear {
+                scrolled.page = page
+                guard let page, let tile = ScrollMemory.spot(for: page) else { return }
+                // Once the grid has its tiles, and again as the rows above it are laid out: a lazy grid
+                // guesses their heights at first, so the first scroll lands short.
+                for delay in [0, 0.1, 0.25, 0.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { proxy.scrollTo(tile, anchor: .top) }
+                }
+            }
+            .onDisappear {
+                guard let page = scrolled.page else { return }
+                ScrollMemory.remember(scrolled.top > 1 ? frames.first(below: scrolled.top) : nil, for: page)
+            }
+    }
 }
 
 extension View {

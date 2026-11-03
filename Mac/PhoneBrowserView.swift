@@ -541,6 +541,7 @@ struct PhoneGrid: View {
                   ids.sorted().compactMap { model.files[$0] }
               }
             }
+            .modifier(RemembersScroll(frames: tileFrames, proxy: proxy))
             .onAppear {
                 guard let target = scrollTarget.wrappedValue else { return }
                 DispatchQueue.main.async { proxy.scrollTo(target, anchor: .top) }

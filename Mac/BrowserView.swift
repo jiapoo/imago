@@ -166,6 +166,7 @@ struct BrowserView: View {
           }
         }
         .scrollContentBackground(.hidden)
+        .modifier(RemembersScroll(frames: tileFrames, proxy: proxy))
         .background(Color(nsColor: .textBackgroundColor))
         // A folder takes photos and videos dropped on it: from Finder (copied in) or another grid.
         .dropsFiles { urls in
