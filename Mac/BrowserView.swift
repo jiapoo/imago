@@ -443,7 +443,9 @@ struct BrowserView: View {
             },
             deleteTitle: isTrash ? "Delete Now…" : deletesOnPhone ? "Delete" : "Move to Recently Deleted",
             copy: { selected.map(\.url) },
-            paste: pasteTarget.map { path in { urls in _ = library.drop(urls, onto: .folder(path), server: server, history: history) } }
+            paste: pasteTarget.map { path in { urls in
+                _ = library.drop(urls, onto: .folder(path), mode: Clipboard.shared.pasteMode(for: urls), server: server, history: history)
+            } }
         )
     }
 
@@ -809,6 +811,13 @@ extension BrowserView {
         OpenWithMenu(urls: targets.map(\.url))
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
         Button("Share…") { MediaShare.present(targets.map(\.url)) }
+        Divider()
+        // Then Paste (or Move Items Here) on a folder in the sidebar, ⌘V in its grid, or in Finder.
+        Button(targets.count == 1 ? "Copy" : "Copy \(targets.count) Items") { Clipboard.shared.put(targets.map(\.url), cut: false) }
+        if !isTrash {
+            Button(targets.count == 1 ? "Cut" : "Cut \(targets.count) Items") { Clipboard.shared.put(targets.map(\.url), cut: true) }
+        }
+        Divider()
         let copies = targets.flatMap(otherFolders(holding:)).map(\.url)
         if !copies.isEmpty {
             Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }

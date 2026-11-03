@@ -118,8 +118,9 @@ private struct FolderTree: View {
                 // Photos and videos copied in Finder or here (⌘C): into this folder, as a paste into its grid.
                 let pasted = Clipboard.shared.media
                 if !pasted.isEmpty {
-                    Button(pasted.count == 1 ? "Paste Item" : "Paste \(pasted.count) Items") {
-                        _ = library.drop(pasted, onto: .folder(folder.path), server: server, history: history)
+                    let cut = Clipboard.shared.isCut
+                    Button(pasted.count == 1 ? (cut ? "Move Item Here" : "Paste Item") : (cut ? "Move \(pasted.count) Items Here" : "Paste \(pasted.count) Items")) {
+                        _ = library.drop(pasted, onto: .folder(folder.path), mode: Clipboard.shared.pasteMode(for: pasted), server: server, history: history)
                     }
                     Divider()
                 }
@@ -525,8 +526,36 @@ extension View {
 final class Clipboard {
     static let shared = Clipboard()
     private(set) var media: [URL] = []
+    /// Put there with ⌘X here: pasted here, they move (the folder's mode for them is Move).
+    private(set) var isCut = false
     @ObservationIgnored private var changeCount = -1
+    @ObservationIgnored private var cutChangeCount = -1
     @ObservationIgnored private var timer: Timer?
+
+    /// Puts these files on the clipboard, every one, marked cut for ⌘X.
+    func put(_ urls: [URL], cut: Bool) {
+        guard !urls.isEmpty else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.writeObjects(urls.map { $0 as NSURL })
+        cutChangeCount = cut ? board.changeCount : -1
+        read()
+    }
+
+    /// Every file on the clipboard, for Paste: photos and videos from Finder or copied here.
+    func files() -> [URL] {
+        NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+
+    /// How a paste of these files here puts them in a folder: moved, once, after ⌘X; otherwise copied,
+    /// as in Finder, whatever the toolbar's Copy | Move says (that's for drops).
+    func pasteMode(for urls: [URL]) -> TransferMode {
+        guard isCut, Set(urls.map(\.lexicallyStandardized)).isSubset(of: Set(media.map(\.lexicallyStandardized))) else { return .copy }
+        // Cut once, moved once: pasted again, they're copies of what's already moved.
+        cutChangeCount = -1
+        isCut = false
+        return .move
+    }
 
     private init() {
         read()
@@ -539,6 +568,7 @@ final class Clipboard {
         let board = NSPasteboard.general
         guard board.changeCount != changeCount else { return }
         changeCount = board.changeCount
+        if isCut != (cutChangeCount == changeCount) { isCut = cutChangeCount == changeCount }
         let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         let found = urls.filter(MediaLibrary.isMedia)
         if found != media { media = found }

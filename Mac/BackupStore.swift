@@ -494,8 +494,10 @@ actor BackupStore {
         relinkCache?.checked.formUnion(fresh)
         var claimed: Set<URL> = []
         for url in fresh {
-            guard let keys = byName[url.lastPathComponent] else { continue }
-            let size = UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1)
+            // Gone again already (moved on): nothing to follow.
+            guard let keys = byName[url.lastPathComponent],
+                  let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap({ $0 }).map(UInt64.init)
+            else { continue }
             guard let key = keys.first(where: { index.resources[$0]?.size == size }), let stored = index.resources[key],
                   !fileManager.fileExists(atPath: self.url(of: stored.relativePath).path),
                   (try? FileHasher.sha256(of: url)) == stored.sha256

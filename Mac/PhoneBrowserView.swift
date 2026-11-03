@@ -637,6 +637,11 @@ struct PhoneGrid: View {
             OpenWithMenu(urls: targets.compactMap { model.files[$0.id] })
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.compactMap { model.files[$0.id] }) }
             Button("Share…") { MediaShare.present(targets.compactMap { model.files[$0.id] }) }
+            Divider()
+            let files = targets.compactMap { model.files[$0.id] }
+            Button(files.count == 1 ? "Copy" : "Copy \(files.count) Items") { Clipboard.shared.put(files, cut: false) }
+            Button(files.count == 1 ? "Cut" : "Cut \(files.count) Items") { Clipboard.shared.put(files, cut: true) }
+            Divider()
             let copies = actions.folderCopies(targets)
             if !copies.isEmpty {
                 Button("Open Copy in Finder") { NSWorkspace.shared.activateFileViewerSelecting(copies) }

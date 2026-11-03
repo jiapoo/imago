@@ -136,18 +136,29 @@ struct GridKeys: ViewModifier {
     /// Other characters, e.g. "." to favorite.
     var extra: [Character: () -> Void] = [:]
 
+    private var actions: GridCommandActions {
+        GridCommandActions(
+            deselectAll: clear, selectAll: selectAll, delete: delete, deleteTitle: deleteTitle,
+            copy: copy.map { files in { Clipboard.shared.put(files(), cut: false) } },
+            cut: copy.map { files in { Clipboard.shared.put(files(), cut: true) } },
+            paste: paste.map { paste in { paste(Clipboard.shared.files()) } }
+        )
+    }
+
     func body(content: Content) -> some View {
-        content
+        // Kept up to date with the page (its folder for Paste, its selection) each time it's drawn.
+        let actions = actions
+        let turn = ActiveGrid.show(actions)
+        return content
             .contentShape(Rectangle())
             .onTapGesture { clear() }
             .focusable()
             .focused(focused)
             .focusEffectDisabled()
-            .focusedValue(\.gridCommands, GridCommandActions(deselectAll: clear, delete: delete, deleteTitle: deleteTitle))
-            .onCopyCommand { (copy?() ?? []).map { NSItemProvider(object: $0 as NSURL) } }
-            .onPasteCommand(of: paste == nil ? [] : [.fileURL]) { providers in
-                Task { if let paste { paste(await Self.fileURLs(from: providers)) } }
-            }
+            .focusedValue(\.gridCommands, actions)
+            // Edit › Copy, Cut and Paste work on the grid on screen even when it hasn't the keyboard
+            // (a click on a tile leaves it elsewhere). Gone, it's forgotten, unless another took its place.
+            .onDisappear { ActiveGrid.hide(turn) }
             .onAppear { focused.wrappedValue = true }
             .onKeyPress(.space) { preview(); return .handled }
             .onKeyPress(characters: ["o", "\u{F701}"]) { press in   // ⌘O and ⌘↓, as in Finder
@@ -433,12 +444,43 @@ struct OpenWithMenu: View {
 /// What Edit › Deselect All and the delete command do to the grid with the keyboard.
 struct GridCommandActions {
     var deselectAll: () -> Void
+    var selectAll: () -> Void
     var delete: () -> Void
     var deleteTitle: String
+    /// Edit › Copy, Cut and Paste; nil where the grid has nothing to copy or nowhere to paste.
+    var copy: (() -> Void)?
+    var cut: (() -> Void)?
+    var paste: (() -> Void)?
 }
 
 extension FocusedValues {
     @Entry var gridCommands: GridCommandActions?
+}
+
+/// The grid on screen, for Copy, Cut and Paste when it hasn't the keyboard.
+@MainActor
+enum ActiveGrid {
+    private static var actions: GridCommandActions?
+    private static var turn = 0
+
+    /// This grid is on screen, with these actions; returns its turn, for `hide`.
+    static func show(_ actions: GridCommandActions) -> Int {
+        self.actions = actions
+        turn += 1
+        return turn
+    }
+
+    /// The grid drawn at `turn` left the screen: forgotten, if no grid was drawn since.
+    static func hide(_ turn: Int) {
+        if turn == self.turn { actions = nil }
+    }
+
+    /// The grid Edit's Copy, Cut and Paste act on: the one with the keyboard, else the one on screen,
+    /// unless text is being typed somewhere (then the text is copied, as ever).
+    static func target(_ focused: GridCommandActions?) -> GridCommandActions? {
+        if let focused { return focused }
+        return NSApp.keyWindow?.firstResponder is NSText ? nil : actions
+    }
 }
 
 /// Edit › Deselect All (⌥⌘A) and the delete command (⌘⌫), for the grid with the keyboard. Disabled
@@ -447,6 +489,18 @@ struct GridCommands: Commands {
     @FocusedValue(\.gridCommands) private var grid
 
     var body: some Commands {
+        // Cut, Copy and Paste of the grid's files, every one (SwiftUI's own copy command puts only the
+        // first of several on the clipboard); elsewhere, as ever, for whatever has the keyboard.
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cut") { if let cut = ActiveGrid.target(grid)?.cut { cut() } else { send(#selector(NSText.cut(_:))) } }
+                .keyboardShortcut("x")
+            Button("Copy") { if let copy = ActiveGrid.target(grid)?.copy { copy() } else { send(#selector(NSText.copy(_:))) } }
+                .keyboardShortcut("c")
+            Button("Paste") { if let paste = ActiveGrid.target(grid)?.paste { paste() } else { send(#selector(NSText.paste(_:))) } }
+                .keyboardShortcut("v")
+            Button("Select All") { if let grid { grid.selectAll() } else { send(#selector(NSText.selectAll(_:))) } }
+                .keyboardShortcut("a")
+        }
         CommandGroup(after: .pasteboard) {
             Button("Deselect All") { grid?.deselectAll() }
                 .keyboardShortcut("a", modifiers: [.command, .option])
@@ -455,6 +509,10 @@ struct GridCommands: Commands {
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(grid == nil)
         }
+    }
+
+    private func send(_ action: Selector) {
+        NSApp.sendAction(action, to: nil, from: nil)
     }
 }
 

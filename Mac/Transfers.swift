@@ -251,13 +251,14 @@ extension MediaLibrary {
 
     /// Puts items into a folder the way the toolbar says: copies, or moves and removes them from their
     /// iPhone. Asks first when the folder already has identical files. Records each step for undo.
-    func transfer(_ items: [MediaItem], toFolder path: String, server: BackupServer, history: FileHistory) async {
+    func transfer(_ items: [MediaItem], toFolder path: String, mode: TransferMode? = nil, server: BackupServer, history: FileHistory) async {
+        let mode = mode ?? TransferMode.current
         var items = items
         var replaced: FileHistory.Step?
         let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
         if stopFlag.isSet { return }
         if !identical.isEmpty {
-            switch await ask(identical.count, of: items.count, in: path, isMove: TransferMode.current == .move) {
+            switch await ask(identical.count, of: items.count, in: path, isMove: mode == .move) {
             case .cancel: return
             case .skip: items.removeAll { identical[$0.url] != nil }
             case .keepBoth: break
@@ -265,7 +266,7 @@ extension MediaLibrary {
             }
             guard !items.isEmpty else { return }
         }
-        switch TransferMode.current {
+        switch mode {
         case .copy:
             let copied = await copy(items, toFolder: path, server: server)
             history.record(FileHistory.combine("Copy to “\((path as NSString).lastPathComponent)”", [replaced, copied]))
@@ -295,7 +296,8 @@ extension MediaLibrary {
     /// Handles a drop onto a place. Onto a folder, library items are copied or moved there (the toolbar's
     /// mode); onto an iPhone's folder, its items move back; onto Recently Deleted, they're deleted.
     /// Photos and videos from elsewhere (Finder) are copied into a folder. Returns whether anything was taken.
-    func drop(_ urls: [URL], onto place: Place, server: BackupServer, history: FileHistory) -> Bool {
+    /// `mode`: Copy or Move for these, instead of the toolbar's (a paste after ⌘X moves).
+    func drop(_ urls: [URL], onto place: Place, mode: TransferMode? = nil, server: BackupServer, history: FileHistory) -> Bool {
         let dropped = droppedItems(urls)
         let known = Set(dropped.map { $0.url.lexicallyStandardized })
         // Ones already there stay put (a folder's own items dropped back on it).
@@ -306,7 +308,7 @@ extension MediaLibrary {
         Task {
             if !moving.isEmpty {
                 switch place {
-                case .folder(let path): await transfer(moving, toFolder: path, server: server, history: history)
+                case .folder(let path): await transfer(moving, toFolder: path, mode: mode, server: server, history: history)
                 case .phoneFolder, .trash: history.record(await move(moving, to: place, server: server))
                 }
             }
