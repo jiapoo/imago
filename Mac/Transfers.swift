@@ -492,7 +492,9 @@ extension MediaLibrary {
             defer { try? output.close() }
             var copied: UInt64 = 0
             var lastReport = Date.distantPast
-            while let chunk = try input.read(upToCount: 8 << 20), !chunk.isEmpty {
+            // The pool lets each piece go once written; otherwise a big video stays in memory whole.
+            while try autoreleasepool(invoking: {
+                guard let chunk = try input.read(upToCount: 8 << 20), !chunk.isEmpty else { return false }
                 if shouldStop() { throw CancellationError() }
                 try output.write(contentsOf: chunk)
                 copied += UInt64(chunk.count)
@@ -500,7 +502,8 @@ extension MediaLibrary {
                     lastReport = .now
                     progress(copied, size)
                 }
-            }
+                return true
+            }) {}
             progress(copied, size)
             if let attributes = try? FileManager.default.attributesOfItem(atPath: source.path) {
                 var dates: [FileAttributeKey: Any] = [:]

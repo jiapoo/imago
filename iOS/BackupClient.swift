@@ -667,7 +667,8 @@ final class BackupClient {
         defer { try? handle.close() }
         var position = offset <= size ? offset : 0
         try handle.seek(toOffset: position)
-        while let data = try handle.read(upToCount: FrameCodec.chunkSize), !data.isEmpty {
+        // Read inside a pool, so each piece is let go once sent instead of the whole video piling up.
+        while let data = try autoreleasepool(invoking: { try handle.read(upToCount: FrameCodec.chunkSize) }), !data.isEmpty {
             try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.chunk(key: descriptor.key, offset: position, data: data)) }
             position += UInt64(data.count)
             progress(0.5 + 0.5 * Double(position) / Double(max(size, 1)))

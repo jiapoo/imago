@@ -744,7 +744,10 @@ final class BackupServer {
                 defer { try? handle.close() }
                 var offset: UInt64 = 0
                 while true {
-                    let data = await Task.detached(priority: .userInitiated) { (try? handle.read(upToCount: FrameCodec.chunkSize)) ?? Data() }.value
+                    let data = await Task.detached(priority: .userInitiated) {
+                        // Read inside a pool, so the file's buffer is let go once sent.
+                        autoreleasepool { (try? handle.read(upToCount: FrameCodec.chunkSize)) ?? Data() }
+                    }.value
                     guard !data.isEmpty else { break }
                     try await peer.send(.chunk(key: file.key, offset: offset, data: data))
                     offset += UInt64(data.count)
