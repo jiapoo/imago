@@ -1249,12 +1249,16 @@ final class MediaLibrary {
             // Off the main thread: a slow drive takes its time.
             try await Task.detached(priority: .userInitiated) { try FileManager.default.moveItem(at: old, to: new) }.value
             renamed = true
+            // Shown as soon as it's renamed, as a move is; the iPhones' indexes catch up after. Shown
+            // only after them, the old name stayed in the sidebar meanwhile, and photos dropped on it
+            // made a new folder by that name.
+            movedFolders[path] = newPath
+            showRenamed(path, to: newPath, server: server)
             for device in server.devices {
                 await server.store(for: device)?.folderMoved(from: old, to: new)
             }
         }
         guard renamed else { return nil }
-        showRenamed(path, to: newPath, server: server)
         let oldName = (path as NSString).lastPathComponent
         return (newPath, FileHistory.Step(name: "Rename Folder") { [weak self] in
             await self?.renameFolder(newPath, to: oldName, server: server)?.undo
@@ -1264,6 +1268,12 @@ final class MediaLibrary {
     /// Where folders moved here last went, old path to new (their folders inside too): the page of one
     /// on screen follows it.
     private(set) var movedFolders: [String: String] = [:]
+
+    /// Where photos put in the folder at `path` go: there, or where it was renamed or moved to since
+    /// (a drop or paste that began before), rather than a new folder by its old name.
+    func folderNow(_ path: String) -> String {
+        hasFolder(path) ? path : movedFolder(path).flatMap { hasFolder($0) ? $0 : nil } ?? path
+    }
 
     /// The path a folder moved here is at now, if it moved.
     func movedFolder(_ path: String) -> String? {

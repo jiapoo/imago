@@ -296,6 +296,7 @@ private struct MediaViewerOverlay: ViewModifier {
                 embedded: true,
                 onIndexChange: { position in if shown.indices.contains(position) { host.index = shown[position] } },
                 slowStartMessage: "Waking up the backup drive…",
+                loops: true,
                 onClose: { host.close() }
             )
             .id("\(request.id)-\(host.viewerRevision)")

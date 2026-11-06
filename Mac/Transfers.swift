@@ -253,6 +253,7 @@ extension MediaLibrary {
     /// iPhone. Asks first when the folder already has identical files. Records each step for undo.
     func transfer(_ items: [MediaItem], toFolder path: String, mode: TransferMode? = nil, server: BackupServer, history: FileHistory) async {
         let mode = mode ?? TransferMode.current
+        var path = folderNow(path)
         var items = items
         var replaced: FileHistory.Step?
         let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
@@ -266,6 +267,8 @@ extension MediaLibrary {
             }
             guard !items.isEmpty else { return }
         }
+        // Renamed while the files were compared or the question was up: where it is now.
+        path = folderNow(path)
         switch mode {
         case .copy:
             let copied = await copy(items, toFolder: path, server: server)
@@ -313,6 +316,7 @@ extension MediaLibrary {
                 }
             }
             if case .folder(let path) = place, !outside.isEmpty {
+                let path = folderNow(path)
                 var files = outside
                 var replaced: FileHistory.Step?
                 let identical = await identicalFiles(files, inFolder: path, server: server)
