@@ -812,6 +812,7 @@ extension BrowserView {
         OpenWithMenu(urls: targets.map(\.url))
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
         Button("Share…") { MediaShare.present(targets.map(\.url)) }
+        CompareInMimesisButton(urls: targets.map(\.url))
         Divider()
         // Then Paste (or Move Items Here) on a folder in the sidebar, ⌘V in its grid, or in Finder.
         Button(targets.count == 1 ? "Copy" : "Copy \(targets.count) Items") { Clipboard.shared.put(targets.map(\.url), cut: false) }

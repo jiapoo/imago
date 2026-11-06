@@ -39,3 +39,21 @@ struct ShareButton: View {
         .help(urls.count > 1 ? "Share these \(urls.count) with AirDrop, Messages, WeChat or another app" : "Share with AirDrop, Messages, WeChat or another app")
     }
 }
+
+/// Opens one or two videos in Mimesis, the comparison app: two go in as clip A and clip B, side by side.
+/// Shown only when Mimesis is installed and the items are one or two videos.
+struct CompareInMimesisButton: View {
+    let urls: [URL]
+
+    static var app: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.arc.mimesis") }
+
+    var body: some View {
+        let videos = urls.filter { (UTType(filenameExtension: $0.pathExtension)?.conforms(to: .movie)) ?? false }
+        if let app = Self.app, (1...2).contains(videos.count), videos.count == urls.count {
+            Button("Compare in Mimesis") {
+                NSWorkspace.shared.open(videos, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+            }
+            .help(videos.count == 2 ? "Open these two side by side in Mimesis" : "Open in Mimesis to compare with another clip")
+        }
+    }
+}
