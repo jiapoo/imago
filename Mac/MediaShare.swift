@@ -45,7 +45,7 @@ struct ShareButton: View {
 struct CompareInMimesisButton: View {
     let urls: [URL]
 
-    static var app: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.arc.mimesis") }
+    static var app: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.ljworkshop.mimesis") }
 
     var body: some View {
         let videos = urls.filter { (UTType(filenameExtension: $0.pathExtension)?.conforms(to: .movie)) ?? false }

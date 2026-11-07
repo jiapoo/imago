@@ -49,7 +49,7 @@ struct ImagoApp: App {
 /// iOS decides when this runs: usually overnight, while charging and online. It is likely on most
 /// nights but never guaranteed, and it stops if the user swipes the app away in the app switcher.
 enum BackgroundBackup {
-    static let identifier = "com.example.photobackup.ios.processing"
+    static let identifier = "com.ljworkshop.imago.processing"
 
     static func register(client: BackupClient) {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { bgTask in
@@ -87,7 +87,7 @@ enum BackgroundBackup {
 /// progress indicator, and is only stopped if the user cancels it there or the system needs to.
 @available(iOS 26, *)
 enum ContinuedBackup {
-    static let prefix = "com.example.photobackup.ios.continued"
+    static let prefix = "com.ljworkshop.imago.continued"
 
     /// Asks iOS to run the backup now. Returns false if it can't, and the app runs it in the foreground instead.
     ///

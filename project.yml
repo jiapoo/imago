@@ -1,6 +1,6 @@
 name: Imago
 options:
-  bundleIdPrefix: com.example.photobackup
+  bundleIdPrefix: com.ljworkshop.imago
   deploymentTarget:
     iOS: "18.0"
     macOS: "15.0"
@@ -10,6 +10,8 @@ settings:
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
+    # Kept here so regenerating Imago.xcodeproj never loses it (it isn't in git).
+    DEVELOPMENT_TEAM: 49Y2NVWNTQ
 packages:
   ImagoKit:
     path: Packages/ImagoKit
@@ -46,7 +48,7 @@ targets:
         com.apple.security.files.bookmarks.app-scope: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.mac
+        PRODUCT_BUNDLE_IDENTIFIER: com.ljworkshop.imago.mac
         PRODUCT_NAME: Imago
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_HARDENED_RUNTIME: YES
@@ -70,17 +72,24 @@ targets:
         NSLocalNetworkUsageDescription: Imago finds your Mac on your local network to send photos to it.
         NSBonjourServices: [_photobackup._tcp]
         UIBackgroundModes: [processing]
-        BGTaskSchedulerPermittedIdentifiers: [com.example.photobackup.ios.processing, com.example.photobackup.ios.continued.*]
-    # The iPhone's real name ("Jia's iPhone") needs Apple's user-assigned-device-name entitlement,
-    # which you request from Apple for your team. Until it's approved, iOS reports "iPhone" and
-    # the pairing screen asks for a name. Once approved, uncomment:
-    # entitlements:
-    #   path: iOS/ImagoiOS.entitlements
-    #   properties:
-    #     com.apple.developer.device-information.user-assigned-device-name: true
+        BGTaskSchedulerPermittedIdentifiers: [com.ljworkshop.imago.processing, com.ljworkshop.imago.continued.*]
+    entitlements:
+      path: iOS/ImagoiOS.entitlements
+      properties:
+        # The app's own group first (new items go there), then the group it had before the bundle
+        # ID changed from com.example.photobackup.ios, so the device ID made back then is still
+        # found. That ID is how the Mac knows which backup folder is this phone's; without it a
+        # re-paired phone would start a new folder and upload everything again.
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.ljworkshop.imago
+          - $(AppIdentifierPrefix)com.example.photobackup.ios
+        # The iPhone's real name ("Jia's iPhone") needs Apple's user-assigned-device-name
+        # entitlement, which you request from Apple for your team. Until it's approved, iOS reports
+        # "iPhone" and the pairing screen asks for a name. Once approved, uncomment:
+        # com.apple.developer.device-information.user-assigned-device-name: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.photobackup.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.ljworkshop.imago
         PRODUCT_NAME: Imago
         # iPhone and iPad.
         TARGETED_DEVICE_FAMILY: "1,2"

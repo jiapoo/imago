@@ -4,8 +4,8 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.example.photobackup.ios.processing</string>
-		<string>com.example.photobackup.ios.continued.*</string>
+		<string>com.ljworkshop.imago.processing</string>
+		<string>com.ljworkshop.imago.continued.*</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>

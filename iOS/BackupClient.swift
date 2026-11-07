@@ -7,8 +7,8 @@ import BackgroundTasks
 import Network
 import os
 
-/// Shows in Console.app (select the iPhone, filter on subsystem `com.example.photobackup.ios`).
-let log = Logger(subsystem: "com.example.photobackup.ios", category: "backup")
+/// Shows in Console.app (select the iPhone, filter on subsystem `com.ljworkshop.imago`).
+let log = Logger(subsystem: "com.ljworkshop.imago", category: "backup")
 
 /// Pairs with a Mac, finds it on the network, compares libraries and uploads what the Mac is missing.
 @MainActor @Observable
