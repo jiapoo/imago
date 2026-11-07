@@ -292,6 +292,17 @@ final class BackupServer {
         DeviceRegistry.saveDevices(devices)
     }
 
+    /// Puts these devices (the iPhones, or the iPads) in this order, as dragged in the sidebar. The
+    /// others keep their places.
+    func reorderDevices(_ ordered: [PairedDevice]) {
+        let ids = Set(ordered.map(\.id))
+        var next = ordered.compactMap { wanted in devices.first { $0.id == wanted.id } }[...]
+        let reordered = devices.map { ids.contains($0.id) ? next.popFirst() ?? $0 : $0 }
+        guard reordered != devices else { return }
+        devices = reordered
+        DeviceRegistry.saveDevices(devices)
+    }
+
     /// Lists the device as an iPhone or an iPad, as chosen in its menu.
     func setKind(_ kind: String, for device: PairedDevice) {
         guard let index = devices.firstIndex(where: { $0.id == device.id }), devices[index].kind != kind else { return }

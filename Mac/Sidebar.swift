@@ -49,6 +49,7 @@ struct Sidebar: View {
                 ForEach(server.devices.filter { !$0.isPad }) { device in
                     PhoneSidebarItem(device: device, isOpen: openBinding(device.id), selection: selection)
                 }
+                .onMove { reorder(server.devices.filter { !$0.isPad }, from: $0, to: $1) }
                 if pads.isEmpty { addDevice }
             }
             if !pads.isEmpty {
@@ -56,11 +57,19 @@ struct Sidebar: View {
                     ForEach(pads) { device in
                         PhoneSidebarItem(device: device, isOpen: openBinding(device.id), selection: selection)
                     }
+                    .onMove { reorder(pads, from: $0, to: $1) }
                     addDevice
                 }
             }
         }
         .navigationSplitViewColumnWidth(min: 210, ideal: 240)
+    }
+
+    /// A device dragged up or down among the iPhones (or the iPads).
+    private func reorder(_ shown: [PairedDevice], from: IndexSet, to: Int) {
+        var shown = shown
+        shown.move(fromOffsets: from, toOffset: to)
+        server.reorderDevices(shown)
     }
 
     private var addDevice: some View {
