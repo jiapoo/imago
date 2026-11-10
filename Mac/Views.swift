@@ -130,7 +130,8 @@ struct MainView: View {
                     }
                 }
                 // On every page, the viewer too: what Edit › Undo and Redo do, named in their help.
-                // Beside Copy | Move.
+                // Beside Copy | Move. Not in the editor: its Cancel, Reset and Save as Copy are the row.
+                if !viewer.editing {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button { Task { await history.undo() } } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
@@ -142,6 +143,7 @@ struct MainView: View {
                     }
                     .disabled(!history.canRedo)
                     .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : "Nothing to redo")
+                }
                 }
                 if !viewer.isOpen {
                     if pageHasPhotos {

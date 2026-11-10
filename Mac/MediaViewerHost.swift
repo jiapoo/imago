@@ -271,7 +271,8 @@ private struct MediaViewerOverlay: ViewModifier {
     private func viewer(_ request: MediaViewerHost.Request) -> some View {
         if host.editing, request.urls.indices.contains(host.index) {
             // The editor takes the viewer's place, as in Photos; it saves a new file only.
-            MediaEditView(url: request.urls[host.index], accent: .imago,
+            // Its Cancel, Reset and Save as Copy in the window's toolbar: one row at the top.
+            MediaEditView(url: request.urls[host.index], accent: .imago, buttons: .toolbar,
                           onCancel: { host.editing = false },
                           onSave: { await host.saveEdit($0) })
                 .id(request.urls[host.index])
