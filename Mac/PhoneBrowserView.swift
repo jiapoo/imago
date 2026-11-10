@@ -93,12 +93,9 @@ struct PhoneBrowserView: View {
             let one = (deletingAlbums?.count ?? 0) == 1
             Text("\(one ? "The album is" : "The albums are") deleted on \(device.name); \(one ? "its" : "their") photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : "when you next open Imago on it").")
         }
-        .onAppear {
-            if let requested = model.requestedSection {
-                section = requested
-                model.requestedSection = nil
-            }
-        }
+        .onAppear { openRequestedSection() }
+        // Asked for while the page is open (Show Them, in the note about photos not backed up).
+        .onChange(of: model.requestedSection) { openRequestedSection() }
         .onAppear { server.keepDriveAwake(true) }
         .onDisappear {
             model.cancelSimilar()
@@ -112,6 +109,13 @@ struct PhoneBrowserView: View {
     }
 
     /// The albums among these sidebar rows.
+    private func openRequestedSection() {
+        guard let requested = model.requestedSection else { return }
+        section = requested
+        sidebarSelection = [requested]
+        model.requestedSection = nil
+    }
+
     private func albums(in sections: Set<PhoneSection>) -> [String] {
         model.albums.filter { sections.contains(.album($0)) }
     }
@@ -275,10 +279,12 @@ struct PhoneBrowserView: View {
         case .notBackedUp:
             PhoneGrid(model: model, device: device, assets: model.notBackedUp,
                       explanation: "On the iPhone but not fully on this Mac yet. They're copied at the next backup; until then they can't be deleted from here.",
+                      notesNotBackedUp: false,
                       empty: ("Everything is backed up", "checkmark.circle", nil))
         case .deleting:
             PhoneGrid(model: model, device: device, assets: model.deleting, isDeleting: true,
                       explanation: "Waiting to be deleted from the iPhone. You confirm it there, and they go to Recently Deleted on the iPhone. They stay on this Mac.",
+                      notesNotBackedUp: false,
                       empty: ("Nothing waiting to be deleted", "trash", nil))
         case .queue:
             QueueView(model: model, device: device)
@@ -482,6 +488,9 @@ struct PhoneGrid: View {
     /// Showing assets waiting to be deleted, which offers Keep on iPhone.
     var isDeleting = false
     var explanation: String? = nil
+    /// Says at the top when some of these are only on the device, with a way to see just those.
+    /// Off where the page is about that already (Not Backed Up) or about something else (To Delete).
+    var notesNotBackedUp = true
     var scrollTarget: Binding<Date?> = .constant(nil)
     var empty: (title: String, symbol: String, detail: String?) = ("Nothing here", "photo", nil)
 
@@ -502,10 +511,50 @@ struct PhoneGrid: View {
     }
     private var actions: PhoneActions { PhoneActions(server: server, model: model, device: device, library: library, history: history) }
 
+    /// "iPad" or "iPhone", for this device.
+    private var kind: String { device.isPad ? "iPad" : "iPhone" }
+
+    /// Only on the device: the drive doesn't have them yet, so what shows is the device's preview.
+    /// (Not synced files are the other way round: on the drive, not the device.)
+    private static func onlyOnDevice(_ asset: PhoneAsset) -> Bool { !asset.isBackedUp && !asset.isUnsynced }
+
+    /// After a day's count: the whole day, or how many of it, isn't backed up yet.
+    private func notBackedUp(in items: [PhoneAsset]) -> String? {
+        let missing = items.count(where: Self.onlyOnDevice)
+        if missing == 0 { return nil }
+        return missing == items.count ? "Not backed up yet" : "\(missing.formatted()) not backed up yet"
+    }
+
+    @ViewBuilder
+    private var notBackedUpNote: some View {
+        let missing = assets.filter(Self.onlyOnDevice)
+        if !missing.isEmpty {
+            let what = missing.allSatisfy(\.isVideo) ? (missing.count == 1 ? "video" : "videos")
+                : missing.contains(where: \.isVideo) ? "photos and videos" : (missing.count == 1 ? "photo" : "photos")
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "externaldrive.badge.xmark").foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(missing.count.formatted()) \(what) \(missing.count == 1 ? "is" : "are") only on this \(kind)")
+                        .fontWeight(.semibold)
+                    Text("They show here as previews until they're backed up. Open Imago on the \(kind) and back up to copy them to the drive.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button("Show Them") { model.requestedSection = .notBackedUp }
+            }
+            .padding(12)
+            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.orange.opacity(0.35)))
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+        }
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
               VStack(spacing: 0) {
+                if notesNotBackedUp { notBackedUpNote }
                 if let explanation {
                     Text(explanation)
                         .foregroundStyle(.secondary)
@@ -522,7 +571,9 @@ struct PhoneGrid: View {
                             Section {
                                 ForEach(day.items) { tile($0) }
                             } header: {
-                                DayHeader(day: day) { selection.selected.formUnion(day.items.map(\.id)) }
+                                DayHeader(day: day, note: notesNotBackedUp ? notBackedUp(in: day.items) : nil) {
+                                    selection.selected.formUnion(day.items.map(\.id))
+                                }
                                     .headerFrame("\(day.id.timeIntervalSinceReferenceDate)", in: tileFrames)
                                     .id(day.id)
                             }
@@ -741,6 +792,9 @@ struct PhoneGrid: View {
                 model.asset(ids[index])?.metadata.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
             },
             info: { model.asset(ids[$0]).map(Self.info) ?? [] },
+            banner: { [kind] index in
+                model.asset(ids[index]).flatMap { Self.onlyOnDevice($0) ? "Preview only · not on the backup drive yet. Back up the \(kind) to copy it." : nil }
+            },
             isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
             toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },
             sourceFrame: asset.id == selection.anchor ? anchorFrame : nil,
@@ -868,13 +922,19 @@ struct PhoneTile: View {
     @ViewBuilder
     private var strip: some View {
         let favorite = asset.metadata.isFavorite
-        if asset.isVideo || favorite || !asset.isBackedUp || dimmed {
+        if asset.isVideo || favorite || (!asset.isBackedUp && !asset.isUnsynced) || dimmed {
             HStack(spacing: 5) {
                 if favorite { Image(systemName: "heart.fill") }
                 if dimmed { Image(systemName: "trash.fill") }
                 Spacer(minLength: 0)
-                if !asset.isBackedUp {
-                    Image(systemName: "externaldrive.badge.xmark").help("Not fully backed up yet")
+                if !asset.isBackedUp && !asset.isUnsynced {
+                    Label("Not backed up", systemImage: "externaldrive.badge.xmark")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption2.weight(.bold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(.orange, in: Capsule())
+                        .help("Only on the device: this is its preview. It's copied to the drive at the next backup.")
                 }
                 if asset.isVideo {
                     if asset.metadata.duration > 0 {

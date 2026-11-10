@@ -136,8 +136,8 @@ struct StatusHero: View {
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
             }
-            if client.phase.isRunning {
-                Label(runningNote, systemImage: "lock.open.display")
+            if let note = footnote {
+                Label(note.text, systemImage: note.symbol)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -152,11 +152,15 @@ struct StatusHero: View {
         return client.unfinished == nil ? "Back Up Now" : "Resume Backup"
     }
 
-    private var runningNote: String {
-        if #available(iOS 26, *) {
-            return "You can leave the app; progress shows at the top of the screen. If anything stops it, it picks up where it left off."
+    /// Under the button while a backup runs: when the last one was. Before iOS 26 a backup stops
+    /// when Imago leaves the screen, so that says to keep it open instead.
+    private var footnote: (text: String, symbol: String)? {
+        guard client.phase.isRunning else { return nil }
+        if #unavailable(iOS 26) {
+            return ("Keep Imago open; your \(Device.kind) won't lock while it backs up. If anything stops it, it picks up where it left off.", "lock.open.display")
         }
-        return "Keep Imago open; your \(Device.kind) won't lock while it backs up. If anything stops it, it picks up where it left off."
+        guard let last = client.lastBackup else { return nil }
+        return ("Last backup \(last.ago())", "clock")
     }
 
     private struct HeroState {
@@ -178,7 +182,7 @@ struct StatusHero: View {
             }
             if let last = client.lastBackup {
                 return HeroState(symbol: "checkmark.shield.fill", tint: .green, title: "Backed up",
-                                 subtitle: "Last backup to \(mac) \(last.formatted(.relative(presentation: .named))).", progress: 1)
+                                 subtitle: "Last backup to \(mac) \(last.ago()).", progress: 1)
             }
             return HeroState(symbol: "arrow.up", tint: .accentColor, title: "Ready to back up",
                              subtitle: "Your first backup copies everything to \(mac).", progress: 0)

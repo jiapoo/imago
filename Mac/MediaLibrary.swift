@@ -26,6 +26,10 @@ struct MediaItem: Identifiable, Hashable, Sendable {
     var longitude: Double? = nil
     /// An iPhone item's shown file, as it arrived: to find copies of it in the folders.
     var original: FolderCopies.Fingerprint? = nil
+    /// On its iPhone or iPad only, not backed up yet: `url` is the small preview the device sent (or
+    /// nothing yet). Shown in the library so it doesn't seem missing; there's no file to copy, move,
+    /// share or delete.
+    var isPreview = false
 }
 
 /// An item in Recently Deleted, and where Put Back returns it.

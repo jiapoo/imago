@@ -34,6 +34,8 @@ final class MediaViewerHost {
         /// Where it was taken, named over the date in the toolbar's title; nil when not known.
         var coordinate: (Int) -> CLLocationCoordinate2D? = { _ in nil }
         var info: (Int) -> [InfoRow]
+        /// A line shown over the item, such as that it's only a preview of a photo not backed up yet.
+        var banner: (Int) -> String? = { _ in nil }
         /// Whether it's a favorite on the iPhone; nil where favorites don't apply.
         var isFavorite: ((Int) -> Bool)? = nil
         var toggleFavorite: ((Int) -> Void)? = nil
@@ -276,6 +278,17 @@ private struct MediaViewerOverlay: ViewModifier {
                 .transition(.opacity)
         } else {
             browsing(request)
+                .overlay(alignment: .top) {
+                    if let banner = request.banner(host.index) {
+                        Label(banner, systemImage: "externaldrive.badge.xmark")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(.orange, in: Capsule())
+                            .padding(.top, 14)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .overlay(alignment: .bottom) {
                     if let notice = host.notice {
                         StatusPill(text: notice.text, mark: notice.failed ? .failed : .done)

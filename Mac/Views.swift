@@ -84,6 +84,7 @@ struct MainView: View {
             // A fresh view per sidebar item, so the last page's title and toolbar don't linger.
             .id(selection)
             .environment(\.page, selection)
+            .environment(\.openPage) { selection = $0 }
             // An iPhone that connects gets its Not synced files.
             .onChange(of: server.liveDevices) { library.sendNotSynced(server) }
             // Turned to automatic: what's waiting on Deleted on iPhone is dealt with now.

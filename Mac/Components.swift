@@ -1,3 +1,4 @@
+import ImagoKit
 import AppKit
 import SwiftUI
 
@@ -190,7 +191,8 @@ extension URL {
 }
 
 extension Date {
-    var shortRelative: String { formatted(.relative(presentation: .named)) }
+    /// "3 hours ago", "yesterday", "Nov 2": the same wording as the iPhone app (`ago()`).
+    var shortRelative: String { ago() }
 }
 
 extension UInt64 {

@@ -46,6 +46,7 @@ struct BrowserView: View {
     @State private var naming: FolderNaming?
     /// Deleted on iPhone: the Delete All confirmation is up.
     @State private var confirmingDeleteAll = false
+    @Environment(\.openPage) private var openPage
     @FocusState private var focused: Bool
 
     @State private var cache = GridCache()
@@ -53,12 +54,16 @@ struct BrowserView: View {
     /// What the grid shows, worked out once per change to the library or the filters, not on every
     /// redraw: selecting redraws the page, and the library can have tens of thousands of items.
     private var shown: GridCache {
+        let previewModels = previewDevices.map { PhoneLibraryModel.model(for: $0) }.filter { $0.state == .ready }
         let key = GridCache.Key(revision: library.revision, scope: scope, kind: kind, source: showsSource ? source.raw : "",
-                                subfolders: includeSubfolders)
+                                subfolders: includeSubfolders,
+                                previews: previewModels.map { "\($0.device.id):\($0.revision):\(server.previews[$0.device.id]?.count ?? 0)" })
         if cache.key != key {
             var items = library.items(in: scope, kind: kind)
             if case .folder(let path) = scope, !includeSubfolders { items.removeAll { $0.folder != path } }
             cache.items = showsSource ? library.filter(items, by: source) : items
+            let previews = previewModels.flatMap { previewItems(of: $0) }.filter { kind.includes(isVideo: $0.isVideo) }
+            if !previews.isEmpty { cache.items = Self.newestFirst(cache.items, previews.sorted { Self.isNewer($0, $1) }) }
             cache.days = isFlat ? [] : Day.group(cache.items)
             cache.ids = Set(cache.items.map(\.id))
             cache.key = key
@@ -66,10 +71,12 @@ struct BrowserView: View {
         return cache
     }
     private var items: [MediaItem] { shown.items }
+    /// What's selected that has a file: previews of photos not backed up yet are left out of every
+    /// action (copy, move, share, delete); there's nothing on the drive to act on.
     private var selected: [MediaItem] {
         let selection = library.selection
         guard !selection.isEmpty else { return [] }
-        return items.filter { selection.contains($0.id) }
+        return items.filter { selection.contains($0.id) && !$0.isPreview }
     }
     private var isTrash: Bool { scope == .trash }
     /// Pages with the Show menu (on the iPhones, or everything on the drive).
@@ -80,7 +87,7 @@ struct BrowserView: View {
         }
     }
     private var sourceName: String {
-        if case .phone(let id) = source { server.devices.first { $0.id == id }?.name ?? "that iPhone" } else { "your iPhones" }
+        if case .phone(let id) = source { server.devices.first { $0.id == id }?.name ?? "that iPhone" } else { server.devicesName }
     }
     private var isFolder: Bool { if case .folder = scope { true } else { false } }
     private var source: MediaLibrary.Source {
@@ -117,6 +124,10 @@ struct BrowserView: View {
                 Text("They were deleted on the iPhone already; this moves the backed-up copies to Recently Deleted on this Mac. Put Back returns them, and ⌘Z undoes it.")
             }
             .modifier(PageChrome(embedded: embedded, title: title, subtitle: subtitle(items)) { toolbar })
+            // What the devices shown have that the drive doesn't, shown as previews.
+            .task(id: previewDevices.map(\.id)) {
+                for device in previewDevices { await PhoneLibraryModel.model(for: device).load(from: server) }
+            }
             .task(id: server.catalogRevision) { await library.load(from: server) }
             .onChange(of: scope) { library.selection = []; anchor = nil }
             // Photos and videos open from the backup drive: keep it spinning while the grid is up.
@@ -146,7 +157,7 @@ struct BrowserView: View {
                         Section {
                             ForEach(day.items) { item in tile(item, in: items) }
                         } header: {
-                            DayHeader(day: day) { library.selection.formUnion(day.items.map(\.id)) }
+                            DayHeader(day: day, note: notBackedUp(in: day.items)) { library.selection.formUnion(day.items.map(\.id)) }
                                 .headerFrame("\(day.id.timeIntervalSinceReferenceDate)", in: tileFrames)
                         }
                     }
@@ -200,13 +211,14 @@ struct BrowserView: View {
                 ? item.deviceID.map { SourceBadge.Style(.phone($0), server: server, waiting: true) } : nil,
             badge: badge(for: item),
             hover: { hover(item, $0) },
-            source: source(of: item),
+            source: item.isPreview ? nil : source(of: item),
             cameFrom: cameFrom(item),
             folders: otherFolders(holding: item)
         )
         .onTapGesture { click(item, in: items) }
-        .contextMenu { menu(for: item) }
+        .contextMenu { if item.isPreview { previewMenu(for: item) } else { menu(for: item) } }
         .onDrag { dragProvider(for: item) }
+        .onAppear { requestPreview(item) }
         .reportsViewerSourceFrame(item.id == anchor, to: $anchorFrame)
         .tileFrame(item.id, in: tileFrames)
     }
@@ -295,9 +307,30 @@ struct BrowserView: View {
         return item.name
     }
 
-    /// Drags the item, or the whole selection when it's part of it.
+    /// Drags the item, or the whole selection when it's part of it. A preview has no file to drag.
     private func dragProvider(for item: MediaItem) -> NSItemProvider {
-        DragSession.begin(library.selection.contains(item.id) ? selected.map(\.url) : [item.url])
+        if item.isPreview && !library.selection.contains(item.id) { return NSItemProvider() }
+        return DragSession.begin(library.selection.contains(item.id) ? selected.map(\.url) : [item.url])
+    }
+
+    /// A preview shows once its device sends it, as on the device's own page.
+    private func requestPreview(_ item: MediaItem) {
+        guard item.isPreview, let deviceID = item.deviceID, let assetID = item.assetID,
+              server.previews[deviceID]?[assetID] == nil,
+              let device = server.devices.first(where: { $0.id == deviceID }) else { return }
+        server.requestPreview(assetID, on: device)
+    }
+
+    /// A photo not backed up yet: it can be looked at, and found on its device's page.
+    @ViewBuilder
+    private func previewMenu(for item: MediaItem) -> some View {
+        Button("Open") { openViewer(on: item) }
+        if let device = server.devices.first(where: { $0.id == item.deviceID }) {
+            Button("Show Not Backed Up on \(device.name)") {
+                PhoneLibraryModel.model(for: device).requestedSection = .notBackedUp
+                openPage(.manage(device.id))
+            }
+        }
     }
 
     @ViewBuilder
@@ -427,7 +460,65 @@ struct BrowserView: View {
             return "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)" + (library.isRefreshing ? " · Updating…" : "")
         }
         let count = items.count == 1 ? "1 item" : "\(items.count.formatted()) items"
-        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)" + (library.isRefreshing ? " · Updating…" : "")
+        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)" + notBackedUpNote + (library.isRefreshing ? " · Updating…" : "")
+    }
+
+    /// The devices whose photos not backed up yet show in Library among the rest, as previews:
+    /// without them a fresh day of photos seemed to be missing. All of them when showing what's on
+    /// the iPhones and iPads, the one picked, and none for everything on the drive.
+    private var previewDevices: [PairedDevice] {
+        guard scope == .all, showsSource else { return [] }
+        switch source {
+        case .phones: return server.devices
+        case .phone(let id): return server.devices.filter { $0.id == id }
+        case .drive: return []
+        }
+    }
+
+    /// A device's photos and videos not on the drive yet, as library items showing its previews.
+    private func previewItems(of model: PhoneLibraryModel) -> [MediaItem] {
+        let device = model.device
+        let previews = server.previews[device.id] ?? [:]
+        return model.notBackedUp.filter { !$0.isUnsynced }.map { asset in
+            let metadata = asset.metadata
+            return MediaItem(
+                id: "preview:\(device.id)/\(asset.id)",
+                // Until the device sends its preview: a file that isn't there, which shows as a blank tile.
+                url: previews[asset.id] ?? URL(fileURLWithPath: "/nonexistent/imago-preview/\(device.id)/\(asset.id)"),
+                name: metadata.originalFilename, date: metadata.creationDate, isVideo: asset.isVideo,
+                duration: metadata.duration, bytes: asset.bytes, folder: nil, deviceID: device.id, assetID: asset.id,
+                latitude: metadata.location?.latitude, longitude: metadata.location?.longitude, isPreview: true
+            )
+        }
+    }
+
+    private static func isNewer(_ a: MediaItem, _ b: MediaItem) -> Bool {
+        (a.date ?? .distantPast) > (b.date ?? .distantPast)
+    }
+
+    /// Two lists, each newest first, as one.
+    private static func newestFirst(_ a: [MediaItem], _ b: [MediaItem]) -> [MediaItem] {
+        var merged: [MediaItem] = []
+        merged.reserveCapacity(a.count + b.count)
+        var i = 0, j = 0
+        while i < a.count, j < b.count {
+            if isNewer(b[j], a[i]) { merged.append(b[j]); j += 1 } else { merged.append(a[i]); i += 1 }
+        }
+        merged += a[i...]
+        merged += b[j...]
+        return merged
+    }
+
+    private var notBackedUpNote: String {
+        let missing = items.count(where: \.isPreview)
+        return missing == 0 ? "" : " · \(missing.formatted()) not backed up yet"
+    }
+
+    /// After a day's count: the whole day, or how many of it, isn't backed up yet.
+    private func notBackedUp(in items: [MediaItem]) -> String? {
+        let missing = items.count(where: \.isPreview)
+        if missing == 0 { return nil }
+        return missing == items.count ? "Not backed up yet" : "\(missing.formatted()) not backed up yet"
     }
 
     private func keyHandling(_ items: [MediaItem]) -> GridKeys {
@@ -907,6 +998,10 @@ extension BrowserView {
                     rows.append(.init(label: "Length", value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
                 }
                 rows.append(.init(label: "Size", value: item.bytes.bytes))
+                if item.isPreview {
+                    rows.append(.init(label: "Source", value: "Only on \(item.deviceID.flatMap { devices[$0] } ?? "the device"), not backed up yet"))
+                    return rows
+                }
                 if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
                 let copies = (library.inFolders[item.id] ?? []).filter { $0.folder != item.folder }
                 if !copies.isEmpty {
@@ -920,18 +1015,27 @@ extension BrowserView {
                 rows.append(.init(label: "File", value: item.url.path))
                 return rows
             },
+            banner: { [devices] index in
+                guard items[index].isPreview else { return nil }
+                let device = items[index].deviceID.flatMap { devices[$0] } ?? "the device"
+                return "Preview only · not on the backup drive yet. Back up \(device) to copy it."
+            },
             sourceFrame: item.id == anchor ? anchorFrame : nil,
             saveEdit: isTrash ? nil : { [library, server, history] index, copy in
                 // Beside the original: in its folder, or its iPhone's own dated folder.
-                guard let saving = library.saveEditedCopy(copy, of: items[index], server: server) else { return nil }
+                guard !items[index].isPreview, let saving = library.saveEditedCopy(copy, of: items[index], server: server) else { return nil }
                 return .init(place: saving.place, url: saving.staged, written: Task {
                     guard let undo = await saving.written.value else { return false }
                     history.record(undo)
                     return true
                 })
             },
+            // A preview is too small to edit, and there's no file to edit.
+            canEdit: { !items[$0].isPreview },
             deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone, and its backup here once the iPhone agrees)" : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
+                // Nothing on the drive to delete; Imago never deletes from a device what isn't backed up.
+                guard !items[index].isPreview else { return false }
                 let item = [items[index]]
                 guard let step = deletesOnPhone ? await library.delete(item, server: server) : await library.trash(item, server: server)
                 else { return false }
@@ -950,6 +1054,8 @@ private final class GridCache {
         var kind: MediaLibrary.Kind
         var source: String
         var subfolders: Bool
+        /// Each device whose not-backed-up photos are shown, with its library's and previews' state.
+        var previews: [String]
     }
     var key: Key?
     var items: [MediaItem] = []
@@ -1034,7 +1140,7 @@ private struct MediaTile: View {
                 if !folders.isEmpty { FolderMark(folders: folders).padding(6) }
             }
             .overlay(alignment: .bottom) {
-                if item.isVideo || source != nil || cameFrom != nil || pendingRemoval != nil {
+                if item.isVideo || source != nil || cameFrom != nil || pendingRemoval != nil || item.isPreview {
                     HStack(spacing: 5) {
                         if let cameFrom { SourceBadge(style: cameFrom) }
                         if item.isVideo {
@@ -1044,6 +1150,14 @@ private struct MediaTile: View {
                             }
                         }
                         Spacer(minLength: 0)
+                        if item.isPreview {
+                            Label("Not backed up", systemImage: "externaldrive.badge.xmark")
+                                .font(.caption2.weight(.bold))
+                                .lineLimit(1)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(.orange, in: Capsule())
+                                .help("Only on the device: this is its preview. It's copied to the drive at the next backup.")
+                        }
                         if let pendingRemoval {
                             SourceBadge(style: pendingRemoval)
                         } else if let source {

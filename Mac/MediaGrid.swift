@@ -61,6 +61,8 @@ struct Day<Item: Dated>: Identifiable {
 
 struct DayHeader<Item: Dated>: View {
     let day: Day<Item>
+    /// Something about the whole day, after its count (an iPhone's photos not backed up yet).
+    var note: String? = nil
     var selectAll: () -> Void
     @State private var hovering = false
 
@@ -68,6 +70,11 @@ struct DayHeader<Item: Dated>: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(day.title).font(.title3.weight(.semibold))
             Text(day.summary).font(.callout).foregroundStyle(.secondary)
+            if let note {
+                Label(note, systemImage: "externaldrive.badge.xmark")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
             Spacer()
             Button("Select", action: selectAll)
                 .buttonStyle(.borderless)
@@ -222,6 +229,8 @@ final class TileFrames {
 extension EnvironmentValues {
     /// The sidebar page a view is on, for what it remembers about it.
     @Entry var page: SidebarItem?
+    /// Goes to another page, as clicking it in the sidebar does.
+    @Entry var openPage: (SidebarItem) -> Void = { _ in }
 }
 
 /// Where each page's grid was scrolled when it was left, by its top row's first tile: Back and Forward
@@ -730,14 +739,35 @@ struct SourcePicker: View {
 
     var body: some View {
         Picker("Show", selection: $selection) {
-            Text("On All iPhones").tag(MediaLibrary.Source.phones.raw)
-            ForEach(server.devices) { device in
+            Text(allDevices).tag(MediaLibrary.Source.phones.raw)
+            // As in the sidebar: iPhones, then iPads, each in the order they were dragged into.
+            ForEach(server.devices.filter { !$0.isPad } + server.devices.filter(\.isPad)) { device in
                 Text("On \(device.name)").tag(MediaLibrary.Source.phone(device.id).raw)
             }
             Divider()
             Text(everything).tag(MediaLibrary.Source.drive.raw)
         }
         .fixedSize()
-        .help("Show what's on your iPhones (as of their last backup), on one of them, or everything on the backup drive")
+        .help("Show what's on \(server.devicesName) (as of their last backup), on one of them, or everything on the backup drive")
+    }
+
+    /// Names only the devices, so it can't be taken to include the drive.
+    private var allDevices: String {
+        switch (server.devices.contains { !$0.isPad }, server.devices.contains(where: \.isPad)) {
+        case (true, true): "On iPhones & iPads"
+        case (false, true): "On All iPads"
+        default: "On All iPhones"
+        }
+    }
+}
+
+extension BackupServer {
+    /// "your iPhones", "your iPads", or "your iPhones and iPads", for the devices paired.
+    var devicesName: String {
+        switch (devices.contains { !$0.isPad }, devices.contains(where: \.isPad)) {
+        case (true, true): "your iPhones and iPads"
+        case (false, true): "your iPads"
+        default: "your iPhones"
+        }
     }
 }
