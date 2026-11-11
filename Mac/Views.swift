@@ -108,6 +108,15 @@ struct MainView: View {
             // What's under way (copying a big video, moving hundreds, saving an edited copy, an undo that
             // takes a while): one line at the bottom, above everything. Quick work never shows it.
             .overlay { activityOverlay }
+            // A short note (what was dropped is already there), when nothing is under way.
+            .overlay(alignment: .bottom) {
+                if let notice = library.notice, library.activity == nil {
+                    StatusPill(text: notice, mark: .done)
+                        .padding(.bottom, viewer.isOpen ? 24 : 84)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.3), value: library.notice)
             .toolbar {
                 // Back and Forward through the pages visited, as in Finder (⌘[ and ⌘]). The viewer has
                 // its own Back.

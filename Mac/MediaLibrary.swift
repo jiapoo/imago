@@ -197,6 +197,19 @@ final class MediaLibrary {
     /// Shared with the sidebar, so dropping one selected item on a Folder moves the whole selection.
     var selection: Set<MediaItem.ID> = []
     var error: String?
+    /// A short note at the bottom of the window, such as that what was dropped is already there.
+    /// Goes by itself after a few seconds.
+    private(set) var notice: String?
+    @ObservationIgnored private var noticeClear: Task<Void, Never>?
+
+    func note(_ text: String) {
+        notice = text
+        noticeClear?.cancel()
+        noticeClear = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled { self?.notice = nil }
+        }
+    }
 
     /// A quiet re-read is under way (`refreshQuietly`): pages say "Updating".
     private(set) var isRefreshing = false
@@ -913,13 +926,15 @@ final class MediaLibrary {
 
     /// Moves items into a folder, or back into their phone's folder for `.phoneFolder`. Returns the
     /// step that undoes it.
-    func move(_ items: [MediaItem], to place: Place, server: BackupServer) async -> FileHistory.Step? {
+    /// `keepingBoth`: the folder already has identical files and the user chose Keep Both, so an iPhone's
+    /// item gets a numbered name beside its twin instead of taking the twin over as its own file.
+    func move(_ items: [MediaItem], to place: Place, keepingBoth: Bool = false, server: BackupServer) async -> FileHistory.Step? {
         let name = switch place {
         case .phoneFolder: "Move Back to iPhone's Folder"
         case .folder(let path): "Move to “\((path as NSString).lastPathComponent)”"
         case .trash: items.count == 1 ? "Delete" : "Delete \(items.count) Items"
         }
-        return await moveStep(items.map { (Self.ref($0), place) }, name: name, server: server)
+        return await moveStep(items.map { (Self.ref($0), place) }, name: name, keepingBoth: keepingBoth, server: server)
     }
 
     /// Moves items to Recently Deleted. Ones still on a phone aren't backed up from it again.
@@ -966,8 +981,8 @@ final class MediaLibrary {
     }
 
     /// Runs the moves, then returns the step that runs them backwards (which returns this one again).
-    private func moveStep(_ moves: [(ItemRef, Place)], name: String, server: BackupServer) async -> FileHistory.Step? {
-        let done = await moveRefs(moves, server: server)
+    private func moveStep(_ moves: [(ItemRef, Place)], name: String, keepingBoth: Bool = false, server: BackupServer) async -> FileHistory.Step? {
+        let done = await moveRefs(moves, keepingBoth: keepingBoth, server: server)
         guard !done.isEmpty else { return nil }
         return FileHistory.Step(name: name) { [weak self] in
             await self?.moveStep(done.map { ($0.ref, $0.from) }, name: name, server: server)
@@ -1002,7 +1017,7 @@ final class MediaLibrary {
 
     /// Moves each item to its place. Returns what moved: each item as it can be found now, and where
     /// it was before.
-    private func moveRefs(_ moves: [(ItemRef, Place)], server: BackupServer) async -> [(ref: ItemRef, from: Place)] {
+    private func moveRefs(_ moves: [(ItemRef, Place)], keepingBoth: Bool = false, server: BackupServer) async -> [(ref: ItemRef, from: Place)] {
         let foldersURL = server.foldersURL
         let trashURL = server.trashURL
         func directory(_ place: Place) -> URL? {
@@ -1056,7 +1071,8 @@ final class MediaLibrary {
                 if let target = directory(to) { try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true) }
                 // All in one go, reading the index once; the ring moves with each item as it's done.
                 if stop.isSet { break }
-                let result = await store.move(group.compactMap(\.item.assetID), to: directory(to), saving: false, progress: { name in
+                let result = await store.move(group.compactMap(\.item.assetID), to: directory(to), saving: false,
+                                              adoptingIdentical: !keepingBoth, progress: { name in
                     Task { @MainActor [weak self] in
                         self?.activity?.detail = name
                         self?.activity?.done += 1

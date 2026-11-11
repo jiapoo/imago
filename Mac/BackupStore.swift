@@ -385,7 +385,10 @@ actor BackupStore {
     /// `progress` hears each asset's name as it's done.
     /// Returns where each moved asset's photo or video is now, and what stopped it, if anything did.
     /// `shouldStop`: asked before each asset; once it says yes (Cancel), the rest stay where they are.
-    func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true,
+    /// `adoptingIdentical`: an identical file already where one is going (same name, same content)
+    /// becomes the asset's file and its own is let go. Off for Keep Both, when the user wants two: the
+    /// asset's file then gets a numbered name beside it.
+    func move(_ assetIDs: [String], to directory: URL?, saving: Bool = true, adoptingIdentical: Bool = true,
               progress: (@Sendable (String) -> Void)? = nil,
               shouldStop: @Sendable () -> Bool = { false }) -> (moved: [String: URL?], error: Error?) {
         let byAsset = resourcesByAsset(only: Set(assetIDs))
@@ -408,7 +411,7 @@ actor BackupStore {
                     let wanted = target + "/" + source.lastPathComponent
                     guard url(of: wanted) != source else { continue }
                     let shared = users[source, default: 0] > 1
-                    let path = uniquePath(wanted, sha256: stored.sha256) { users[$0, default: 0] > 0 }
+                    let path = uniquePath(wanted, sha256: stored.sha256) { !adoptingIdentical || users[$0, default: 0] > 0 }
                     let destination = url(of: path)
                     try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                     if fileManager.fileExists(atPath: destination.path) {

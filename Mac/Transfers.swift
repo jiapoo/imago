@@ -256,13 +256,14 @@ extension MediaLibrary {
         var path = folderNow(path)
         var items = items
         var replaced: FileHistory.Step?
+        var keptBoth = false
         let identical = await identicalFiles(items.map(\.url), inFolder: path, server: server)
         if stopFlag.isSet { return }
         if !identical.isEmpty {
             switch await ask(identical.count, of: items.count, in: path, isMove: mode == .move) {
             case .cancel: return
             case .skip: items.removeAll { identical[$0.url] != nil }
-            case .keepBoth: break
+            case .keepBoth: keptBoth = true
             case .replace: replaced = await clearForReplace(identical.values, server: server)
             }
             guard !items.isEmpty else { return }
@@ -276,7 +277,7 @@ extension MediaLibrary {
         case .move:
             // One step: ⌘Z takes the iPhone's deletion back and returns the files together.
             let fromPhone = removable(items)
-            let moved = await move(items, to: .folder(path), server: server)
+            let moved = await move(items, to: .folder(path), keepingBoth: keptBoth, server: server)
             // Only what's now in the folder: the iPhone keeps anything that didn't move, and everything
             // when the move was cancelled.
             let arrived = Set(self.items.filter { $0.folder == path }.map(\.id))
@@ -306,7 +307,16 @@ extension MediaLibrary {
         // Ones already there stay put (a folder's own items dropped back on it).
         let moving = dropped.filter { self.place(of: $0) != place }
         let outside = urls.filter { !known.contains($0.lexicallyStandardized) && Self.isMedia($0) && !$0.path.hasPrefix(server.location.url.path) }
-        guard !moving.isEmpty || !outside.isEmpty else { return false }
+        // Said, not silently skipped: moving videos into the folder they were already in did nothing
+        // and looked like a move that failed.
+        let alreadyThere = dropped.count - moving.count
+        if alreadyThere > 0, case .folder(let path) = place {
+            let name = path.isEmpty ? server.location.url.lastPathComponent : (path as NSString).lastPathComponent
+            note(moving.isEmpty && outside.isEmpty
+                 ? (alreadyThere == 1 ? "It's already in “\(name)”" : "All \(alreadyThere) are already in “\(name)”")
+                 : "\(alreadyThere) \(alreadyThere == 1 ? "was" : "were") already in “\(name)”")
+        }
+        guard !moving.isEmpty || !outside.isEmpty else { return alreadyThere > 0 }
         DragSession.urls = []
         Task {
             if !moving.isEmpty {
