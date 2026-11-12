@@ -12,8 +12,9 @@ final class StopFlag: Sendable {
 }
 
 /// What's being dragged out of a grid: the whole selection when the dragged item is part of it.
-/// A drag of one tile is SwiftUI's (`onDrag`) and carries one file URL; a drop looks here for the
-/// rest. A drag of several selected tiles is AppKit's, from `SelectionDrag`, and carries them all.
+/// A drag of a tile that has a file is AppKit's, from `SelectionDrag`, and carries every file: one
+/// tile's, or the whole selection's. SwiftUI's `onDrag` is left for what `SelectionDrag` doesn't
+/// take; a drop looks here for the files.
 @MainActor
 enum DragSession {
     static var urls: [URL] = []
@@ -25,9 +26,11 @@ enum DragSession {
     }
 }
 
-/// Drags several selected tiles at once, so Finder gets every file: SwiftUI's `onDrag` carries
-/// only one. A press on a selected tile, with more than one selected, is taken before SwiftUI
-/// sees the drag, and dragged from AppKit. SwiftUI never starts a drag of its own for it: one
+/// Drags a tile's file, or several selected tiles' at once, from AppKit. SwiftUI's `onDrag`
+/// carries only one file, and hands over its address without the permission another sandboxed app
+/// needs to read it (a video dropped on such an app opened black); a file URL written to the
+/// drag by AppKit carries that permission, and Finder gets every file of a selection. A press on a
+/// tile is taken before SwiftUI sees the drag. SwiftUI never starts a drag of its own for it: one
 /// started alongside never ends, and SwiftUI drags nothing after that.
 @MainActor
 enum SelectionDrag {
@@ -56,7 +59,7 @@ enum SelectionDrag {
             // ⌘ and ⇧ change the selection; a plain press drags it.
             guard event.modifierFlags.intersection([.command, .shift, .control]).isEmpty,
                   let point = contentPoint(of: event),
-                  let urls = grids.values.lazy.compactMap({ $0(point) }).first, urls.count > 1 else { return event }
+                  let urls = grids.values.lazy.compactMap({ $0(point) }).first, !urls.isEmpty else { return event }
             pressed = (event, urls)
             return event
         case .leftMouseDragged:
@@ -112,15 +115,17 @@ private struct DragsSelection: ViewModifier {
 }
 
 extension View {
-    /// On a grid: dragging a selected tile drags `selection`'s files when several are selected.
-    /// `tiles` are the tiles' frames in the grid's content.
+    /// On a grid: dragging a selected tile drags `selection`'s files; dragging any other tile drags
+    /// that tile's file. `tiles` are the tiles' frames in the grid's content.
     func dragsSelection(_ tiles: TileFrames, selection: @escaping () -> Set<String>,
                         files: @escaping (Set<String>) -> [URL]) -> some View {
         modifier(DragsSelection { point in
+            guard let pressed = tiles.frames.first(where: { $0.value.contains(point) })?.key else { return nil }
             let selection = selection()
-            guard selection.count > 1,
-                  tiles.frames.contains(where: { selection.contains($0.key) && $0.value.contains(point) }) else { return nil }
-            return files(selection)
+            // Only files that are there: a preview not backed up yet has none to drag.
+            let urls = files(selection.contains(pressed) ? selection : [pressed])
+                .filter { $0.isFileURL && FileManager.default.fileExists(atPath: $0.path) }
+            return urls.isEmpty ? nil : urls
         })
     }
 
