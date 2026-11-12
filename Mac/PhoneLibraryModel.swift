@@ -171,7 +171,14 @@ final class PhoneLibraryModel {
         let deletingIDs = PendingChanges.deleting(pending)
         let effective = PendingChanges.apply(pending, to: base)
         shownByID = Dictionary(effective.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let newestFirst = effective.reversed()
+        // By when each was taken, not the phone's order: that follows when they came into Photos,
+        // so a video taken yesterday but saved today landed above today's (newest added first on
+        // ties, as before).
+        let newestFirst = effective.reversed().enumerated().sorted { a, b in
+            let da = a.element.metadata.creationDate ?? .distantPast
+            let db = b.element.metadata.creationDate ?? .distantPast
+            return da != db ? da > db : a.offset < b.offset
+        }.map(\.element)
         assets = newestFirst.filter { !deletingIDs.contains($0.id) }
         mergeLibraryAssets()
         deleting = newestFirst.filter { deletingIDs.contains($0.id) }
