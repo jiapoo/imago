@@ -201,9 +201,9 @@ private struct FoldersHeader: View {
             .padding(.vertical, -2).padding(.horizontal, -4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .dropsFiles({ urls in
+            .modifier(OneDropTarget(targeted: $targeted) { urls in
                 library.dropFolders(library.draggedFolders(urls, server: server), into: "", server: server, history: history)
-            }) { targeted = $0 }
+            })
     }
 }
 
@@ -523,8 +523,43 @@ extension View {
                     .fill(Color.accentColor.opacity(targeted.wrappedValue ? 0.25 : 0))
             }
             .contentShape(Rectangle())
-            .dropsFiles(action) { targeted.wrappedValue = $0 }
+            .modifier(OneDropTarget(targeted: targeted, perform: action))
             .padding(.vertical, -4).padding(.horizontal, -6)
+    }
+}
+
+/// The one place in the sidebar a drag is over. A row lit by its own flag stayed lit whenever it missed
+/// the drag leaving (the rows moved as a folder sprang open, or the drag ended elsewhere), so two showed.
+@MainActor @Observable
+private final class DropHighlight {
+    static let shared = DropHighlight()
+    private(set) var current: UUID?
+    @ObservationIgnored private var watch: Task<Void, Never>?
+
+    func set(_ id: UUID, over: Bool) {
+        if over { current = id } else if current == id { current = nil }
+        guard current != nil, watch == nil else { return }
+        // A drag that ended without saying so: nothing stays lit once the button is up.
+        watch = Task { [weak self] in
+            while let self, self.current != nil, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(200))
+                if NSEvent.pressedMouseButtons == 0 { self.current = nil }
+            }
+            self?.watch = nil
+        }
+    }
+}
+
+/// Takes dropped files, and is the only target lit while the drag is over it.
+private struct OneDropTarget: ViewModifier {
+    @Binding var targeted: Bool
+    let perform: @MainActor ([URL]) -> Bool
+    @State private var id = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .dropsFiles(perform) { DropHighlight.shared.set(id, over: $0) }
+            .onChange(of: DropHighlight.shared.current == id) { _, lit in targeted = lit }
     }
 }
 

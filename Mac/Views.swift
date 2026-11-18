@@ -38,9 +38,19 @@ struct MainView: View {
     @AppStorage(TransferMode.key) private var transferMode = TransferMode.copy.rawValue
     /// Move was picked: the alert explaining it is up.
     @State private var confirmingMoveMode = false
+    /// Whether the sidebar is shown, as the user left it; open media hides it for as long as it's open.
+    @State private var columns = NavigationSplitViewVisibility.all
+
+    private var sidebarVisibility: Binding<NavigationSplitViewVisibility> {
+        Binding(get: { viewer.hidesSidebar ? .detailOnly : columns }, set: { new in
+            // The toolbar's sidebar button, pressed with media open, shows it again.
+            if viewer.hidesSidebar, new != .detailOnly { viewer.hidesSidebar = false }
+            if !viewer.hidesSidebar { columns = new }
+        })
+    }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: sidebarVisibility) {
             Sidebar(selection: $selection, naming: $naming, showingAddPhone: $showingAddPhone)
         } detail: {
             Group {

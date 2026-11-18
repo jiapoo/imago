@@ -84,6 +84,8 @@ final class MediaViewerHost {
     private(set) var notice: (text: String, failed: Bool)?
     /// Closing: the viewer is shrinking back into its thumbnail.
     private(set) var isClosing = false
+    /// The sidebar is out of the way: the media has the whole window while it's open.
+    var hidesSidebar = false
 
     var isOpen: Bool { request != nil }
 
@@ -102,11 +104,16 @@ final class MediaViewerHost {
     /// Starts closing; the overlay animates, then calls `finishClosing()`.
     func close() {
         guard request != nil else { return }
+        // Back at once, not sliding in: the item shrinks into its tile, which is where it was again.
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { hidesSidebar = false }
         isClosing = true
     }
 
     func finishClosing() {
         request = nil
+        hidesSidebar = false
         editing = false
         isClosing = false
         Task { await Thumbnails.shared.holdBackgroundWork(false) }
@@ -211,6 +218,7 @@ private struct MediaViewerOverlay: ViewModifier {
     /// The real viewer is showing (it's hidden during the flight).
     @State private var showingViewer = false
     @State private var backdrop: Double = 0
+    @State private var overlaySize: CGSize = .zero
     /// The viewer has the keyboard while it's open, not the grid under it: a key the viewer or editor
     /// doesn't use (Delete, Esc) would otherwise act on the grid's selection.
     @FocusState private var focused: Bool
@@ -255,7 +263,15 @@ private struct MediaViewerOverlay: ViewModifier {
                             open(request, in: geo.size)
                         }
                         .onChange(of: request.id) { open(request, in: geo.size) }
-                        .onChange(of: host.isClosing) { _, closing in if closing { close(request, in: geo.size) } }
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { overlaySize = $0 }
+                        .onChange(of: host.isClosing) { _, closing in
+                            guard closing else { return }
+                            // Once the sidebar is back and the viewer has its narrower size.
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(30))
+                                close(request, in: overlaySize)
+                            }
+                        }
                     }
                 }
             }
@@ -332,6 +348,7 @@ private struct MediaViewerOverlay: ViewModifier {
             flight = nil
             showingViewer = true
             withAnimation(.easeOut(duration: 0.15)) { backdrop = 1 }
+            hideSidebar()
             return
         }
         showingViewer = false
@@ -345,7 +362,14 @@ private struct MediaViewerOverlay: ViewModifier {
         } completion: {
             showingViewer = true
             flight = nil
+            hideSidebar()
         }
+    }
+
+    /// After the item has landed: it grew out of its tile, which moves once the sidebar goes.
+    private func hideSidebar() {
+        guard host.isOpen, !host.isClosing else { return }
+        withAnimation(.snappy(duration: 0.25)) { host.hidesSidebar = true }
     }
 
     /// Shrinks the item on screen back into its tile when it's the one that was opened (the grid
