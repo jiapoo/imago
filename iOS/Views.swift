@@ -4,6 +4,7 @@ import VisionKit
 
 struct ContentView: View {
     @Environment(BackupClient.self) private var client
+    @Environment(Unlock.self) private var unlock
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingPairing = false
     /// The Mac's changes, open for review from the question about them.
@@ -17,12 +18,16 @@ struct ContentView: View {
                         WelcomeCard { showingPairing = true }
                     } else {
                         StatusHero()
+                        if !unlock.canUpgrade { UnlockCard() }
                         if !client.macChanges.isEmpty { MacChangesCard() }
                     }
                     StorageCard()
                     if client.credential != nil {
                         SettingsCard()
                         MacCard()
+                        // Bought for one: the family upgrade, out of the way at the foot.
+                        if unlock.canUpgrade { UnlockCard() }
+                        UnlockFooter().padding(.top, 4)
                     }
                 }
                 // A readable column on iPad, centered, rather than cards stretched across the screen.
@@ -41,12 +46,19 @@ struct ContentView: View {
             .background(Color(.systemGroupedBackground))
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingPairing) { PairingSheet() }
-            .task { await client.refreshCounts() }
+            .sheet(isPresented: Binding(get: { unlock.offering }, set: { unlock.offering = $0 })) { UnlockSheet() }
+            .task {
+                await client.refreshCounts()
+                await remindToUnlock()
+            }
             .refreshable { await client.refreshCounts() }
             // Back from Settings, the photo-access prompt or another app: the library may have changed.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
-                    Task { await client.refreshCounts() }
+                    Task {
+                        await client.refreshCounts()
+                        await remindToUnlock()
+                    }
                     client.askAboutChanges()
                 }
             }
@@ -68,6 +80,12 @@ struct ContentView: View {
 }
 
 extension ContentView {
+    /// Once a day on opening, until Imago is bought. Only once paired, and not over a backup or another sheet.
+    private func remindToUnlock() async {
+        guard client.credential != nil, !client.phase.isRunning, !showingPairing, !reviewingChanges, client.askPrompt.isEmpty else { return }
+        await unlock.remindIfDue()
+    }
+
     private var mac: String { client.credential?.serverName ?? String(localized: "Your Mac") }
     private var askTitle: String {
         let changes = client.askPrompt

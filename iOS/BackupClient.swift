@@ -287,6 +287,16 @@ final class BackupClient {
     /// - Parameter automatic: true when iOS started it in the background overnight.
     func backUpNow(automatic: Bool = false) async {
         guard !isStarting else { return }
+        // After the free trial, new photos need the unlock. Asked for by the user: offer it.
+        guard await Unlock.shared.allowsBackup() else {
+            log.notice("Backup not started: Imago isn't unlocked")
+            if !automatic {
+                // Once the trial starts or Imago is bought, this backup goes ahead without another tap.
+                Unlock.shared.pendingBackup = { [weak self] in Task { await self?.backUpNow() } }
+                Unlock.shared.offering = true
+            }
+            return
+        }
         if isRunInProgress {
             // A run in the app, without a continued-processing task, freezes once iOS suspends the app,
             // and can sit there for hours waiting to retry. Stop it and start again under the task this
@@ -317,7 +327,11 @@ final class BackupClient {
     /// A run that is still going in the app is restarted, so it gets a continued-processing task.
     func resumeIfUnfinished() {
         guard unfinished != nil, credential != nil, systemTask == nil else { return }
-        Task { await backUpNow() }
+        Task {
+            // Opening the app shouldn't bring up the unlock each time: that's for a backup the user starts.
+            guard await Unlock.shared.allowsBackup() else { return }
+            await backUpNow()
+        }
     }
 
     /// Runs the backup, retrying dropped connections. Every retry resumes from the bytes the Mac already has.

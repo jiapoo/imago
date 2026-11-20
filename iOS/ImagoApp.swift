@@ -5,6 +5,7 @@ import SwiftUI
 struct ImagoApp: App {
     @State private var client: BackupClient
     @State private var live: LiveLink
+    @State private var unlock = Unlock.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -20,6 +21,7 @@ struct ImagoApp: App {
             ContentView()
                 .environment(client)
                 .environment(live)
+                .environment(unlock)
                 // Pairing happens while the app is open: connect as soon as there's a Mac.
                 .onChange(of: client.credential?.serverID, initial: true) { _, id in
                     live.stop()
@@ -31,6 +33,7 @@ struct ImagoApp: App {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                Task { await unlock.refresh() }
                 // Pick up a backup that iOS interrupted, e.g. when the phone locked.
                 client.resumeIfUnfinished()
                 client.applyWaitingChanges()

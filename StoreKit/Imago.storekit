@@ -1,0 +1,151 @@
+{
+  "appPolicies": {
+    "eula": "",
+    "policies": [
+      {
+        "locale": "en_US",
+        "policyText": "",
+        "policyURL": ""
+      }
+    ]
+  },
+  "identifier": "6B1C3A51",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "0.00",
+      "familyShareable": false,
+      "internalID": "6B1C3A52",
+      "localizations": [
+        {
+          "description": "Try every feature free for 7 days.",
+          "displayName": "7-Day Trial",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.ljworkshop.imago.trial",
+      "referenceName": "7-Day Trial",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "14.99",
+      "familyShareable": false,
+      "internalID": "6B1C3A53",
+      "localizations": [
+        {
+          "description": "Unlock Imago for you, on all your iPhones and iPads.",
+          "displayName": "Imago",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.ljworkshop.imago.unlock",
+      "referenceName": "Imago",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "39.99",
+      "familyShareable": true,
+      "internalID": "6B1C3A54",
+      "localizations": [
+        {
+          "description": "Unlock Imago for up to 6 people with Family Sharing.",
+          "displayName": "Imago Family",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.ljworkshop.imago.family",
+      "referenceName": "Imago Family",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "24.99",
+      "familyShareable": true,
+      "internalID": "6B1C3A55",
+      "localizations": [
+        {
+          "description": "Upgrade your Imago unlock to cover up to 6 people with Family Sharing.",
+          "displayName": "Upgrade to Imago Family",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.ljworkshop.imago.familyupgrade",
+      "referenceName": "Imago Family Upgrade",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": [
+      {
+        "current": {
+          "index": 2,
+          "type": "generic"
+        },
+        "enabled": false,
+        "name": "Load Products"
+      },
+      {
+        "current": {
+          "index": 1,
+          "type": "purchase"
+        },
+        "enabled": false,
+        "name": "Purchase"
+      },
+      {
+        "current": {
+          "index": 0,
+          "type": "verification"
+        },
+        "enabled": false,
+        "name": "Verification"
+      },
+      {
+        "current": null,
+        "enabled": false,
+        "name": "App Store Sync"
+      },
+      {
+        "current": {
+          "index": 2,
+          "type": "generic"
+        },
+        "enabled": false,
+        "name": "Subscription Status"
+      },
+      {
+        "current": {
+          "index": 3,
+          "type": "generic"
+        },
+        "enabled": false,
+        "name": "App Transaction"
+      },
+      {
+        "current": null,
+        "enabled": false,
+        "name": "Manage Subscriptions Sheet"
+      },
+      {
+        "current": null,
+        "enabled": false,
+        "name": "Refund Request Sheet"
+      },
+      {
+        "current": {
+          "index": 4,
+          "type": "generic"
+        },
+        "enabled": false,
+        "name": "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

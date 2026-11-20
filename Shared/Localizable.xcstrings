@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "": {},
+    "\nClick to show one in Finder.": {},
     "  %@ items": {
       "localizations": {
         "de": {
@@ -1046,6 +1048,7 @@
       }
     },
     "\" xml:space=\"preserve\">\n        <source/>\n        <note/>\n      </trans-unit>\n      <trans-unit id=": {
+      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -6497,6 +6500,64 @@
         }
       }
     },
+    "7-Day Free Trial": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 Tage gratis testen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba gratuita de 7 días"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essai gratuit de 7 jours"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prova gratuita di 7 giorni"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7日間無料トライアル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7일 무료 체험"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste Grátis de 7 Dias"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 天免费试用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 天免費試用"
+          }
+        }
+      }
+    },
     "A change to this is waiting for the iPhone": {
       "localizations": {
         "de": {
@@ -10615,6 +10676,64 @@
         }
       }
     },
+    "Backups are paused": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backups sind pausiert"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las copias están en pausa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les sauvegardes sont en pause"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I backup sono in pausa"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップは一時停止中です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백업이 일시 정지됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os backups estão pausados"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已暂停"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "備份已暫停"
+          }
+        }
+      }
+    },
     "Backups are saved to": {
       "localizations": {
         "de": {
@@ -11075,6 +11194,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "在這個 Wi-Fi 上找不到你的 Mac。"
+          }
+        }
+      }
+    },
+    "Can't reach the App Store right now.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der App Store ist gerade nicht erreichbar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora mismo no se puede acceder al App Store."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre l’App Store pour le moment."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al momento non è possibile raggiungere l’App Store."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在App Storeに接続できません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 App Store에 연결할 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não é possível acessar a App Store agora."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前无法连接 App Store。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前無法連接 App Store。"
           }
         }
       }
@@ -13627,6 +13804,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "繼續"
+          }
+        }
+      }
+    },
+    "Continue Free Trial": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gratis-Test fortsetzen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seguir con la prueba gratuita"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer l’essai gratuit"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continua la prova gratuita"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアルを続ける"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험 계속하기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar o Teste Grátis"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续免费试用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "繼續免費試用"
           }
         }
       }
@@ -18737,6 +18972,64 @@
         }
       }
     },
+    "Every feature, then a one-time unlock.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Funktionen, danach einmalig freischalten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las funciones y, después, un desbloqueo único."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les fonctionnalités, puis un déverrouillage unique."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tutte le funzioni, poi uno sblocco una tantum."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての機能を使え、その後は一度だけのロック解除です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 기능을 사용하고, 그 후에는 한 번만 잠금 해제하면 됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos os recursos e, depois, um desbloqueio único."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部功能可用，之后一次性解锁。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部功能可用，之後一次性解鎖。"
+          }
+        }
+      }
+    },
     "Every photo and video is safe on %@.": {
       "localizations": {
         "de": {
@@ -20016,6 +20309,122 @@
         }
       }
     },
+    "For up to 6 people with Family Sharing": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für bis zu 6 Personen mit der Familienfreigabe"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para hasta 6 personas con En familia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour 6 personnes maximum avec le Partage familial"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per un massimo di 6 persone con In famiglia"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファミリー共有で最大6人まで"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가족 공유로 최대 6명까지"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para até 6 pessoas com o Compartilhamento Familiar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过家人共享，最多 6 人使用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透過家人共享，最多 6 人使用"
+          }
+        }
+      }
+    },
+    "For you, on all your iPhones and iPads": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für dich, auf all deinen iPhones und iPads"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para ti, en todos tus iPhone y iPad"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour vous, sur tous vos iPhone et iPad"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Per te, su tutti i tuoi iPhone e iPad"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのすべてのiPhoneとiPadで"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나의 모든 iPhone과 iPad에서"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para você, em todos os seus iPhones e iPads"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "供你在所有 iPhone 和 iPad 上使用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "供你在所有 iPhone 和 iPad 上使用"
+          }
+        }
+      }
+    },
     "Forest": {
       "localizations": {
         "de": {
@@ -20418,6 +20827,122 @@
           "stringUnit": {
             "state": "translated",
             "value": "釋放 iPhone 的空間。這些會保留在這個硬碟上。"
+          }
+        }
+      }
+    },
+    "Free trial: %lld days left": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gratis-Test: noch %lld Tage"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba gratuita: quedan %lld días"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essai gratuit : %lld jours restants"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prova gratuita: mancano %lld giorni"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアル：残り%lld日"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험: %lld일 남음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste grátis: restam %lld dias"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用：还剩 %lld 天"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用：還剩 %lld 天"
+          }
+        }
+      }
+    },
+    "Free trial: 1 day left": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gratis-Test: noch 1 Tag"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba gratuita: queda 1 día"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essai gratuit : 1 jour restant"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prova gratuita: manca 1 giorno"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアル：残り1日"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험: 1일 남음"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste grátis: resta 1 dia"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用：还剩 1 天"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用：還剩 1 天"
           }
         }
       }
@@ -21351,6 +21876,64 @@
         }
       }
     },
+    "Imago Family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago Familie"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago Familia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago Famille"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago Famiglia"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ファミリー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 패밀리"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago Família"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 家庭版"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 家庭版"
+          }
+        }
+      }
+    },
     "Imago asks before making each change.": {
       "localizations": {
         "de": {
@@ -21637,6 +22220,180 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@上已打開 Imago：更動會立即送達"
+          }
+        }
+      }
+    },
+    "Imago is unlocked for you": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ist für dich freigeschaltet"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago está desbloqueado para ti"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago est déverrouillé pour vous"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago è sbloccato per te"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoはロック解除されています"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 잠금이 해제되었습니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Imago está desbloqueado para você"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已为你解锁"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已為你解鎖"
+          }
+        }
+      }
+    },
+    "Imago is unlocked for your family. Thank you!": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ist für deine Familie freigeschaltet. Danke!"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago está desbloqueado para tu familia. ¡Gracias!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago est déverrouillé pour votre famille. Merci !"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago è sbloccato per la tua famiglia. Grazie!"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoはご家族向けにロック解除されています。ありがとうございます！"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가족 모두 Imago 잠금이 해제되었습니다. 감사합니다!"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Imago está desbloqueado para sua família. Obrigado!"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已为你的家人解锁。谢谢！"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已為你的家人解鎖。謝謝！"
+          }
+        }
+      }
+    },
+    "Imago is unlocked on all your iPhones and iPads. To cover your family too, upgrade to Imago Family anytime.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ist auf all deinen iPhones und iPads freigeschaltet. Um auch deine Familie abzudecken, kannst du jederzeit auf Imago Familie upgraden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago está desbloqueado en todos tus iPhone y iPad. Para cubrir también a tu familia, mejora a Imago Familia cuando quieras."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago est déverrouillé sur tous vos iPhone et iPad. Pour couvrir aussi votre famille, passez à Imago Famille quand vous le souhaitez."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago è sbloccato su tutti i tuoi iPhone e iPad. Per coprire anche la tua famiglia, passa a Imago Famiglia quando vuoi."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoはあなたのすべての iPhone と iPad でロック解除されました。ご家族も使えるようにするには、いつでも Imago ファミリーにアップグレードできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모든 iPhone과 iPad에서 Imago 잠금이 해제되었습니다. 가족도 함께 사용하려면 언제든지 Imago 패밀리로 업그레이드하십시오."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Imago está desbloqueado em todos os seus iPhones e iPads. Para cobrir sua família também, atualize para o Imago Família quando quiser."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已在你所有的 iPhone 和 iPad 上解锁。若想让家人也能使用，随时可以升级到 Imago 家庭版。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 已在你所有的 iPhone 和 iPad 上解鎖。若想讓家人也能使用，隨時可以升級至 Imago 家庭版。"
           }
         }
       }
@@ -28253,6 +29010,64 @@
         }
       }
     },
+    "No purchase was found for this Apple Account.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für diesen Apple Account wurde kein Kauf gefunden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha encontrado ninguna compra para esta cuenta de Apple."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun achat n’a été trouvé pour ce compte Apple."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nessun acquisto trovato per questo Apple Account."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このApple Accountの購入は見つかりませんでした。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 Apple 계정의 구입 내역을 찾을 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhuma compra foi encontrada para esta Conta Apple."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到此 Apple 账户的购买记录。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到此 Apple 帳號的購買記錄。"
+          }
+        }
+      }
+    },
     "No similar shots": {
       "localizations": {
         "de": {
@@ -29351,6 +30166,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "這一天沒有內容"
+          }
+        }
+      }
+    },
+    "Nothing to pay. It ends on its own.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts zu bezahlen. Er endet von selbst."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No pagas nada. Termina sola."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien à payer. Il se termine tout seul."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niente da pagare. Termina da sola."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払いはありません。期間が終わると自動で終了します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "결제할 것이 없으며, 기간이 지나면 저절로 끝납니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada a pagar. Termina sozinho."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无需付费，到期自动结束。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無需付費，到期自動結束。"
           }
         }
       }
@@ -30569,6 +31442,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "在你的 Mac 上打開 Imago，然後按一下**加入 iPhone**。"
+          }
+        }
+      }
+    },
+    "One-time purchase. No subscription. Photos already on your Mac are always yours, unlocked or not.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einmaliger Kauf. Kein Abo. Fotos, die schon auf deinem Mac sind, gehören immer dir – ob freigeschaltet oder nicht."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compra única. Sin suscripción. Las fotos que ya están en tu Mac siempre son tuyas, desbloquees o no."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Achat unique. Aucun abonnement. Les photos déjà sur votre Mac restent toujours à vous, déverrouillé ou non."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acquisto una tantum. Nessun abbonamento. Le foto già sul tuo Mac restano sempre tue, che tu sblocchi o no."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "買い切りで、サブスクリプションではありません。Macにある写真は、ロック解除してもしなくても、いつでもあなたのものです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한 번만 구입하며 구독이 아닙니다. 이미 Mac에 있는 사진은 잠금 해제 여부와 관계없이 언제나 당신의 것입니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compra única. Sem assinatura. As fotos que já estão no seu Mac são sempre suas, desbloqueado ou não."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次性购买，不是订阅。已在 Mac 上的照片永远属于你，无论是否解锁。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次性購買，不是訂閱。已在 Mac 上的照片永遠屬於你，無論是否解鎖。"
           }
         }
       }
@@ -37187,6 +38118,122 @@
         }
       }
     },
+    "Restore Purchases": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Käufe wiederherstellen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar compras"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer les achats"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ripristina acquisti"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入を復元"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구입 내역 복원"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar Compras"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复购买"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回復購買項目"
+          }
+        }
+      }
+    },
+    "Restoring…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird wiederhergestellt …"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurando…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restauration…"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ripristino…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復元中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복원 중…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurando…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在恢复…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在回復⋯"
+          }
+        }
+      }
+    },
     "Resume Backup": {
       "localizations": {
         "de": {
@@ -39510,6 +40557,64 @@
         }
       }
     },
+    "Share Imago with your family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago mit deiner Familie teilen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compartir Imago con tu familia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager Imago avec votre famille"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Condividi Imago con la tua famiglia"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoを家族と共有"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "가족과 Imago 공유하기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compartilhar o Imago com sua família"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与家人共享 Imago"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "與家人共享 Imago"
+          }
+        }
+      }
+    },
     "Share these %lld with AirDrop, Messages, WeChat or another app": {
       "localizations": {
         "de": {
@@ -41774,6 +42879,64 @@
         }
       }
     },
+    "Start": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commencer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inizia"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시작"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Começar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始"
+          }
+        }
+      }
+    },
     "Stop": {
       "localizations": {
         "de": {
@@ -42354,6 +43517,122 @@
         }
       }
     },
+    "Thank you!": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Danke!"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¡Gracias!"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merci !"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grazie!"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ありがとうございます！"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "감사합니다!"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obrigado!"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "谢谢！"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "謝謝！"
+          }
+        }
+      }
+    },
+    "The App Store couldn't confirm this purchase. Please try again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der App Store konnte diesen Kauf nicht bestätigen. Bitte versuche es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El App Store no ha podido confirmar esta compra. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’App Store n’a pas pu confirmer cet achat. Veuillez réessayer."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’App Store non ha potuto confermare questo acquisto. Riprova."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Storeでこの購入を確認できませんでした。もう一度お試しください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store에서 이 구입을 확인할 수 없습니다. 다시 시도하십시오."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A App Store não conseguiu confirmar esta compra. Tente novamente."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 无法确认此次购买，请重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 無法確認此次購買，請再試一次。"
+          }
+        }
+      }
+    },
     "The Mac compares photos taken within a minute of each other, using the backed-up copies. Nothing leaves this Mac.": {
       "localizations": {
         "de": {
@@ -42930,6 +44209,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "它們的備份會保留在這部 Mac 上，鈴鐺會詢問是否也在這裡刪除、保留，或放回 iPhone。"
+          }
+        }
+      }
+    },
+    "Then a one-time unlock keeps backups going.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Danach hält eine einmalige Freischaltung die Backups am Laufen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Después, un desbloqueo único mantiene las copias en marcha."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ensuite, un déverrouillage unique poursuit les sauvegardes."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poi uno sblocco una tantum fa proseguire i backup."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その後は一度ロックを解除すれば、バックアップを続けられます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "그 후에는 한 번만 잠금 해제하면 백업이 계속됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Depois, um desbloqueio único mantém os backups."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之后一次性解锁即可继续备份。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之後一次性解鎖即可繼續備份。"
           }
         }
       }
@@ -44094,6 +45431,180 @@
         }
       }
     },
+    "Try Again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riprova"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度試す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "다시 시도"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tentar Novamente"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試一次"
+          }
+        }
+      }
+    },
+    "Try Imago free for 7 days": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 7 Tage gratis testen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba Imago gratis 7 días"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayez Imago gratuitement pendant 7 jours"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prova Imago gratis per 7 giorni"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoを7日間無料で試す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago를 7일간 무료로 사용해 보기"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste o Imago grátis por 7 dias"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用 Imago 7 天"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用 Imago 7 天"
+          }
+        }
+      }
+    },
+    "Try every feature free for 7 days. After that, a one-time unlock keeps backing up new photos and videos.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste 7 Tage lang alle Funktionen gratis. Danach sichert eine einmalige Freischaltung weiterhin neue Fotos und Videos."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prueba todas las funciones gratis durante 7 días. Después, un desbloqueo único sigue haciendo copia de las fotos y vídeos nuevos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayez toutes les fonctionnalités gratuitement pendant 7 jours. Ensuite, un déverrouillage unique continue de sauvegarder les nouvelles photos et vidéos."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prova tutte le funzioni gratis per 7 giorni. Poi uno sblocco una tantum continua a fare il backup di nuove foto e video."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7日間、すべての機能を無料でお試しいただけます。その後は一度ロックを解除すれば、新しい写真とビデオのバックアップを続けられます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7일간 모든 기능을 무료로 사용해 보세요. 그 후에는 한 번만 잠금 해제하면 새 사진과 비디오를 계속 백업합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teste todos os recursos grátis por 7 dias. Depois, um desbloqueio único continua fazendo backup de novas fotos e vídeos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用全部功能 7 天。之后一次性解锁，即可继续备份新的照片和视频。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用全部功能 7 天。之後一次性解鎖，即可繼續備份新的照片和影片。"
+          }
+        }
+      }
+    },
     "Turn, flip, crop or trim a copy (⌘E or ⌘T). The original stays as it is.": {
       "localizations": {
         "de": {
@@ -44558,6 +46069,122 @@
         }
       }
     },
+    "Unlock": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freischalten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déverrouiller"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sblocca"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック解除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잠금 해제"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解鎖"
+          }
+        }
+      }
+    },
+    "Unlock Imago": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago freischalten"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear Imago"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déverrouiller Imago"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sblocca Imago"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imagoのロックを解除"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 잠금 해제"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desbloquear o Imago"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解锁 Imago"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解鎖 Imago"
+          }
+        }
+      }
+    },
     "Unpair": {
       "localizations": {
         "de": {
@@ -44786,6 +46413,180 @@
           "stringUnit": {
             "state": "translated",
             "value": "請更新這支 iPhone 和你 Mac 上的 Imago，讓兩者版本一致。"
+          }
+        }
+      }
+    },
+    "Upgrade": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upgraden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mejorar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à niveau"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aggiorna"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップグレード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업그레이드"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualizar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升級"
+          }
+        }
+      }
+    },
+    "Upgrade to Imago Family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf Imago Familie upgraden"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mejorar a Imago Familia"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passer à Imago Famille"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passa a Imago Famiglia"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ファミリーにアップグレード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 패밀리로 업그레이드"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualizar para Imago Família"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级到 Imago 家庭版"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升級至 Imago 家庭版"
+          }
+        }
+      }
+    },
+    "Upgrade to Imago Family to cover up to 6 people in your Family Sharing group.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upgrade auf Imago Familie, um bis zu 6 Personen in deiner Familienfreigabe abzudecken."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mejora a Imago Familia para cubrir a hasta 6 personas de tu grupo En familia."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passez à Imago Famille pour couvrir jusqu’à 6 personnes de votre groupe Partage familial."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passa a Imago Famiglia per coprire fino a 6 persone del tuo gruppo In famiglia."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago ファミリーにアップグレードすると、ファミリー共有グループの最大6人が使えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imago 패밀리로 업그레이드하면 가족 공유 그룹의 최대 6명이 사용할 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualize para o Imago Família para cobrir até 6 pessoas do seu grupo de Compartilhamento Familiar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级到 Imago 家庭版，家人共享群组中最多 6 人都能使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升級至 Imago 家庭版，家人共享群組中最多 6 人都能使用。"
           }
         }
       }
@@ -45250,6 +47051,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在等待%@"
+          }
+        }
+      }
+    },
+    "Waiting for approval. Imago unlocks as soon as it's approved.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet auf Zustimmung. Imago wird freigeschaltet, sobald zugestimmt wurde."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando aprobación. Imago se desbloquea en cuanto se apruebe."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente d’approbation. Imago se déverrouille dès l’approbation."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In attesa di approvazione. Imago si sblocca appena viene approvato."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認を待っています。承認されるとすぐにImagoのロックが解除されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "승인을 기다리는 중입니다. 승인되면 바로 Imago 잠금이 해제됩니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aguardando aprovação. O Imago é desbloqueado assim que for aprovado."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待批准。一经批准，Imago 即会解锁。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待核准。一經核准，Imago 即會解鎖。"
           }
         }
       }
@@ -46879,6 +48738,238 @@
         }
       }
     },
+    "Your free trial has %lld days left. Unlock once to keep backing up new photos and videos.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Gratis-Test läuft noch %lld Tage. Schalte einmal frei, um neue Fotos und Videos weiter zu sichern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tu prueba gratuita le quedan %lld días. Desbloquea una vez para seguir haciendo copia de las fotos y vídeos nuevos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il reste %lld jours à votre essai gratuit. Déverrouillez une fois pour continuer à sauvegarder les nouvelles photos et vidéos."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alla tua prova gratuita mancano %lld giorni. Sblocca una volta per continuare il backup di nuove foto e video."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアルは残り%lld日です。一度ロックを解除すれば、新しい写真とビデオのバックアップを続けられます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험이 %lld일 남았습니다. 한 번 잠금 해제하면 새 사진과 비디오를 계속 백업합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restam %lld dias no seu teste grátis. Desbloqueie uma vez para continuar fazendo backup de novas fotos e vídeos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用还剩 %lld 天。一次性解锁，即可继续备份新的照片和视频。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用還剩 %lld 天。一次性解鎖，即可繼續備份新的照片和影片。"
+          }
+        }
+      }
+    },
+    "Your free trial has 1 day left. Unlock once to keep backing up new photos and videos.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Gratis-Test läuft noch 1 Tag. Schalte einmal frei, um neue Fotos und Videos weiter zu sichern."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A tu prueba gratuita le queda 1 día. Desbloquea una vez para seguir haciendo copia de las fotos y vídeos nuevos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il reste 1 jour à votre essai gratuit. Déverrouillez une fois pour continuer à sauvegarder les nouvelles photos et vidéos."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alla tua prova gratuita manca 1 giorno. Sblocca una volta per continuare il backup di nuove foto e video."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアルは残り1日です。一度ロックを解除すれば、新しい写真とビデオのバックアップを続けられます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험이 1일 남았습니다. 한 번 잠금 해제하면 새 사진과 비디오를 계속 백업합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resta 1 dia no seu teste grátis. Desbloqueie uma vez para continuar fazendo backup de novas fotos e vídeos."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用还剩 1 天。一次性解锁，即可继续备份新的照片和视频。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用還剩 1 天。一次性解鎖，即可繼續備份新的照片和影片。"
+          }
+        }
+      }
+    },
+    "Your free trial has ended, so new photos and videos aren't backed up. Unlock once to start again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Gratis-Test ist abgelaufen, daher werden neue Fotos und Videos nicht gesichert. Schalte einmal frei, um wieder zu starten."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu prueba gratuita ha terminado, así que no se hace copia de las fotos y vídeos nuevos. Desbloquea una vez para volver a empezar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre essai gratuit est terminé : les nouvelles photos et vidéos ne sont plus sauvegardées. Déverrouillez une fois pour reprendre."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La prova gratuita è terminata, quindi non viene fatto il backup di nuove foto e video. Sblocca una volta per ricominciare."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアルが終了したため、新しい写真とビデオはバックアップされません。一度ロックを解除すれば再開できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험이 끝나 새 사진과 비디오가 백업되지 않습니다. 한 번 잠금 해제하면 다시 시작합니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seu teste grátis terminou, então novas fotos e vídeos não são copiados. Desbloqueie uma vez para recomeçar."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用已结束，新的照片和视频不会备份。一次性解锁即可重新开始。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用已結束，新的照片和影片不會備份。一次性解鎖即可重新開始。"
+          }
+        }
+      }
+    },
+    "Your free trial has ended. Photos already on your Mac stay there.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Gratis-Test ist abgelaufen. Fotos, die schon auf deinem Mac sind, bleiben dort."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu prueba gratuita ha terminado. Las fotos que ya están en tu Mac se quedan ahí."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre essai gratuit est terminé. Les photos déjà sur votre Mac y restent."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La prova gratuita è terminata. Le foto già sul tuo Mac restano lì."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無料トライアルは終了しました。Macにある写真はそのまま残ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "무료 체험이 끝났습니다. 이미 Mac에 있는 사진은 그대로 남아 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seu teste grátis terminou. As fotos que já estão no seu Mac continuam lá."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免费试用已结束。已在 Mac 上的照片会保留在那里。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免費試用已結束。已在 Mac 上的照片會保留在那裡。"
+          }
+        }
+      }
+    },
     "Your photos and videos copy to your own Mac over Wi-Fi, encrypted, at full quality. Nothing goes through the cloud.": {
       "localizations": {
         "de": {
@@ -46991,6 +49082,64 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的照片已受保護"
+          }
+        }
+      }
+    },
+    "Your purchase covers you. Upgrade to cover up to 6 people in your Family Sharing group, each on their own iPhones and iPads.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Kauf gilt für dich. Mit dem Upgrade gilt er für bis zu 6 Personen in deiner Familienfreigabe, jeweils auf ihren eigenen iPhones und iPads."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu compra te cubre a ti. Mejórala para cubrir a hasta 6 personas de tu grupo En familia, cada una en sus propios iPhone y iPad."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre achat vous couvre. Passez à la version famille pour couvrir jusqu’à 6 personnes de votre groupe Partage familial, chacune sur ses propres iPhone et iPad."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il tuo acquisto copre te. Passa alla versione famiglia per coprire fino a 6 persone del tuo gruppo In famiglia, ognuna sui propri iPhone e iPad."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "購入はあなたが対象です。アップグレードすると、ファミリー共有グループの最大6人が、それぞれ自分のiPhoneとiPadで使えます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구입은 본인에게 적용됩니다. 업그레이드하면 가족 공유 그룹의 최대 6명이 각자의 iPhone과 iPad에서 사용할 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sua compra cobre você. Atualize para cobrir até 6 pessoas do seu grupo de Compartilhamento Familiar, cada uma nos próprios iPhones e iPads."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的购买仅供你本人使用。升级后，家人共享群组中最多 6 人都能在各自的 iPhone 和 iPad 上使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的購買僅供你本人使用。升級後，家人共享群組中最多 6 人都能在各自的 iPhone 和 iPad 上使用。"
           }
         }
       }

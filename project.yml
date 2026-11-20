@@ -59,7 +59,9 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
   ImagoiOS:
     type: application
-    scheme: {}
+    # Purchases run against StoreKit/Imago.storekit when started from Xcode, not the App Store.
+    scheme:
+      storeKitConfiguration: StoreKit/Imago.storekit
     platform: iOS
     sources: [iOS, Shared]
     dependencies:
