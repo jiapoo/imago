@@ -36,7 +36,7 @@ nonisolated final class IndexDatabase {
 
     struct Failure: LocalizedError {
         var message: String
-        var errorDescription: String? { "The index couldn't be saved: \(message)" }
+        var errorDescription: String? { String(localized: "The index couldn't be saved: \(message)") }
     }
 
     /// Whether the database has been written to at all (a new one is empty until the first save).

@@ -72,12 +72,14 @@ private struct DestinationCard: View {
                     Label("Change Location…", systemImage: "folder.badge.gearshape")
                 }
                 .buttonStyle(.borderedProminent)
+                .help(server.isBackingUp ? "Not while an iPhone is backing up" : "Choose another folder or drive for the backups")
                 .controlSize(.large)
                 .disabled(server.isBackingUp)
 
                 if location.isAvailable {
                     Button("Show in Finder") { server.revealInFinder() }
                         .controlSize(.large)
+                        .help("Show the backup folder in Finder")
                 }
                 Spacer()
                 if server.isBackingUp {
@@ -114,10 +116,10 @@ private struct UsageBar: View {
 
             HStack(spacing: 18) {
                 legend(.blue, "Imago", backup)
-                legend(.gray.opacity(0.6), "Other", other)
-                legend(Color.secondary.opacity(0.25), "Free", max(0, total - backup - other))
+                legend(.gray.opacity(0.6), String(localized: "Other"), other)
+                legend(Color.secondary.opacity(0.25), String(localized: "Free"), max(0, total - backup - other))
                 Spacer()
-                Text("\(total.formatted(.byteCount(style: .file))) total")
+                Text(String(localized: "\(total.formatted(.byteCount(style: .file))) total"))
                     .font(.caption).foregroundStyle(.tertiary)
             }
         }
@@ -139,14 +141,14 @@ private struct DrivesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Choose a drive", symbol: "externaldrive.badge.plus")
+            SectionHeader(title: String(localized: "Choose a drive"), symbol: "externaldrive.badge.plus")
             Text("Pick a drive, then choose or create a folder on it. An external drive is a good way to keep backups off your Mac's own disk.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
                 DriveTile(
-                    name: "This Mac", detail: "~/Pictures/Photo Backup", symbol: "laptopcomputer",
+                    name: String(localized: "This Mac"), detail: "~/Pictures/Photo Backup", symbol: "laptopcomputer",
                     isCurrent: server.isUsingDefaultLocation, enabled: !server.isBackingUp
                 ) {
                     server.useDefaultLocation()
@@ -154,7 +156,7 @@ private struct DrivesCard: View {
                 ForEach(server.drives) { drive in
                     DriveTile(
                         name: drive.volumeName,
-                        detail: drive.availableBytes.map { "\($0.formatted(.byteCount(style: .file))) free" } ?? drive.kindDescription,
+                        detail: drive.availableBytes.map { String(localized: "\($0.formatted(.byteCount(style: .file))) free") } ?? drive.kindDescription,
                         symbol: drive.symbol,
                         isCurrent: !server.isUsingDefaultLocation && server.location.url.path.hasPrefix(drive.url.path),
                         enabled: !server.isBackingUp
@@ -235,8 +237,10 @@ private struct RecentlyDeletedCard: View {
                 Spacer()
                 Button("Choose…", action: choose)
                     .disabled(!server.location.isAvailable)
+                    .help("Choose where Recently Deleted keeps its items")
                 Button("Show in Finder") { server.revealInFinder(server.trashURL) }
                     .disabled(!server.location.isAvailable)
+                    .help("Show Recently Deleted in Finder")
             }
             Picker("Keep deleted items for", selection: $server.trashDays) {
                 Text("7 days").tag(7)
@@ -244,6 +248,7 @@ private struct RecentlyDeletedCard: View {
                 Text("60 days").tag(60)
                 Text("Until emptied").tag(0)
             }
+            .help("How long deleted items wait in Recently Deleted before they're gone for good")
             .fixedSize()
             Text("Deleted photos and videos go to this folder on the backup drive, with a note of where they were, so Put Back returns them. It's inside the backup location, so deleting and putting back are instant.")
                 .font(.caption).foregroundStyle(.tertiary)
@@ -263,7 +268,7 @@ private struct RecentlyDeletedCard: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.directoryURL = server.location.url
-        panel.message = "Choose a folder inside “\(server.location.displayPath)” for Recently Deleted."
+        panel.message = String(localized: "Choose a folder inside “\(server.location.displayPath)” for Recently Deleted.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         problem = server.setTrashFolder(url)
     }

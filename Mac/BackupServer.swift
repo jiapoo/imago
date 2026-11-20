@@ -199,13 +199,13 @@ final class BackupServer {
             }
             listener.stateUpdateHandler = { [weak self] state in
                 if case .failed(let error) = state {
-                    Task { @MainActor in self?.addLog("Pairing unavailable: \(error.localizedDescription)", symbol: "exclamationmark.triangle") }
+                    Task { @MainActor in self?.addLog(String(localized: "Pairing unavailable: \(error.localizedDescription)"), symbol: "exclamationmark.triangle") }
                 }
             }
             listener.start(queue: .main)
             pairingListener = listener
         } catch {
-            addLog("Couldn't start pairing: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            addLog(String(localized: "Couldn't start pairing: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
         }
     }
 
@@ -230,11 +230,11 @@ final class BackupServer {
                 let device = register(deviceID: deviceID, name: deviceName, kind: kind, key: key)
                 try await peer.send(.control(.paired(deviceKey: key, serverName: serverName)))
                 justPaired = device
-                addLog("Paired \(device.name)", symbol: "checkmark.circle")
+                addLog(String(localized: "Paired \(device.name)"), symbol: "checkmark.circle")
                 // One code, one phone: anyone who saw this code can't use it again.
                 if pairingCode != nil { beginPairing(); justPaired = device }
             } catch {
-                addLog("Pairing failed: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Pairing failed: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
         }
     }
@@ -252,7 +252,7 @@ final class BackupServer {
             devices.append(PairedDevice(id: deviceID, name: name, folder: folder, pairedAt: .now, kind: kind))
             // Paired with another Mac before, or with this one before it was removed.
             if let known = library?.device(deviceID) {
-                addLog("Found \(name)'s earlier backups in “\(known.folder)”", symbol: "folder")
+                addLog(String(localized: "Found \(name)'s earlier backups in “\(known.folder)”"), symbol: "folder")
             }
         }
         reconcileLibrary()
@@ -273,7 +273,7 @@ final class BackupServer {
         DeviceRegistry.saveDevices(devices)
         DeviceRegistry.saveKeys(keys)
         startBackupListener()
-        addLog("Removed \(device.name)", symbol: "iphone.slash")
+        addLog(String(localized: "Removed \(device.name)"), symbol: "iphone.slash")
     }
 
     /// The iPhone's color as hex: the one picked for it, or by the order it was paired.
@@ -340,7 +340,7 @@ final class BackupServer {
                 case .control(.hello(let deviceID, let deviceName, let version, let proof, let kind)):
                     guard ProtocolVersion.supported.contains(version) else {
                         try await peer.send(.control(.unavailable(
-                            reason: "Update Imago on this iPhone and on your Mac so both are on the same version."
+                            reason: String(localized: "Update Imago on this iPhone and on your Mac so both are on the same version.")
                         )))
                         peer.cancel()
                         break
@@ -350,7 +350,7 @@ final class BackupServer {
                           let proof, let binding = peer.keyingMaterial(label: HelloProof.exporterLabel),
                           HelloProof.isValid(proof, key: key, deviceID: deviceID, binding: binding)
                     else {
-                        try await peer.send(.control(.unavailable(reason: "Pair this iPhone with your Mac again.")))
+                        try await peer.send(.control(.unavailable(reason: String(localized: "Pair this iPhone with your Mac again."))))
                         peer.cancel()
                         break
                     }
@@ -363,9 +363,9 @@ final class BackupServer {
                     refreshLocationIfChanged()
                     guard let deviceStore = self.store(for: known) else {
                         try await peer.send(.control(.unavailable(
-                            reason: "Your Mac's backup drive “\(location.volumeName)” isn't connected."
+                            reason: String(localized: "Your Mac's backup drive “\(location.volumeName)” isn't connected.")
                         )))
-                        addLog("\(known.name) tried to back up, but “\(location.volumeName)” isn't connected", symbol: "externaldrive.badge.xmark")
+                        addLog(String(localized: "\(known.name) tried to back up, but “\(location.volumeName)” isn't connected"), symbol: "externaldrive.badge.xmark")
                         peer.cancel()
                         break
                     }
@@ -411,7 +411,7 @@ final class BackupServer {
                     do {
                         try await store.saveSnapshot(PhoneSnapshot(takenAt: .now, entries: manifest, albums: albums))
                     } catch {
-                        addLog("Couldn't save \(device.name)'s library list: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                        addLog(String(localized: "Couldn't save \(device.name)'s library list: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
                     }
                     manifest = []
                     let pending = sendable(await store.changeQueue().pending, to: device.id)
@@ -419,7 +419,7 @@ final class BackupServer {
                     // Over the live link the list comes after each change on the iPhone, and the
                     // changes went when it connected: no need to say so again.
                     if !pending.isEmpty, !isLive {
-                        addLog("Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review", symbol: "iphone.and.arrow.forward")
+                        addLog(String(localized: "Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review"), symbol: "iphone.and.arrow.forward")
                     }
                     libraryChanged(device.id)
                     // A backup has the library read again when it ends.
@@ -430,7 +430,7 @@ final class BackupServer {
                     do {
                         try await store.applyLibraryChanges(changed: changed, removed: removed, albums: albums)
                     } catch {
-                        addLog("Couldn't save \(device.name)'s library list: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                        addLog(String(localized: "Couldn't save \(device.name)'s library list: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
                     }
                     libraryChanged(device.id)
                     await mediaLibrary?.phoneListChanged(device, server: self)
@@ -442,7 +442,7 @@ final class BackupServer {
                         let verb = switch done.report.outcome {
                         case .applied: "did"
                         case .declined: "declined"
-                        case .failed: "couldn't do"
+                        case .failed: String(localized: "couldn't do")
                         }
                         addLog("\(device.name) \(verb): \(done.change.summary)", symbol: done.report.outcome == .applied ? "checkmark.circle" : "xmark.circle")
                     }
@@ -480,7 +480,7 @@ final class BackupServer {
                     liveDevices.insert(device.id)
                     requestedPreviews[device.id] = []
                     try await peer.send(.control(.changes(sendable(await store.changeQueue().pending, to: device.id))))
-                    addLog("Imago is open on \(device.name): changes go to it right away", symbol: "iphone.radiowaves.left.and.right")
+                    addLog(String(localized: "Imago is open on \(device.name): changes go to it right away"), symbol: "iphone.radiowaves.left.and.right")
                     libraryChanged(device.id)
 
                 case .control(.thumbnails(let thumbnails)):
@@ -502,7 +502,7 @@ final class BackupServer {
             }
         } catch {
             if let device, !isLive {
-                addLog("\(device.name) disconnected; it will resume next time", symbol: "wifi.exclamationmark")
+                addLog(String(localized: "\(device.name) disconnected; it will resume next time"), symbol: "wifi.exclamationmark")
             }
         }
 
@@ -514,7 +514,7 @@ final class BackupServer {
         await store?.flush()
         let session = sessions.removeValue(forKey: id)
         if let session, let device, session.received > 0 {
-            addLog("\(device.name): backed up \(session.received) files", symbol: "checkmark.circle")
+            addLog(String(localized: "\(device.name): backed up \(session.received) files"), symbol: "checkmark.circle")
             if let store { warmThumbnails(store, since: started) }
         }
         updateSleepAssertion()
@@ -578,11 +578,11 @@ final class BackupServer {
         Task {
             do {
                 if let queued = try await store.enqueue(change, base: base) {
-                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                    addLog((liveDevices.contains(device.id) ? String(localized: "Sent to \(device.name): ") : String(localized: "Queued for \(device.name): ")) + queued.summary,
                            symbol: queued.symbol)
                 }
             } catch {
-                addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Couldn't queue the change: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
@@ -604,11 +604,11 @@ final class BackupServer {
         Task {
             do {
                 if let queued = try await store.enqueue(change, base: base) {
-                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                    addLog((liveDevices.contains(device.id) ? String(localized: "Sent to \(device.name): ") : String(localized: "Queued for \(device.name): ")) + queued.summary,
                            symbol: queued.symbol)
                 }
             } catch {
-                addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Couldn't queue the change: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
             libraryChanged(device.id)
             await pushChanges(to: device.id, from: store)
@@ -660,7 +660,7 @@ final class BackupServer {
                 continue
             } catch {
                 if file != item.url { try? FileManager.default.removeItem(at: file) }
-                addLog("Couldn't send \(item.name) to \(device.name): \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Couldn't send \(item.name) to \(device.name): \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
         }
         guard !ids.isEmpty else { return ([], copies) }
@@ -725,11 +725,11 @@ final class BackupServer {
         Task {
             do {
                 if let queued = try await store.enqueue(change, base: [:]) {
-                    addLog((liveDevices.contains(device.id) ? "Sent to \(device.name): " : "Queued for \(device.name): ") + queued.summary,
+                    addLog((liveDevices.contains(device.id) ? String(localized: "Sent to \(device.name): ") : String(localized: "Queued for \(device.name): ")) + queued.summary,
                            symbol: queued.symbol)
                 }
             } catch {
-                addLog("Couldn't queue the change: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Couldn't queue the change: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
             // The library notes what it asked for itself (`MediaLibrary.restoring`, `pendingRemoval`):
             // re-reading every item for one queued change would take seconds on a big library.
@@ -747,7 +747,7 @@ final class BackupServer {
         }
         let assets = await store.restoreAssets(change.assetIDs)
         let found = Set(assets.map(\.asset.metadata.assetID))
-        addLog("Sending \(assets.count) \(assets.count == 1 ? "item" : "items") back to \(device.name)", symbol: "arrow.uturn.backward.circle")
+        addLog(String(localized: "Sending \(assets.count) \(assets.count == 1 ? "item" : "items") back to \(device.name)"), symbol: "arrow.uturn.backward.circle")
         for (asset, urls) in assets {
             try await peer.send(.control(.restoreAsset(asset)))
             for (file, url) in zip(asset.files, urls) {
@@ -931,16 +931,16 @@ final class BackupServer {
         let root = location.url.lexicallyStandardized.pathComponents
         let parts = url.lexicallyStandardized.pathComponents
         guard parts.count > root.count, Array(parts.prefix(root.count)) == root else {
-            return "Choose a folder inside the backup location, “\(location.displayPath)”, so deleting and putting back are instant."
+            return String(localized: "Choose a folder inside the backup location, “\(location.displayPath)”, so deleting and putting back are instant.")
         }
         let inside = Array(parts.dropFirst(root.count))
         if inside.count != 1 || devices.contains(where: { $0.folder == inside.first }) {
-            return "Choose a folder at the top of the backup location, not inside another folder or an iPhone's folder."
+            return String(localized: "Choose a folder at the top of the backup location, not inside another folder or an iPhone's folder.")
         }
         // Items already there would need their iPhone records moved too: empty it first.
         let left = (try? FileManager.default.contentsOfDirectory(at: trashURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         if !left.isEmpty, url.lexicallyStandardized != trashURL.lexicallyStandardized {
-            return "Empty Recently Deleted first, or put its items back. Then choose the new folder."
+            return String(localized: "Empty Recently Deleted first, or put its items back. Then choose the new folder.")
         }
         trashFolder = inside.joined(separator: "/")
         UserDefaults.standard.set(trashFolder, forKey: "trashFolder")
@@ -985,8 +985,8 @@ final class BackupServer {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use This Folder"
-        panel.message = "Choose where Imago keeps your photos. External and network drives work too."
+        panel.prompt = String(localized: "Use This Folder")
+        panel.message = String(localized: "Choose where Imago keeps your photos. External and network drives work too.")
         panel.directoryURL = start ?? (location.isAvailable ? location.url : nil)
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -995,18 +995,18 @@ final class BackupServer {
             UserDefaults.standard.set(bookmark, forKey: Self.bookmarkKey)
             UserDefaults.standard.set(url.path(percentEncoded: false), forKey: Self.pathKey)
         } catch {
-            addLog("Couldn't use that folder: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            addLog(String(localized: "Couldn't use that folder: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             return
         }
         refreshLocation()
-        addLog("Backups now go to \(location.displayPath)", symbol: location.symbol)
+        addLog(String(localized: "Backups now go to \(location.displayPath)"), symbol: location.symbol)
     }
 
     func useDefaultLocation() {
         UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
         UserDefaults.standard.removeObject(forKey: Self.pathKey)
         refreshLocation()
-        addLog("Backups now go to \(location.displayPath)", symbol: location.symbol)
+        addLog(String(localized: "Backups now go to \(location.displayPath)"), symbol: location.symbol)
     }
 
     var isUsingDefaultLocation: Bool {
@@ -1054,7 +1054,7 @@ final class BackupServer {
             existing = try LibraryRecord.load(from: location.url)
         } catch {
             // Never overwrite a record we can't read; keep using the folders this Mac knows.
-            addLog("Couldn't read “\(LibraryRecord.relativePath)”: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+            addLog(String(localized: "Couldn't read “\(LibraryRecord.relativePath)”: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             library = nil
             return
         }
@@ -1070,7 +1070,7 @@ final class BackupServer {
             do {
                 try record.save(to: location.url)
             } catch {
-                addLog("Couldn't save this library's details: \(error.localizedDescription)", symbol: "exclamationmark.triangle")
+                addLog(String(localized: "Couldn't save this library's details: \(error.localizedDescription)"), symbol: "exclamationmark.triangle")
             }
         }
         library = record
@@ -1153,32 +1153,32 @@ struct Health {
 extension BackupServer {
     var health: Health {
         if devices.isEmpty {
-            return Health(symbol: "iphone", tint: .blue, title: "Add your iPhone to start",
-                          subtitle: "Pair an iPhone and its photos back up to this Mac over Wi-Fi.")
+            return Health(symbol: "iphone", tint: .blue, title: String(localized: "Add your iPhone to start"),
+                          subtitle: String(localized: "Pair an iPhone and its photos back up to this Mac over Wi-Fi."))
         }
         if !location.isAvailable {
             return Health(symbol: "externaldrive.fill.badge.xmark", tint: .orange, title: "Backup drive not connected",
-                          subtitle: "Connect “\(location.volumeName)” and backups pick up where they left off.")
+                          subtitle: String(localized: "Connect “\(location.volumeName)” and backups pick up where they left off."))
         }
         if isBackingUp {
             let names = sessions.values.compactMap { s in devices.first { $0.id == s.deviceID }?.name }
-            return Health(symbol: "arrow.triangle.2.circlepath", tint: .blue, title: "Backing up…",
-                          subtitle: "Receiving photos from \(ListFormatter.localizedString(byJoining: names)).")
+            return Health(symbol: "arrow.triangle.2.circlepath", tint: .blue, title: String(localized: "Backing up…"),
+                          subtitle: String(localized: "Receiving photos from \(ListFormatter.localizedString(byJoining: names))."))
         }
         if let partial = devices.first(where: { summaries[$0.id]?.isPartial == true && summaries[$0.id]?.lastBackup == nil }) {
-            return Health(symbol: "pause.circle.fill", tint: .orange, title: "First backup not finished",
-                          subtitle: "\(totalAssets.formatted()) photos and videos so far. Open Imago on \(partial.name) to finish; it continues where it stopped.")
+            return Health(symbol: "pause.circle.fill", tint: .orange, title: String(localized: "First backup not finished"),
+                          subtitle: String(localized: "\(totalAssets.formatted()) photos and videos so far. Open Imago on \(partial.name) to finish; it continues where it stopped."))
         }
         guard let last = lastBackup else {
-            return Health(symbol: "clock", tint: .secondary, title: "Waiting for the first backup",
-                          subtitle: "Open Imago on your iPhone and tap Back Up Now.")
+            return Health(symbol: "clock", tint: .secondary, title: String(localized: "Waiting for the first backup"),
+                          subtitle: String(localized: "Open Imago on your iPhone and tap Back Up Now."))
         }
         let days = Int(Date.now.timeIntervalSince(last) / 86_400)
         if days >= 3 {
-            return Health(symbol: "exclamationmark.shield.fill", tint: .yellow, title: "No backup in \(days) days",
-                          subtitle: "Open Imago on your iPhone, or leave it charging on Wi-Fi tonight.")
+            return Health(symbol: "exclamationmark.shield.fill", tint: .yellow, title: String(localized: "No backup in \(days) days"),
+                          subtitle: String(localized: "Open Imago on your iPhone, or leave it charging on Wi-Fi tonight."))
         }
-        return Health(symbol: "checkmark.shield.fill", tint: .green, title: "Your photos are protected",
-                      subtitle: "\(totalAssets.formatted()) photos and videos, last backed up \(last.formatted(.relative(presentation: .named))).")
+        return Health(symbol: "checkmark.shield.fill", tint: .green, title: String(localized: "Your photos are protected"),
+                      subtitle: String(localized: "\(totalAssets.formatted()) photos and videos, last backed up \(last.formatted(.relative(presentation: .named)))."))
     }
 }

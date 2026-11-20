@@ -38,8 +38,8 @@ final class FileHistory {
 
     var canUndo: Bool { !undoStack.isEmpty && !isBusy }
     var canRedo: Bool { !redoStack.isEmpty && !isBusy }
-    var undoTitle: String { undoStack.last.map { "Undo \($0.name)" } ?? "Undo" }
-    var redoTitle: String { redoStack.last.map { "Redo \($0.name)" } ?? "Redo" }
+    var undoTitle: String { undoStack.last.map { String(localized: "Undo \($0.name)") } ?? "Undo" }
+    var redoTitle: String { redoStack.last.map { String(localized: "Redo \($0.name)") } ?? "Redo" }
 
     /// Records an action that just happened. A new action ends what could be redone.
     func record(_ step: Step?) {
@@ -52,7 +52,7 @@ final class FileHistory {
     func undo() async {
         guard canUndo, let step = undoStack.popLast() else { return }
         isBusy = true
-        running = "Undoing \(step.name)"
+        running = String(localized: "Undoing \(step.name)")
         defer { isBusy = false; running = nil }
         if let redo = await step.run() { redoStack.append(redo) }
     }
@@ -60,7 +60,7 @@ final class FileHistory {
     func redo() async {
         guard canRedo, let step = redoStack.popLast() else { return }
         isBusy = true
-        running = "Redoing \(step.name)"
+        running = String(localized: "Redoing \(step.name)")
         defer { isBusy = false; running = nil }
         if let undo = await step.run() { undoStack.append(undo) }
     }

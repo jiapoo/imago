@@ -33,11 +33,12 @@ struct GroupsView: View {
                             Text(explanation).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             Spacer()
                             Button("Select All Extras") { selection = Set(groups.flatMap(\.extras).filter(\.isBackedUp).map(\.id)) }
+                                .help("Select every copy not marked Keep, to delete them from the iPhone")
                         }
                         ForEach(groups) { group in
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                    Text(group.keep.metadata.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? "Undated")
+                                    Text(group.keep.metadata.creationDate?.formatted(date: .abbreviated, time: .shortened) ?? String(localized: "Undated"))
                                         .font(.callout.weight(.medium))
                                     Text("\(group.assets.count) items · \(group.reclaimableBytes.bytes) extra")
                                         .font(.caption).foregroundStyle(.secondary)
@@ -93,12 +94,13 @@ struct SimilarView: View {
                 ProgressView(value: progress).frame(width: 280)
                 Text("Comparing photos taken close together…").foregroundStyle(.secondary)
                 Button("Stop") { model.cancelSimilar() }
+                    .help("Stop comparing photos")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let similar = model.similar {
             GroupsView(model: model, device: device, groups: model.bursts + similar,
-                       explanation: "Shots of the same moment, and bursts. Keep marks the favorite, or the best-looking one by the Mac's photo analysis.",
-                       emptyTitle: "No similar shots")
+                       explanation: String(localized: "Shots of the same moment, and bursts. Keep marks the favorite, or the best-looking one by the Mac's photo analysis."),
+                       emptyTitle: String(localized: "No similar shots"))
         } else {
             VStack(spacing: 14) {
                 Image(systemName: "square.stack.3d.down.right").font(.system(size: 44)).foregroundStyle(.tint)
@@ -107,6 +109,7 @@ struct SimilarView: View {
                     .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 380)
                 Button("Scan \(model.backedUpCount.formatted()) Photos") { model.findSimilar() }
                     .buttonStyle(.borderedProminent).controlSize(.large)
+                    .help("Compare the backed-up photos on this Mac to find shots of the same moment")
                 if !model.bursts.isEmpty {
                     Text("\(model.bursts.count) bursts are already listed once you scan.").font(.caption).foregroundStyle(.secondary)
                 }
@@ -132,11 +135,12 @@ struct QueueView: View {
                         Image(systemName: change.symbol).foregroundStyle(change.action == .delete ? .red : .accentColor).frame(width: 22)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(change.summary)
-                            Text("Queued \(change.createdAt.shortRelative)" + (change.bytes.map { " · frees about \($0.bytes)" } ?? ""))
+                            Text(String(localized: "Queued \(change.createdAt.shortRelative)") + (change.bytes.map { String(localized: " · frees about \($0.bytes)") } ?? ""))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button("Cancel") { server.cancel(change, on: device) }
+                            .help("Take this change back before the iPhone does it")
                     }
                     .padding(.vertical, 3)
                 }
@@ -168,9 +172,9 @@ struct QueueView: View {
     private func outcome(_ report: ChangeReport) -> String {
         let when = report.date.shortRelative
         return switch report.outcome {
-        case .applied: "Done on the iPhone \(when)"
-        case .declined: "Declined on the iPhone \(when)"
-        case .failed: "Couldn't be done \(when)" + (report.detail.map { ": \($0)" } ?? "")
+        case .applied: String(localized: "Done on the iPhone \(when)")
+        case .declined: String(localized: "Declined on the iPhone \(when)")
+        case .failed: String(localized: "Couldn't be done \(when)") + (report.detail.map { ": \($0)" } ?? "")
         }
     }
 }
@@ -185,15 +189,15 @@ enum MacNotifications {
     /// The iPhone turned down changes asked for here.
     static func declined(_ changes: [LibraryChange], on phone: String) {
         post(id: "declined-\(phone)",
-             title: changes.count == 1 ? "\(phone) said no to a change" : "\(phone) said no to \(changes.count) changes",
-             body: changes.prefix(3).map(\.summary).joined(separator: " · ") + ". Open Imago to decide what to keep.")
+             title: changes.count == 1 ? String(localized: "\(phone) said no to a change") : String(localized: "\(phone) said no to \(changes.count) changes"),
+             body: changes.prefix(3).map(\.summary).joined(separator: " · ") + String(localized: ". Open Imago to decide what to keep."))
     }
 
     /// Photos and videos were deleted on the iPhone since its last backup.
     static func deletedOnPhone(_ count: Int, on phone: String) {
         post(id: "deleted-\(phone)",
-             title: count == 1 ? "1 item was deleted on \(phone)" : "\(count) items were deleted on \(phone)",
-             body: "The backups are still on your Mac. Open Imago to delete them from your Mac too, keep them on your Mac, or put them back on \(phone).")
+             title: count == 1 ? String(localized: "1 item was deleted on \(phone)") : String(localized: "\(count) items were deleted on \(phone)"),
+             body: String(localized: "The backups are still on your Mac. Open Imago to delete them from your Mac too, keep them on your Mac, or put them back on \(phone)."))
     }
 
     private static func post(id: String, title: String, body: String) {
@@ -250,12 +254,12 @@ struct DecisionsCard: View {
         return row(
             device: decline.device, symbol: decline.change.symbol,
             title: isDelete
-                ? (decline.change.assetIDs.count == 1 ? "\(phone) kept 1 item you deleted" : "\(phone) kept \(decline.change.assetIDs.count.formatted()) items you deleted")
-                : "\(phone) said no: \(decline.change.summary.lowercasedFirst)",
+                ? (decline.change.assetIDs.count == 1 ? String(localized: "\(phone) kept 1 item you deleted") : String(localized: "\(phone) kept \(decline.change.assetIDs.count.formatted()) items you deleted"))
+                : String(localized: "\(phone) said no: \(decline.change.summary.lowercasedFirst)"),
             detail: isDelete
-                ? "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so nothing was deleted: \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone) and here. Keep \(decline.change.assetIDs.count == 1 ? "it" : "them"), delete \(decline.change.assetIDs.count == 1 ? "the backup" : "the backups") from this Mac only, or ask \(phone) again."
-                : "Ask \(phone) once more, or leave it as it is."
-                    + (decline.change.isAskedAgain ? " This was the second time it was asked." : "")
+                ? String(localized: "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so nothing was deleted: \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone) and here. Keep \(decline.change.assetIDs.count == 1 ? "it" : "them"), delete \(decline.change.assetIDs.count == 1 ? String(localized: "the backup") : String(localized: "the backups")) from this Mac only, or ask \(phone) again.")
+                : String(localized: "Ask \(phone) once more, or leave it as it is.")
+                    + (decline.change.isAskedAgain ? String(localized: " This was the second time it was asked.") : "")
         ) {
             if isDelete {
                 Button("Keep") {
@@ -268,10 +272,13 @@ struct DecisionsCard: View {
                     Button("Delete from This Mac Only") { Task { history.record(await library.leaveAsIs(decline, server: server)) } }
                 }
                 .fixedSize()
+                .help("Ask the iPhone again, or delete only the backups on this Mac")
             } else {
                 Button("Ask Again") { Task { await library.askAgain(decline, server: server) } }
                     .disabled(decline.change.isAskedAgain)
+                    .help("Ask the iPhone once more")
                 Button("OK") { Task { await library.leaveAsIs(decline, server: server) } }
+                    .help("Leave it as it is")
             }
         }
     }
@@ -279,17 +286,19 @@ struct DecisionsCard: View {
     private func deletedRow(_ device: PairedDevice, _ items: [MediaItem]) -> some View {
         row(
             device: device, symbol: "iphone.slash",
-            title: items.count == 1 ? "1 item was deleted on \(device.name)" : "\(items.count.formatted()) items were deleted on \(device.name)",
-            detail: "\(items.reduce(0) { $0 + $1.bytes }.bytes) backed up here. "
-                + (server.trashDays > 0 ? "Unless you decide, they move to Recently Deleted after \(server.trashDays) days." : "They stay until you decide.")
+            title: items.count == 1 ? String(localized: "1 item was deleted on \(device.name)") : String(localized: "\(items.count.formatted()) items were deleted on \(device.name)"),
+            detail: String(localized: "\(items.reduce(0) { $0 + $1.bytes }.bytes) backed up here. ")
+                + (server.trashDays > 0 ? String(localized: "Unless you decide, they move to Recently Deleted after \(server.trashDays) days.") : String(localized: "They stay until you decide."))
         ) {
             Button("Review") { openDeleted(device) }
+                .help("See what was deleted on the iPhone")
             Menu("Decide") {
                 Button("Delete from This Mac Too") { Task { history.record(await library.trash(items, server: server)) } }
                 Button("Keep the Backups on This Mac") { Task { history.record(await library.keepBackups(items, server: server)) } }
                 Button("Put Back on \(device.name)") { Task { history.record(await library.putBackOnPhone(items, server: server)) } }
             }
             .fixedSize()
+            .help("Delete the backups here too, keep them, or put them back on the iPhone")
         }
     }
 

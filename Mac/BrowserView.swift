@@ -87,7 +87,7 @@ struct BrowserView: View {
         }
     }
     private var sourceName: String {
-        if case .phone(let id) = source { server.devices.first { $0.id == id }?.name ?? "that iPhone" } else { server.devicesName }
+        if case .phone(let id) = source { server.devices.first { $0.id == id }?.name ?? String(localized: "that iPhone") } else { server.devicesName }
     }
     private var isFolder: Bool { if case .folder = scope { true } else { false } }
     private var source: MediaLibrary.Source {
@@ -231,7 +231,7 @@ struct BrowserView: View {
             // Waiting to be put back on its iPhone: its dot, with a clock.
             if library.restoring.contains(item.id), let deviceID = item.deviceID {
                 var style = SourceBadge.Style(.phone(deviceID), server: server, waiting: true)
-                style.help = "Waiting to be put back on \(server.devices.first { $0.id == deviceID }?.name ?? "the iPhone")"
+                style.help = String(localized: "Waiting to be put back on \(server.devices.first { $0.id == deviceID }?.name ?? String(localized: "the iPhone"))")
                 return style
             }
             return nil
@@ -273,24 +273,24 @@ struct BrowserView: View {
         switch scope {
         case .trash:
             guard let days = library.trashed(item)?.daysLeft(keeping: server.trashDays) else { return nil }
-            return days == 1 ? "1 day" : "\(days) days"
+            return days == 1 ? String(localized: "1 day") : "\(days) days"
         case .large:
             return item.bytes.bytes
         case .deletedOnPhone:
             guard let days = library.daysUntilMoved(item, keeping: server.trashDays) else { return nil }
-            return days == 1 ? "1 day" : "\(days) days"
+            return days == 1 ? String(localized: "1 day") : "\(days) days"
         case .folder, .trash:
             return nil
         default:
             // Asked to go from its iPhone, waiting for it to agree: deleted (here too, once it does),
             // or only removed from it to free space.
             if library.pendingRemoval.contains(item.id) {
-                return library.deleteWhenPhoneDoes.contains(item.id) ? "Deleting" : "Removing"
+                return library.deleteWhenPhoneDoes.contains(item.id) ? String(localized: "Deleting") : String(localized: "Removing")
             }
             // Beside an iPhone's backups, not on it yet: an edited copy, or a file sent to it.
             guard library.waitingFor(item) != nil else { return nil }
-            if item.deviceID != nil { return "Sending" }
-            return item.name.contains("(Edited)") ? "Edited" : "Not synced"
+            if item.deviceID != nil { return String(localized: "Sending") }
+            return item.name.contains("(Edited)") ? String(localized: "Edited") : "Not synced"
         }
     }
 
@@ -366,8 +366,8 @@ struct BrowserView: View {
                     newFolder: { naming = .newFolder(moving: selected) },
                     removeFromPhone: { removing = selected },
                     deleteHelp: deletesOnPhone
-                        ? "Delete (⌫): from the iPhone, and the backup here once the iPhone agrees; files only on this drive go to Recently Deleted. ⌘Z undoes it."
-                        : "Move to Recently Deleted (⌫). ⌘Z puts it back.",
+                        ? String(localized: "Delete (⌫): from the iPhone, and the backup here once the iPhone agrees; files only on this drive go to Recently Deleted. ⌘Z undoes it.")
+                        : String(localized: "Move to Recently Deleted (⌫). ⌘Z puts it back."),
                     trash: { trash(selected) },
                     clear: { library.selection = [] }
                 )
@@ -404,6 +404,7 @@ struct BrowserView: View {
                     .help("Select \(removable.count == 1 ? "it" : "them") in the grid")
                 Button("Remove from \(phones)…") { removing = removable }
                     .controlSize(.large)
+                    .help("Ask to delete them from the iPhone. You confirm on the iPhone; the backups here stay.")
             }
             .padding(14)
             .background(.tint.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -457,10 +458,10 @@ struct BrowserView: View {
         if case .folder = scope, !subfolders.isEmpty {
             let all = library.items(in: scope)
             let here = includeSubfolders ? all.count(where: { $0.folder == folderPath }) : items.count
-            return "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)" + (library.isRefreshing ? " · Updating…" : "")
+            return String(localized: "\(here.formatted()) here · \(all.count.formatted()) with subfolders · \(all.reduce(0) { $0 + $1.bytes }.bytes)") + (library.isRefreshing ? String(localized: " · Updating…") : "")
         }
         let count = items.count == 1 ? "1 item" : "\(items.count.formatted()) items"
-        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)" + notBackedUpNote + (library.isRefreshing ? " · Updating…" : "")
+        return "\(count) · \(items.reduce(0) { $0 + $1.bytes }.bytes)" + notBackedUpNote + (library.isRefreshing ? String(localized: " · Updating…") : "")
     }
 
     /// The devices whose photos not backed up yet show in Library among the rest, as previews:
@@ -511,14 +512,14 @@ struct BrowserView: View {
 
     private var notBackedUpNote: String {
         let missing = items.count(where: \.isPreview)
-        return missing == 0 ? "" : " · \(missing.formatted()) not backed up yet"
+        return missing == 0 ? "" : String(localized: " · \(missing.formatted()) not backed up yet")
     }
 
     /// After a day's count: the whole day, or how many of it, isn't backed up yet.
     private func notBackedUp(in items: [MediaItem]) -> String? {
         let missing = items.count(where: \.isPreview)
         if missing == 0 { return nil }
-        return missing == items.count ? "Not backed up yet" : "\(missing.formatted()) not backed up yet"
+        return missing == items.count ? String(localized: "Not backed up yet") : String(localized: "\(missing.formatted()) not backed up yet")
     }
 
     private func keyHandling(_ items: [MediaItem]) -> GridKeys {
@@ -543,7 +544,7 @@ struct BrowserView: View {
 
     private var deleteAllTitle: String {
         let count = library.items(in: scope).count
-        return count == 1 ? "Move 1 item to Recently Deleted?" : "Move all \(count.formatted()) items to Recently Deleted?"
+        return count == 1 ? String(localized: "Move 1 item to Recently Deleted?") : String(localized: "Move all \(count.formatted()) items to Recently Deleted?")
     }
 
     /// Where ⌘V puts files: this folder, when one is shown.
@@ -583,14 +584,14 @@ struct BrowserView: View {
     static func confirmTrash(_ driveOnly: [MediaItem], of total: Int) async -> Bool {
         guard !driveOnly.isEmpty else { return true }
         let alert = NSAlert()
-        alert.messageText = driveOnly.count == 1 ? "Move “\(driveOnly[0].name)” to Recently Deleted?"
-            : "Move \(driveOnly.count.formatted()) items to Recently Deleted?"
-        var info = driveOnly.count == 1 ? "It's only on this drive." : "They're only on this drive."
+        alert.messageText = driveOnly.count == 1 ? String(localized: "Move “\(driveOnly[0].name)” to Recently Deleted?")
+            : String(localized: "Move \(driveOnly.count.formatted()) items to Recently Deleted?")
+        var info = driveOnly.count == 1 ? String(localized: "It's only on this drive.") : String(localized: "They're only on this drive.")
         if total > driveOnly.count {
             let onPhones = total - driveOnly.count
-            info += " The other \(onPhones == 1 ? "one is" : "\(onPhones.formatted()) are") on an iPhone: deleted there once the iPhone agrees, and here then."
+            info += String(localized: " The other \(onPhones == 1 ? String(localized: "one is") : "\(onPhones.formatted()) are") on an iPhone: deleted there once the iPhone agrees, and here then.")
         }
-        alert.informativeText = info + " You can put \(driveOnly.count == 1 ? "it" : "them") back from Recently Deleted."
+        alert.informativeText = info + String(localized: " You can put \(driveOnly.count == 1 ? "it" : "them") back from Recently Deleted.")
         alert.addButton(withTitle: "Move to Recently Deleted")
         alert.addButton(withTitle: "Cancel")
         return await alert.askOnWindow()
@@ -671,15 +672,15 @@ private struct DialogsModifier: ViewModifier {
 
     private var deleteNowTitle: String {
         let count = deletingNow?.count ?? 0
-        return count == 1 ? "Delete this item for good?" : "Delete \(count) items for good?"
+        return count == 1 ? String(localized: "Delete this item for good?") : String(localized: "Delete \(count) items for good?")
     }
 
     private var removalTitle: String {
         let items = removing ?? []
         let count = library.removable(items).count
         let skipped = items.count - count
-        let base = count == 1 ? "Ask iPhone to remove 1 item?" : "Ask iPhone to remove \(count) items?"
-        return skipped > 0 ? base + " \(skipped) not on the iPhone or not fully backed up are left out." : base
+        let base = count == 1 ? String(localized: "Ask iPhone to remove 1 item?") : String(localized: "Ask iPhone to remove \(count) items?")
+        return skipped > 0 ? base + String(localized: " \(skipped) not on the iPhone or not fully backed up are left out.") : base
     }
 }
 
@@ -784,7 +785,7 @@ extension BrowserView {
         case .folder(let path): (path as NSString).lastPathComponent
         case .trash: "Recently Deleted"
         case .large: "Large Files"
-        case .deletedOnPhone(let id): "Deleted on \(server.devices.first { $0.id == id }?.name ?? "iPhone")"
+        case .deletedOnPhone(let id): String(localized: "Deleted on \(server.devices.first { $0.id == id }?.name ?? "iPhone")")
         case .onThisDay: "On This Day"
         case .items: "Places"
         }
@@ -798,9 +799,9 @@ extension BrowserView {
                 KindPicker(selection: $kind)
 
                 if isFolder {
-                    SourcePicker(selection: $folderSourceRaw, everything: "Everything in the Folder")
+                    SourcePicker(selection: $folderSourceRaw, everything: String(localized: "Everything in the Folder"))
                 } else if isTrash {
-                    SourcePicker(selection: $trashSourceRaw, everything: "Everything in Recently Deleted")
+                    SourcePicker(selection: $trashSourceRaw, everything: String(localized: "Everything in Recently Deleted"))
                 } else if showsSource {
                     SourcePicker(selection: $sourceRaw)
                 }
@@ -823,7 +824,7 @@ extension BrowserView {
                 }
                 if case .deletedOnPhone(let deviceID) = scope {
                     let all = library.items(in: scope)
-                    let phone = server.devices.first { $0.id == deviceID }?.name ?? "the iPhone"
+                    let phone = server.devices.first { $0.id == deviceID }?.name ?? String(localized: "the iPhone")
                     Menu {
                         Button("Keep All the Backups") { Task { history.record(await library.keepBackups(all, server: server)) } }
                         Button("Put All Back on \(phone)") { Task { history.record(await library.putBackOnPhone(all, server: server)) } }
@@ -884,7 +885,7 @@ extension BrowserView {
                                        description: Text("Photos and videos over \(MediaLibrary.largeFileBytes.bytes) show here, biggest first."))
             case .onThisDay:
                 ContentUnavailableView("Nothing on this day", systemImage: "calendar.badge.clock",
-                                       description: Text("Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here."))
+                                       description: Text(String(localized: "Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here.")))
             case .items:
                 ContentUnavailableView("Nothing here", systemImage: "map")
             case .deletedOnPhone:
@@ -993,32 +994,32 @@ extension BrowserView {
             info: { index in
                 let item = items[index]
                 var rows = [MediaViewerHost.InfoRow(label: "Name", value: item.name)]
-                if let date = item.date { rows.append(.init(label: "Taken", value: date.formatted(date: .complete, time: .standard))) }
+                if let date = item.date { rows.append(.init(label: String(localized: "Taken"), value: date.formatted(date: .complete, time: .standard))) }
                 if item.isVideo, item.duration > 0 {
-                    rows.append(.init(label: "Length", value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
+                    rows.append(.init(label: String(localized: "Length"), value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
                 }
                 rows.append(.init(label: "Size", value: item.bytes.bytes))
                 if item.isPreview {
-                    rows.append(.init(label: "Source", value: "Only on \(item.deviceID.flatMap { devices[$0] } ?? "the device"), not backed up yet"))
+                    rows.append(.init(label: String(localized: "Source"), value: String(localized: "Only on \(item.deviceID.flatMap { devices[$0] } ?? String(localized: "the device")), not backed up yet")))
                     return rows
                 }
                 if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
                 let copies = (library.inFolders[item.id] ?? []).filter { $0.folder != item.folder }
                 if !copies.isEmpty {
-                    rows.append(.init(label: copies.count == 1 ? "Also in" : "Also in Folders", value: copies.map { FolderMark.name($0.folder) }.joined(separator: "\n")))
+                    rows.append(.init(label: copies.count == 1 ? String(localized: "Also in") : String(localized: "Also in Folders"), value: copies.map { FolderMark.name($0.folder) }.joined(separator: "\n")))
                 }
                 let from = item.deviceID.flatMap { devices[$0] }
                 switch library.origin(of: item) {
-                case .phone: rows.append(.init(label: "Source", value: "On \(from ?? "an iPhone")"))
-                case .drive: rows.append(.init(label: "Source", value: from.map { "Only on this drive (from \($0))" } ?? "Only on this drive"))
+                case .phone: rows.append(.init(label: String(localized: "Source"), value: "On \(from ?? String(localized: "an iPhone"))"))
+                case .drive: rows.append(.init(label: String(localized: "Source"), value: from.map { String(localized: "Only on this drive (from \($0))") } ?? String(localized: "Only on this drive")))
                 }
-                rows.append(.init(label: "File", value: item.url.path))
+                rows.append(.init(label: String(localized: "File"), value: item.url.path))
                 return rows
             },
             banner: { [devices] index in
                 guard items[index].isPreview else { return nil }
-                let device = items[index].deviceID.flatMap { devices[$0] } ?? "the device"
-                return "Preview only · not on the backup drive yet. Back up \(device) to copy it."
+                let device = items[index].deviceID.flatMap { devices[$0] } ?? String(localized: "the device")
+                return String(localized: "Preview only · not on the backup drive yet. Back up \(device) to copy it.")
             },
             sourceFrame: item.id == anchor ? anchorFrame : nil,
             saveEdit: isTrash ? nil : { [library, server, history] index, copy in
@@ -1032,7 +1033,7 @@ extension BrowserView {
             },
             // A preview is too small to edit, and there's no file to edit.
             canEdit: { !items[$0].isPreview },
-            deleteTitle: isTrash ? nil : deletesOnPhone ? "Delete (from the iPhone, and its backup here once the iPhone agrees)" : "Move to Recently Deleted",
+            deleteTitle: isTrash ? nil : deletesOnPhone ? String(localized: "Delete (from the iPhone, and its backup here once the iPhone agrees)") : "Move to Recently Deleted",
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
                 // Nothing on the drive to delete; Imago never deletes from a device what isn't backed up.
                 guard !items[index].isPreview else { return false }
@@ -1227,12 +1228,13 @@ private struct FolderCard: View {
                         .strokeBorder(Color.imago.opacity(hovering ? 0.8 : 0), lineWidth: 2)
                 }
                 Text(folder.name).font(.callout.weight(.semibold)).lineLimit(1)
-                Text("\(folder.count.formatted()) \(folder.count == 1 ? "item" : "items") · \(folder.bytes.bytes)")
+                Text(folder.count == 1 ? "1 item · \(folder.bytes.bytes)" : "\(folder.count.formatted()) items · \(folder.bytes.bytes)")
                     .font(.caption).foregroundStyle(.secondary)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help("Open “\(folder.name)”")
         .onHover { hovering = $0 }
         .help("Open “\(folder.name)”. Drop photos here to put them in it.")
     }
@@ -1296,8 +1298,8 @@ struct FolderMark: View {
     static func help(_ folders: [FolderCopies.Copy]) -> String {
         let names = folders.map { name($0.folder) }
         return names.count == 1
-            ? "Also in \(names[0]). Click to show it in Finder."
-            : "Also in:\n" + names.joined(separator: "\n") + "\nClick to show one in Finder."
+            ? String(localized: "Also in \(names[0]). Click to show it in Finder.")
+            : String(localized: "Also in:\n") + names.joined(separator: "\n") + String(localized: "\nClick to show one in Finder.")
     }
 }
 
@@ -1319,16 +1321,16 @@ struct SourceBadge: View {
         @MainActor init(_ origin: MediaLibrary.Origin, server: BackupServer, cameFrom: Bool = false, waiting: Bool = false) {
             switch origin {
             case .phone(let id):
-                let name = server.devices.first { $0.id == id }?.name ?? "an iPhone"
+                let name = server.devices.first { $0.id == id }?.name ?? String(localized: "an iPhone")
                 initial = name.first.map { String($0).uppercased() } ?? "?"
                 color = server.color(of: id)
-                help = cameFrom ? "From \(name)" : waiting ? "On \(name) · waiting to be deleted there" : "On \(name)"
+                help = cameFrom ? String(localized: "From \(name)") : waiting ? String(localized: "On \(name) · waiting to be deleted there") : "On \(name)"
                 self.waiting = waiting
                 self.cameFrom = cameFrom
             case .drive:
                 initial = nil
                 color = .black.opacity(0.55)
-                help = cameFrom ? "Not from an iPhone" : "Only on the drive"
+                help = cameFrom ? String(localized: "Not from an iPhone") : String(localized: "Only on the drive")
                 self.cameFrom = cameFrom
             }
         }
@@ -1392,8 +1394,8 @@ struct SourceBadge: View {
         for origin in origins { counts[origin, default: 0] += 1 }
         func name(_ origin: MediaLibrary.Origin) -> String {
             switch origin {
-            case .phone(let id): devices.first { $0.id == id }?.name ?? "an iPhone"
-            case .drive: "the drive"
+            case .phone(let id): devices.first { $0.id == id }?.name ?? String(localized: "an iPhone")
+            case .drive: String(localized: "the drive")
             }
         }
         // iPhones in pairing order, then the drive.
@@ -1404,9 +1406,9 @@ struct SourceBadge: View {
             }
             return rank(a) < rank(b)
         }
-        let on = cameFrom ? "from" : "on", drive = cameFrom ? "from elsewhere" : "only on the drive"
+        let on = cameFrom ? "from" : "on", drive = cameFrom ? String(localized: "from elsewhere") : String(localized: "only on the drive")
         if order.count == 1 {
-            return order[0] == .drive ? (cameFrom ? "Not from an iPhone" : "Only on the drive") : "\(on.capitalized) \(name(order[0]))"
+            return order[0] == .drive ? (cameFrom ? String(localized: "Not from an iPhone") : String(localized: "Only on the drive")) : "\(on.capitalized) \(name(order[0]))"
         }
         return order.map { origin in
             origin == .drive ? "\(counts[origin]!) \(drive)" : "\(counts[origin]!) \(on) \(name(origin))"
@@ -1568,7 +1570,7 @@ private struct FolderNameAlert: ViewModifier {
         return false
     }
 
-    private var title: String { isRename ? "Rename Folder" : "New Folder" }
+    private var title: String { isRename ? String(localized: "Rename Folder") : "New Folder" }
 
     private func commit() {
         let request = naming

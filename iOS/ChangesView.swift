@@ -17,10 +17,10 @@ struct MacChangesCard: View {
                     .frame(width: 44, height: 44)
                     .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(client.credential?.serverName ?? "Your Mac") suggests \(changes.count) \(changes.count == 1 ? "change" : "changes")")
+                    Text("\(client.credential?.serverName ?? String(localized: "Your Mac")) suggests \(changes.count) \(changes.count == 1 ? "change" : "changes")")
                         .font(.headline)
                     if let bytes = freed(changes) {
-                        Text("Frees about \(bytes.formatted(.byteCount(style: .file)))")
+                        Text(String(localized: "Frees about \(bytes.formatted(.byteCount(style: .file)))"))
                             .font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
@@ -100,7 +100,7 @@ struct ChangesReviewSheet: View {
                     }
                 }
             }
-            .navigationTitle("Changes from \(client.credential?.serverName ?? "Mac")")
+            .navigationTitle("Changes from \(client.credential?.serverName ?? String(localized: "Mac"))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -166,7 +166,7 @@ private struct ChangeRow: View {
                         if change.action == .restore {
                             Text("From the backup on your Mac").font(.caption).foregroundStyle(.secondary)
                         } else if let bytes = change.bytes {
-                            Text("About \(bytes.formatted(.byteCount(style: .file)))")
+                            Text(String(localized: "About \(bytes.formatted(.byteCount(style: .file)))"))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }

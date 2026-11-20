@@ -126,8 +126,8 @@ final class MediaViewerHost {
         let deleting = index
         // Asked first, whatever it does (Delete key or ⌘⌫): it's the photo on screen, gone at one key.
         let alert = NSAlert()
-        alert.messageText = "Delete “\(request.name(deleting))”?"
-        alert.informativeText = (request.deleteTitle ?? "Move to Recently Deleted") + ". ⌘Z undoes it."
+        alert.messageText = String(localized: "Delete “\(request.name(deleting))”?")
+        alert.informativeText = (request.deleteTitle ?? "Move to Recently Deleted") + String(localized: ". ⌘Z undoes it.")
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         guard await alert.askOnWindow() else { return }
@@ -150,13 +150,13 @@ final class MediaViewerHost {
         // The copy, at once, as Photos shows it after an edit; it's written to the drive meanwhile.
         let date = request.date(index)
         open(.init(urls: [saved.url], index: 0, thumbnailBytes: [:], date: { _ in date }, name: { _ in saved.url.lastPathComponent },
-                   info: { _ in [.init(label: "Name", value: saved.url.lastPathComponent), .init(label: "Saved to", value: saved.place)] }))
+                   info: { _ in [.init(label: "Name", value: saved.url.lastPathComponent), .init(label: String(localized: "Saved to"), value: saved.place)] }))
         // While it's written to the drive, the progress line at the bottom says so; then this.
         Task {
             if await saved.written.value {
-                show("Saved a copy to “\(saved.place)”")
+                show(String(localized: "Saved a copy to “\(saved.place)”"))
             } else {
-                show("Couldn't save the copy to “\(saved.place)”", failed: true)
+                show(String(localized: "Couldn't save the copy to “\(saved.place)”"), failed: true)
             }
         }
         return true
@@ -325,7 +325,7 @@ private struct MediaViewerOverlay: ViewModifier {
                 placeholder: { host.thumbnail($0) },
                 embedded: true,
                 onIndexChange: { position in if shown.indices.contains(position) { host.index = shown[position] } },
-                slowStartMessage: "Waking up the backup drive…",
+                slowStartMessage: String(localized: "Waking up the backup drive…"),
                 loops: true,
                 onClose: { host.close() }
             )
@@ -527,8 +527,8 @@ private struct ViewerTitle: View {
     /// Today, Yesterday, the weekday within the last week, otherwise the date.
     static func day(_ date: Date, now: Date = .now) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInToday(date) { return String(localized: "Today") }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday") }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? .max
         return (0..<7).contains(days) ? date.formatted(.dateTime.weekday(.wide)) : date.formatted(date: .long, time: .omitted)
     }

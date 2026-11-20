@@ -40,10 +40,10 @@ struct Day<Item: Dated>: Identifiable {
     }
 
     var title: String {
-        guard let date else { return "No Date" }
+        guard let date else { return String(localized: "No Date") }
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.isDateInToday(date) { return String(localized: "Today") }
+        if calendar.isDateInYesterday(date) { return String(localized: "Yesterday") }
         if calendar.isDate(date, equalTo: .now, toGranularity: .year) {
             return date.formatted(.dateTime.weekday(.wide).day().month(.wide))
         }
@@ -78,6 +78,7 @@ struct DayHeader<Item: Dated>: View {
             Spacer()
             Button("Select", action: selectAll)
                 .buttonStyle(.borderless)
+                .help("Select everything from this day")
                 // Never the keyboard's: Space pressed it (selecting the whole day) instead of opening
                 // the selected item. And not there while it can't be seen.
                 .focusable(false)
@@ -512,7 +513,7 @@ struct OpenWithMenu: View {
         let panel = NSOpenPanel()
         panel.directoryURL = URL(filePath: "/Applications")
         panel.allowedContentTypes = [.application]
-        panel.message = "Choose an app to open \(urls.count == 1 ? "this file" : "these files")."
+        panel.message = String(localized: "Choose an app to open \(urls.count == 1 ? String(localized: "this file") : String(localized: "these files")).")
         guard panel.runModal() == .OK, let app = panel.url else { return }
         open(with: app)
     }
@@ -735,7 +736,7 @@ extension MediaLibrary.Kind {
 struct SourcePicker: View {
     @Environment(BackupServer.self) private var server
     @Binding var selection: String
-    var everything = "Everything on the Drive"
+    var everything = String(localized: "Everything on the Drive")
 
     var body: some View {
         Picker("Show", selection: $selection) {
@@ -754,9 +755,9 @@ struct SourcePicker: View {
     /// Names only the devices, so it can't be taken to include the drive.
     private var allDevices: String {
         switch (server.devices.contains { !$0.isPad }, server.devices.contains(where: \.isPad)) {
-        case (true, true): "On iPhones & iPads"
-        case (false, true): "On All iPads"
-        default: "On All iPhones"
+        case (true, true): String(localized: "On iPhones & iPads")
+        case (false, true): String(localized: "On All iPads")
+        default: String(localized: "On All iPhones")
         }
     }
 }
@@ -765,9 +766,9 @@ extension BackupServer {
     /// "your iPhones", "your iPads", or "your iPhones and iPads", for the devices paired.
     var devicesName: String {
         switch (devices.contains { !$0.isPad }, devices.contains(where: \.isPad)) {
-        case (true, true): "your iPhones and iPads"
-        case (false, true): "your iPads"
-        default: "your iPhones"
+        case (true, true): String(localized: "your iPhones and iPads")
+        case (false, true): String(localized: "your iPads")
+        default: String(localized: "your iPhones")
         }
     }
 }

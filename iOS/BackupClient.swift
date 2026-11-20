@@ -44,11 +44,11 @@ final class BackupClient {
 
         var errorDescription: String? {
             switch self {
-            case .notPaired: "Pair with your Mac first."
-            case .noPhotosAccess: "Imago needs access to your photos. Turn it on in Settings › Privacy › Photos."
-            case .unexpectedReply: "Your Mac sent something unexpected. Make sure both apps are up to date."
+            case .notPaired: String(localized: "Pair with your Mac first.")
+            case .noPhotosAccess: String(localized: "Imago needs access to your photos. Turn it on in Settings › Privacy › Photos.")
+            case .unexpectedReply: String(localized: "Your Mac sent something unexpected. Make sure both apps are up to date.")
             case .refused(let reason): reason
-            case .pairingRejected: "Your Mac didn't accept the code. Open Add iPhone on the Mac and scan again."
+            case .pairingRejected: String(localized: "Your Mac didn't accept the code. Open Add iPhone on the Mac and scan again.")
             }
         }
     }
@@ -441,10 +441,10 @@ final class BackupClient {
     }
 
     private static func describe(_ error: Error) -> String {
-        if case BackupServiceError.serverNotFound = error { return "Can't find your Mac on this Wi-Fi." }
-        if case PeerConnection.PeerError.lostNetwork = error { return "Wi-Fi connection lost." }
-        if case PeerConnection.PeerError.stalled = error { return "Your Mac stopped responding." }
-        return "The connection to your Mac dropped."
+        if case BackupServiceError.serverNotFound = error { return String(localized: "Can't find your Mac on this Wi-Fi.") }
+        if case PeerConnection.PeerError.lostNetwork = error { return String(localized: "Wi-Fi connection lost.") }
+        if case PeerConnection.PeerError.stalled = error { return String(localized: "Your Mac stopped responding.") }
+        return String(localized: "The connection to your Mac dropped.")
     }
 
     /// Records progress within the current step; reported to iOS at most a few times a second.
@@ -504,13 +504,13 @@ final class BackupClient {
 
         switch phase {
         case .searching, .connecting:
-            task.updateTitle("Backing up photos", subtitle: "Connecting to \(credential?.serverName ?? "your Mac")…")
+            task.updateTitle(String(localized: "Backing up photos"), subtitle: String(localized: "Connecting to \(credential?.serverName ?? String(localized: "your Mac"))…"))
         case .comparing:
-            task.updateTitle("Backing up photos", subtitle: "Comparing with your Mac…")
+            task.updateTitle(String(localized: "Backing up photos"), subtitle: String(localized: "Comparing with your Mac…"))
         case .uploading(let done, let total, let current):
-            task.updateTitle("Backing up \(done.formatted()) of \(total.formatted())", subtitle: current)
+            task.updateTitle(String(localized: "Backing up \(done.formatted()) of \(total.formatted())"), subtitle: current)
         case .waitingToRetry(_, let seconds, let reason):
-            task.updateTitle("Waiting for your Mac", subtitle: "\(reason) Retrying in \(seconds)s.")
+            task.updateTitle(String(localized: "Waiting for your Mac"), subtitle: String(localized: "\(reason) Retrying in \(seconds)s."))
         default:
             break
         }
@@ -526,7 +526,7 @@ final class BackupClient {
         var replies = connectedReplies
         defer { peer.cancel() }
         let reports = unsentReports
-        if !reports.isEmpty { try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.changeReport(reports))) } }
+        if !reports.isEmpty { try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.changeReport(reports))) } }
 
         startStep()
         phase = .comparing
@@ -548,12 +548,12 @@ final class BackupClient {
             try Task.checkCancellation()
             setStepFraction(0.7 + 0.3 * Double(start) / Double(max(manifest.count, 1)))
             let batch = Array(manifest[start..<min(start + Self.manifestBatchSize, manifest.count)])
-            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.manifest(batch))) }
-            guard case .control(.need(let batchNeeds))? = try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
+            try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.manifest(batch))) }
+            guard case .control(.need(let batchNeeds))? = try await peer.withDeadline(Self.replyTimeout, String(localized: "waiting for your Mac"), { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
             needs += batchNeeds
         }
-        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.manifestEnd(albums: PhotoLibrary.albumTitles()))) }
-        guard case .control(.changes(let changes))? = try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
+        try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.manifestEnd(albums: PhotoLibrary.albumTitles()))) }
+        guard case .control(.changes(let changes))? = try await peer.withDeadline(Self.replyTimeout, String(localized: "waiting for your Mac"), { try await replies.next(isolation: #isolation) }) else { throw ClientError.unexpectedReply }
         // The Mac handles frames in order, so it recorded the reports before replying.
         unsentReports.removeAll { reports.contains($0) }
         receive(changes)
@@ -584,7 +584,7 @@ final class BackupClient {
                 try await Self.upload(descriptor, metadata: metadata, from: need.offset, over: peer) { fraction in
                     Task { @MainActor [weak self] in self?.setStepFraction(fraction) }
                 }
-                switch try await peer.withDeadline(Self.verifyTimeout, "waiting for your Mac to check the file", { try await replies.next(isolation: #isolation) }) {
+                switch try await peer.withDeadline(Self.verifyTimeout, String(localized: "waiting for your Mac to check the file"), { try await replies.next(isolation: #isolation) }) {
                 case .control(.stored)?: sent += 1; stored = true
                 case .control(.failed)?: failed += 1
                 default: throw ClientError.unexpectedReply
@@ -604,7 +604,7 @@ final class BackupClient {
             }
         }
 
-        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.goodbye)) }
+        try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.goodbye)) }
         return .finished(sent: sent, failed: failed)
     }
 
@@ -627,19 +627,19 @@ final class BackupClient {
             } catch let error as NWError {
                 // A TLS failure means the Mac doesn't know this phone's key. Anything else is network trouble.
                 if case .tls = error {
-                    throw ClientError.refused("Your Mac didn't accept this \(Device.kind). If you removed it on the Mac, unpair here and pair again.")
+                    throw ClientError.refused(String(localized: "Your Mac didn't accept this \(Device.kind). If you removed it on the Mac, unpair here and pair again."))
                 }
                 throw error
             }
             var replies = peer.frames.makeAsyncIterator()
 
             guard let binding = peer.keyingMaterial(label: HelloProof.exporterLabel) else { throw ClientError.unexpectedReply }
-            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.hello(
+            try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.hello(
                 deviceID: credential.deviceID, deviceName: deviceName, protocolVersion: ProtocolVersion.current,
                 proof: HelloProof.make(key: credential.key, deviceID: credential.deviceID, binding: binding),
                 deviceKind: Device.kind
             ))) }
-            switch try await peer.withDeadline(Self.replyTimeout, "waiting for your Mac", { try await replies.next(isolation: #isolation) }) {
+            switch try await peer.withDeadline(Self.replyTimeout, String(localized: "waiting for your Mac"), { try await replies.next(isolation: #isolation) }) {
             case .control(.welcome)?: return (peer, replies)
             case .control(.unavailable(let reason))?: throw ClientError.refused(reason)
             default: throw ClientError.unexpectedReply
@@ -661,7 +661,7 @@ final class BackupClient {
 
         let size = UInt64(try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
         let sha256 = try FileHasher.sha256(of: url)
-        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.beginResource(descriptor, metadata: metadata, size: size))) }
+        try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.beginResource(descriptor, metadata: metadata, size: size))) }
 
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -669,11 +669,11 @@ final class BackupClient {
         try handle.seek(toOffset: position)
         // Read inside a pool, so each piece is let go once sent instead of the whole video piling up.
         while let data = try autoreleasepool(invoking: { try handle.read(upToCount: FrameCodec.chunkSize) }), !data.isEmpty {
-            try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.chunk(key: descriptor.key, offset: position, data: data)) }
+            try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.chunk(key: descriptor.key, offset: position, data: data)) }
             position += UInt64(data.count)
             progress(0.5 + 0.5 * Double(position) / Double(max(size, 1)))
         }
-        try await peer.withDeadline(Self.sendTimeout, "sending to your Mac") { try await peer.send(.control(.endResource(descriptor.key, sha256: sha256))) }
+        try await peer.withDeadline(Self.sendTimeout, String(localized: "sending to your Mac")) { try await peer.send(.control(.endResource(descriptor.key, sha256: sha256))) }
     }
 
     // MARK: Changes from the Mac
@@ -686,7 +686,7 @@ final class BackupClient {
         // Arrived while Imago isn't on screen (an overnight backup): tell the user, once per change.
         let fresh = macChanges.filter { !notifiedChangeIDs.contains($0.id) }
         if !fresh.isEmpty, UIApplication.shared.applicationState != .active {
-            MacChangeNotifications.post(macChanges, mac: credential?.serverName ?? "Your Mac")
+            MacChangeNotifications.post(macChanges, mac: credential?.serverName ?? String(localized: "Your Mac"))
             notifiedChangeIDs = Array((notifiedChangeIDs + fresh.map(\.id)).suffix(500))
         }
         scheduleAutoApply()
@@ -867,7 +867,7 @@ private final class BackgroundTime {
     private var id: UIBackgroundTaskIdentifier = .invalid
 
     func begin() {
-        id = UIApplication.shared.beginBackgroundTask(withName: "Photo backup") { [weak self] in
+        id = UIApplication.shared.beginBackgroundTask(withName: String(localized: "Photo backup")) { [weak self] in
             MainActor.assumeIsolated { self?.end() }
         }
     }

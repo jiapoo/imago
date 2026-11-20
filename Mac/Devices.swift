@@ -29,18 +29,18 @@ struct PairedDevice: Codable, Identifiable, Hashable {
     /// The palette, a column per hue (from Imago's red around the wheel): bright, then soft, then deep,
     /// then a row of neutrals and earth tones.
     static let palette: [[Swatch]] = [
-        [.init(name: "Red", hex: "DD1B3F"), .init(name: "Orange", hex: "FF8A00"), .init(name: "Yellow", hex: "FFC800"),
-         .init(name: "Green", hex: "2DBE60"), .init(name: "Teal", hex: "14B8A6"), .init(name: "Blue", hex: "2F7CF6"),
-         .init(name: "Purple", hex: "8B5CF6"), .init(name: "Pink", hex: "EC4899")],
-        [.init(name: "Coral", hex: "FF7A85"), .init(name: "Apricot", hex: "FFB36B"), .init(name: "Lemon", hex: "FFE27A"),
-         .init(name: "Mint", hex: "7FDCA0"), .init(name: "Aqua", hex: "67E3D2"), .init(name: "Sky", hex: "7DB5FF"),
-         .init(name: "Lavender", hex: "C3A8FF"), .init(name: "Blush", hex: "F9A8D4")],
-        [.init(name: "Crimson", hex: "9F1239"), .init(name: "Rust", hex: "C2410C"), .init(name: "Ochre", hex: "A16207"),
-         .init(name: "Forest", hex: "15803D"), .init(name: "Pine", hex: "0F766E"), .init(name: "Navy", hex: "1D4ED8"),
-         .init(name: "Violet", hex: "6D28D9"), .init(name: "Berry", hex: "BE185D")],
-        [.init(name: "Charcoal", hex: "1F2937"), .init(name: "Slate", hex: "475569"), .init(name: "Gray", hex: "8A9099"),
-         .init(name: "Silver", hex: "B8BEC7"), .init(name: "Sand", hex: "D2B48C"), .init(name: "Brown", hex: "8B5E3C"),
-         .init(name: "Espresso", hex: "4E342E"), .init(name: "Olive", hex: "6B7D2C")],
+        [.init(name: String(localized: "Red"), hex: "DD1B3F"), .init(name: String(localized: "Orange"), hex: "FF8A00"), .init(name: String(localized: "Yellow"), hex: "FFC800"),
+         .init(name: String(localized: "Green"), hex: "2DBE60"), .init(name: String(localized: "Teal"), hex: "14B8A6"), .init(name: String(localized: "Blue"), hex: "2F7CF6"),
+         .init(name: String(localized: "Purple"), hex: "8B5CF6"), .init(name: String(localized: "Pink"), hex: "EC4899")],
+        [.init(name: String(localized: "Coral"), hex: "FF7A85"), .init(name: String(localized: "Apricot"), hex: "FFB36B"), .init(name: String(localized: "Lemon"), hex: "FFE27A"),
+         .init(name: String(localized: "Mint"), hex: "7FDCA0"), .init(name: String(localized: "Aqua"), hex: "67E3D2"), .init(name: String(localized: "Sky"), hex: "7DB5FF"),
+         .init(name: String(localized: "Lavender"), hex: "C3A8FF"), .init(name: String(localized: "Blush"), hex: "F9A8D4")],
+        [.init(name: String(localized: "Crimson"), hex: "9F1239"), .init(name: String(localized: "Rust"), hex: "C2410C"), .init(name: String(localized: "Ochre"), hex: "A16207"),
+         .init(name: String(localized: "Forest"), hex: "15803D"), .init(name: String(localized: "Pine"), hex: "0F766E"), .init(name: String(localized: "Navy"), hex: "1D4ED8"),
+         .init(name: String(localized: "Violet"), hex: "6D28D9"), .init(name: String(localized: "Berry"), hex: "BE185D")],
+        [.init(name: String(localized: "Charcoal"), hex: "1F2937"), .init(name: String(localized: "Slate"), hex: "475569"), .init(name: String(localized: "Gray"), hex: "8A9099"),
+         .init(name: String(localized: "Silver"), hex: "B8BEC7"), .init(name: String(localized: "Sand"), hex: "D2B48C"), .init(name: String(localized: "Brown"), hex: "8B5E3C"),
+         .init(name: String(localized: "Espresso"), hex: "4E342E"), .init(name: String(localized: "Olive"), hex: "6B7D2C")],
     ]
 
     /// The bright row, for the quick picker in menus.
@@ -116,7 +116,7 @@ struct LocationInfo: Equatable {
 
         let components = url.standardizedFileURL.pathComponents
         let mountedName = components.count > 2 && components[1] == "Volumes" ? components[2] : nil
-        volumeName = values?.volumeName ?? mountedName ?? "This Mac"
+        volumeName = values?.volumeName ?? mountedName ?? String(localized: "This Mac")
 
         if values?.volumeIsLocal == false {
             kind = .network
@@ -139,9 +139,9 @@ struct LocationInfo: Equatable {
 
     var kindDescription: String {
         switch kind {
-        case .internalDisk: "Internal disk"
-        case .external: "External drive"
-        case .network: "Network drive"
+        case .internalDisk: String(localized: "Internal disk")
+        case .external: String(localized: "External drive")
+        case .network: String(localized: "Network drive")
         }
     }
 

@@ -334,14 +334,14 @@ struct MainView: View {
         guard let question = library.duplicateQuestion else { return "" }
         let folder = (question.folder as NSString).lastPathComponent
         return question.duplicates == question.total
-            ? (question.total == 1 ? "“\(folder)” already has this file" : "“\(folder)” already has all \(question.total) files")
-            : "\(question.duplicates) of \(question.total) files are already in “\(folder)”"
+            ? (question.total == 1 ? String(localized: "“\(folder)” already has this file") : String(localized: "“\(folder)” already has all \(question.total) files"))
+            : String(localized: "\(question.duplicates) of \(question.total) files are already in “\(folder)”")
     }
 
     private var duplicateMessage: String {
         guard let question = library.duplicateQuestion else { return "" }
         let verb = question.isMove ? "moving" : "copying"
-        return "They're exactly the same as files already there. Skip them and go on \(verb) the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted."
+        return String(localized: "They're exactly the same as files already there. Skip them and go on \(verb) the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted.")
     }
 
     /// Copy | Move: what putting photos into a folder does. Move asks first.
@@ -404,10 +404,10 @@ struct ActivityOverlay: View {
     static func line(_ activity: MediaLibrary.Activity) -> String {
         guard !activity.finishing else { return activity.title }
         if activity.total > 1 {
-            return "\(activity.title) · \(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())"
+            return String(localized: "\(activity.title) · \(min(activity.done + 1, activity.total).formatted()) of \(activity.total.formatted())")
         }
         if let bytes = activity.bytes, bytes.total > 0 {
-            return "\(activity.title) · \((Double(bytes.done) / Double(bytes.total)).formatted(.percent.precision(.fractionLength(0))))"
+            return String(localized: "\(activity.title) · \((Double(bytes.done) / Double(bytes.total)).formatted(.percent.precision(.fractionLength(0))))")
         }
         return activity.title
     }
@@ -606,7 +606,7 @@ struct MenuBarPanel: View {
                         Image(systemName: "iphone").foregroundStyle(.secondary)
                         Text(device.name).lineLimit(1)
                         Spacer()
-                        Text(server.summaries[device.id].map { $0.isPartial ? "Not finished" : ($0.lastBackup?.shortRelative ?? "Never") } ?? "Never")
+                        Text(server.summaries[device.id].map { $0.isPartial ? String(localized: "Not finished") : ($0.lastBackup?.shortRelative ?? String(localized: "Never")) } ?? String(localized: "Never"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .font(.callout)
@@ -620,6 +620,7 @@ struct MenuBarPanel: View {
                     NSApp.activate()
                 }
                 .buttonStyle(.borderedProminent)
+                .help("Open Imago's window")
                 Spacer()
                 Button {
                     NSApp.terminate(nil)
@@ -670,8 +671,9 @@ private struct ChangesSettings: View {
                 Text("Apply Automatically").tag(true)
             }
             .pickerStyle(.radioGroup)
+            .help("When an iPhone deletes photos, ask you first or delete their backups here too")
             Text(server.acceptPhoneChanges
-                 ? "Their backups on this Mac go straight to Recently Deleted, where you can put them back for \(server.trashDays > 0 ? "\(server.trashDays) days" : "as long as you like")."
+                 ? "Their backups on this Mac go straight to Recently Deleted, where you can put them back for \(server.trashDays > 0 ? "\(server.trashDays) days" : String(localized: "as long as you like"))."
                  : "Their backups stay on this Mac, and the bell asks whether to delete them here too, keep them, or put them back on the iPhone.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -696,6 +698,7 @@ private struct OvernightSettings: View {
                     NSWorkspace.shared.open(url)
                 }
             }
+            .help("Open System Settings › Energy, to turn on Wake for network access")
             Spacer()
         }
         .foregroundStyle(.primary)

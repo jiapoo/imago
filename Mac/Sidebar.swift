@@ -37,6 +37,7 @@ struct Sidebar: View {
                     Label("New Folder", systemImage: "plus.circle.fill")
                 }
                 .buttonStyle(.plain)
+                .help("Make a folder on the backup drive for your photos")
                 .foregroundStyle(.tint)
                 .disabled(!server.location.isAvailable)
             } header: {
@@ -293,16 +294,16 @@ private struct PhoneSidebarItem: View {
         let summary = server.summaries[device.id]
         var parts: [String] = []
         if let session = server.session(for: device) {
-            parts.append(session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)")
+            parts.append(session.total == 0 ? String(localized: "Comparing libraries…") : String(localized: "Backing up \(session.received) of \(session.total)"))
         } else if summary?.isPartial == true {
-            parts.append("Backup not finished")
+            parts.append(String(localized: "Backup not finished"))
         } else if let last = summary?.lastBackup {
-            parts.append("Backed up \(last.shortRelative)")
+            parts.append(String(localized: "Backed up \(last.shortRelative)"))
         } else {
-            parts.append("No backup yet")
+            parts.append(String(localized: "No backup yet"))
         }
         if let count = summary?.assetCount, count > 0 { parts.append("\(count.formatted()) items") }
-        if server.liveDevices.contains(device.id) { parts.append("Imago open on it") }
+        if server.liveDevices.contains(device.id) { parts.append(String(localized: "Imago open on it")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -351,9 +352,9 @@ struct PhoneRow: View {
     }
 
     private var help: String {
-        if server.session(for: device) != nil { return "Backing up now" }
+        if server.session(for: device) != nil { return String(localized: "Backing up now") }
         if server.liveDevices.contains(device.id) { return "Imago is open on \(device.name)" }
-        if server.summaries[device.id]?.isPartial == true { return "The last backup didn't finish" }
+        if server.summaries[device.id]?.isPartial == true { return String(localized: "The last backup didn't finish") }
         return device.name
     }
 }
@@ -369,7 +370,7 @@ struct DeviceColorMenu: View {
         let current = server.colorHex(of: device.id)
         // A color from beyond the bright row shows as an extra swatch, picked.
         let swatches = PairedDevice.brights.contains { $0.hex == current }
-            ? PairedDevice.brights : PairedDevice.brights + [.init(name: "Current Color", hex: current)]
+            ? PairedDevice.brights : PairedDevice.brights + [.init(name: String(localized: "Current Color"), hex: current)]
         Picker("Color", selection: Binding(get: { current }, set: { server.setColor($0, for: device) })) {
             ForEach(swatches) { swatch in
                 Image(nsImage: Self.swatch(swatch.color))

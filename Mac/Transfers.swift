@@ -154,7 +154,7 @@ private final class FileDragSource: NSObject, NSDraggingSource {
 /// "Send to 007", or "Move to 007" for another iPhone's photos with Move on (see `MediaLibrary.send`).
 func sendLabel(_ items: [MediaItem], _ device: PairedDevice) -> String {
     let moving = TransferMode.current == .move && items.contains { $0.deviceID != nil && $0.deviceID != device.id }
-    return (moving ? "Move to " : "Send to ") + device.name
+    return (moving ? String(localized: "Move to ") : String(localized: "Send to ")) + device.name
 }
 
 enum TransferMode: String, CaseIterable, Identifiable {
@@ -231,7 +231,7 @@ extension MediaLibrary {
             return (bySize, candidates)
         }.value
         guard !candidates.isEmpty else { return [:] }
-        activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count, canCancel: true)
+        activity = Activity(title: String(localized: "Checking for duplicates"), done: 0, total: candidates.count, canCancel: true)
         defer { activity = nil }
         stopFlag.set(false)
         var identical: [URL: URL] = [:]
@@ -283,7 +283,7 @@ extension MediaLibrary {
         switch mode {
         case .copy:
             let copied = await copy(items, toFolder: path, server: server)
-            history.record(FileHistory.combine("Copy to “\((path as NSString).lastPathComponent)”", [replaced, copied]))
+            history.record(FileHistory.combine(String(localized: "Copy to “\((path as NSString).lastPathComponent)”"), [replaced, copied]))
         case .move:
             // One step: ⌘Z takes the iPhone's deletion back and returns the files together.
             let fromPhone = removable(items)
@@ -293,7 +293,7 @@ extension MediaLibrary {
             let arrived = Set(self.items.filter { $0.folder == path }.map(\.id))
             let leaving = stopFlag.isSet ? [] : fromPhone.filter { arrived.contains($0.id) }
             let removed = leaving.isEmpty ? nil : await removeFromPhone(leaving, server: server)
-            let name = "Move to “\((path as NSString).lastPathComponent)”"
+            let name = String(localized: "Move to “\((path as NSString).lastPathComponent)”")
             history.record(FileHistory.combine(name, [replaced, moved, removed]))
         }
     }
@@ -323,8 +323,8 @@ extension MediaLibrary {
         if alreadyThere > 0, case .folder(let path) = place {
             let name = path.isEmpty ? server.location.url.lastPathComponent : (path as NSString).lastPathComponent
             note(moving.isEmpty && outside.isEmpty
-                 ? (alreadyThere == 1 ? "It's already in “\(name)”" : "All \(alreadyThere) are already in “\(name)”")
-                 : "\(alreadyThere) \(alreadyThere == 1 ? "was" : "were") already in “\(name)”")
+                 ? (alreadyThere == 1 ? String(localized: "It's already in “\(name)”") : String(localized: "All \(alreadyThere) are already in “\(name)”"))
+                 : String(localized: "\(alreadyThere) \(alreadyThere == 1 ? "was" : "were") already in “\(name)”"))
         }
         guard !moving.isEmpty || !outside.isEmpty else { return alreadyThere > 0 }
         DragSession.urls = []
@@ -351,7 +351,7 @@ extension MediaLibrary {
                 }
                 if !files.isEmpty {
                     let copied = await copyIn(files, to: path, server: server)
-                    history.record(FileHistory.combine("Copy to “\((path as NSString).lastPathComponent)”", [replaced, copied]))
+                    history.record(FileHistory.combine(String(localized: "Copy to “\((path as NSString).lastPathComponent)”"), [replaced, copied]))
                 }
             }
         }
@@ -367,7 +367,7 @@ extension MediaLibrary {
         let isMove = TransferMode.current == .move
         let (ids, copies) = await server.send(items, to: device)
         guard !ids.isEmpty else { return nil }
-        let name = (isMove ? "Move to " : "Send to ") + device.name
+        let name = (isMove ? String(localized: "Move to ") : String(localized: "Send to ")) + device.name
         // Undo takes back what hasn't gone yet; what the iPhone added stays there.
         let sent = FileHistory.Step(name: name) {
             server.withdrawRestore(Set(ids), on: device, removing: copies)
@@ -419,7 +419,7 @@ extension MediaLibrary {
         let place = path.isEmpty ? server.location.url.lastPathComponent : FolderMark.name(path)
         // An edit of an iPhone's photo came from that iPhone, as the photo did.
         let cameFrom = item.deviceID.map { [staged: $0] } ?? [:]
-        let written = Task { await copyFiles([staged], to: path, server: server, title: "Saving a copy to “\(place)”", cameFrom: cameFrom).undo }
+        let written = Task { await copyFiles([staged], to: path, server: server, title: String(localized: "Saving a copy to “\(place)”"), cameFrom: cameFrom).undo }
         return (place, staged, written)
     }
 
@@ -433,7 +433,7 @@ extension MediaLibrary {
     func copyFiles(_ files: [URL], to path: String, server: BackupServer, title: String? = nil,
                    cameFrom: [URL: String] = [:]) async -> (undo: FileHistory.Step?, copies: [URL]) {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        activity = Activity(title: title ?? "Copying to “\((path as NSString).lastPathComponent)”", done: 0, total: files.count, canCancel: true)
+        activity = Activity(title: title ?? String(localized: "Copying to “\((path as NSString).lastPathComponent)”"), done: 0, total: files.count, canCancel: true)
         stopFlag.set(false)
         let stop = stopFlag
         beginWork()

@@ -60,9 +60,9 @@ struct HomeView: View {
             }
             Spacer(minLength: 12)
             if server.devices.isEmpty {
-                heroButton("Add iPhone", symbol: "plus") { showingAddPhone = true }
+                heroButton(String(localized: "Add iPhone"), symbol: "plus") { showingAddPhone = true }
             } else {
-                heroButton("Open Library", symbol: "photo.on.rectangle.angled") { selection = .library }
+                heroButton(String(localized: "Open Library"), symbol: "photo.on.rectangle.angled") { selection = .library }
             }
         }
         .foregroundStyle(.white)
@@ -96,6 +96,7 @@ struct HomeView: View {
                 .foregroundStyle(heroTint)
         }
         .buttonStyle(.plain)
+        .help(title)
     }
 
     // MARK: Numbers
@@ -104,14 +105,14 @@ struct HomeView: View {
         let location = server.location
         let live = server.devices.count { server.liveDevices.contains($0.id) }
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], spacing: 16) {
-            NumberTile(title: "Photos & videos", value: server.totalAssets.formatted(),
-                       detail: server.devices.count == 1 ? "from 1 iPhone" : "from \(server.devices.count) iPhones", symbol: "photo.stack")
-            NumberTile(title: "On the backup drive", value: server.totalBytes.bytes,
+            NumberTile(title: String(localized: "Photos & videos"), value: server.totalAssets.formatted(),
+                       detail: server.devices.count == 1 ? String(localized: "from 1 iPhone") : String(localized: "from \(server.devices.count) iPhones"), symbol: "photo.stack")
+            NumberTile(title: String(localized: "On the backup drive"), value: server.totalBytes.bytes,
                        detail: location.volumeName, symbol: "externaldrive")
-            NumberTile(title: "Free on the drive", value: location.availableBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "–",
-                       detail: location.totalBytes.map { "of \($0.formatted(.byteCount(style: .file)))" }, symbol: "chart.pie")
-            NumberTile(title: "Last backup", value: server.lastBackup.map { $0.formatted(.relative(presentation: .named)) } ?? "–",
-                       detail: live > 0 ? "Imago open on \(live == 1 ? "1 iPhone" : "\(live) iPhones")" : nil, symbol: "clock")
+            NumberTile(title: String(localized: "Free on the drive"), value: location.availableBytes.map { $0.formatted(.byteCount(style: .file)) } ?? "–",
+                       detail: location.totalBytes.map { String(localized: "of \($0.formatted(.byteCount(style: .file)))") }, symbol: "chart.pie")
+            NumberTile(title: String(localized: "Last backup"), value: server.lastBackup.map { $0.formatted(.relative(presentation: .named)) } ?? "–",
+                       detail: live > 0 ? String(localized: "Imago open on \(live == 1 ? String(localized: "1 iPhone") : String(localized: "\(live) iPhones"))") : nil, symbol: "clock")
         }
     }
 }
@@ -123,7 +124,7 @@ private struct BackingUpCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            CardTitle(title: "Backing up now", symbol: "arrow.up.circle")
+            CardTitle(title: String(localized: "Backing up now"), symbol: "arrow.up.circle")
             ForEach(Array(server.sessions.values).filter { $0.deviceID != nil }) { session in
                 let name = server.devices.first { $0.id == session.deviceID }?.name ?? "iPhone"
                 VStack(alignment: .leading, spacing: 6) {
@@ -177,7 +178,7 @@ private struct PhoneCard: View {
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 20) {
                     figure((summary?.assetCount ?? 0).formatted(), "items")
-                    figure((summary?.totalBytes ?? 0).bytes, "on the drive")
+                    figure((summary?.totalBytes ?? 0).bytes, String(localized: "on the drive"))
                     Spacer()
                     Image(systemName: "arrow.up.right").font(.caption.weight(.bold)).foregroundStyle(.tertiary)
                         .opacity(hovering ? 1 : 0)
@@ -204,11 +205,11 @@ private struct PhoneCard: View {
 
     private func status(_ summary: BackupStore.Summary?) -> String {
         if let session = server.session(for: device) {
-            return session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)"
+            return session.total == 0 ? String(localized: "Comparing libraries…") : String(localized: "Backing up \(session.received) of \(session.total)")
         }
-        if summary?.isPartial == true { return "Backup not finished" }
-        if let last = summary?.lastBackup { return "Backed up \(last.shortRelative)" }
-        return "No backup yet"
+        if summary?.isPartial == true { return String(localized: "Backup not finished") }
+        if let last = summary?.lastBackup { return String(localized: "Backed up \(last.shortRelative)") }
+        return String(localized: "No backup yet")
     }
 }
 
@@ -225,9 +226,9 @@ private struct ShortcutsCard: View {
             Shortcut(title: "Library", symbol: "photo.on.rectangle.angled",
                      detail: "\(library.items.count.formatted()) items") { selection = .library }
             Shortcut(title: "Large Files", symbol: "externaldrive.fill.badge.minus",
-                     detail: large.isEmpty ? "None" : "\(large.count.formatted()) · \(large.reduce(0) { $0 + $1.bytes }.bytes)") { selection = .large }
+                     detail: large.isEmpty ? String(localized: "None") : "\(large.count.formatted()) · \(large.reduce(0) { $0 + $1.bytes }.bytes)") { selection = .large }
             Shortcut(title: "Recently Deleted", symbol: "trash",
-                     detail: library.trash.isEmpty ? "Empty" : "\(library.trash.count.formatted()) items") { selection = .trash }
+                     detail: library.trash.isEmpty ? String(localized: "Empty") : "\(library.trash.count.formatted()) items") { selection = .trash }
         }
     }
 }
@@ -260,6 +261,7 @@ private struct Shortcut: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
+        .help("Open \(title)")
         .onHover { hovering = $0 }
     }
 }
@@ -274,8 +276,9 @@ private struct DriveCard: View {
     var body: some View {
         let location = server.location
         VStack(alignment: .leading, spacing: 16) {
-            CardTitle(title: "Backup drive", symbol: "externaldrive") {
+            CardTitle(title: String(localized: "Backup drive"), symbol: "externaldrive") {
                 Button("Change…", action: manage).buttonStyle(.link)
+                    .help("Choose another folder or drive for the backups")
             }
             HStack(spacing: 14) {
                 Image(systemName: location.symbol)
@@ -299,9 +302,10 @@ private struct DriveCard: View {
                     ProgressView(value: used)
                         .tint(used > 0.9 ? .red : used > 0.75 ? .orange : .imago)
                     HStack {
-                        Text("\(free.formatted(.byteCount(style: .file))) free of \(total.formatted(.byteCount(style: .file)))")
+                        Text(String(localized: "\(free.formatted(.byteCount(style: .file))) free of \(total.formatted(.byteCount(style: .file)))"))
                         Spacer()
                         Button("Show in Finder") { server.revealInFinder() }.buttonStyle(.link)
+                            .help("Show the backup folder in Finder")
                     }
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -318,7 +322,7 @@ private struct RecentCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            CardTitle(title: "Recent activity", symbol: "clock.arrow.circlepath")
+            CardTitle(title: String(localized: "Recent activity"), symbol: "clock.arrow.circlepath")
             if server.log.isEmpty {
                 Text("Nothing yet. What happens while Imago is open shows here.")
                     .font(.callout).foregroundStyle(.secondary)

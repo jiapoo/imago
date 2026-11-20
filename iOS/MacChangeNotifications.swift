@@ -17,10 +17,10 @@ enum MacChangeNotifications {
     static func post(_ changes: [LibraryChange], mac: String) {
         guard !changes.isEmpty else { return }
         let content = UNMutableNotificationContent()
-        content.title = changes.count == 1 ? "\(mac) has a change for your photos" : "\(mac) has \(changes.count) changes for your photos"
+        content.title = changes.count == 1 ? String(localized: "\(mac) has a change for your photos") : String(localized: "\(mac) has \(changes.count) changes for your photos")
         content.body = changes.prefix(3).map(\.summary).joined(separator: " · ")
-            + (changes.count > 3 ? " · and \(changes.count - 3) more" : "")
-            + (changes.contains { $0.action == .delete } ? ". Open Imago to confirm." : ". Open Imago to review.")
+            + (changes.count > 3 ? String(localized: " · and \(changes.count - 3) more") : "")
+            + (changes.contains { $0.action == .delete } ? String(localized: ". Open Imago to confirm.") : String(localized: ". Open Imago to review."))
         content.sound = .default
         content.badge = NSNumber(value: changes.count)
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil))

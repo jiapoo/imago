@@ -68,18 +68,18 @@ struct ContentView: View {
 }
 
 extension ContentView {
-    private var mac: String { client.credential?.serverName ?? "Your Mac" }
+    private var mac: String { client.credential?.serverName ?? String(localized: "Your Mac") }
     private var askTitle: String {
         let changes = client.askPrompt
-        return changes.count == 1 ? "\(changes[0].summary)?" : "\(mac) asks for \(changes.count) changes"
+        return changes.count == 1 ? "\(changes[0].summary)?" : String(localized: "\(mac) asks for \(changes.count) changes")
     }
     private var askMessage: String {
         let changes = client.askPrompt
-        var lines = changes.count == 1 ? ["\(mac) asks for this change."] : changes.prefix(6).map(\.summary)
+        var lines = changes.count == 1 ? [String(localized: "\(mac) asks for this change.")] : changes.prefix(6).map(\.summary)
         if changes.count > 6 { lines.append("and \(changes.count - 6) more") }
-        if changes.contains(where: { $0.addsFromMac }) { lines.append("New items are photos or videos this \(Device.kind) doesn't have, such as an edit made on the Mac.") }
-        if changes.contains(where: { $0.action == .delete }) { lines.append("iOS asks once more before deleting.") }
-        lines.append("To make changes from \(mac) without asking, turn on “Apply changes from Mac automatically” in Imago.")
+        if changes.contains(where: { $0.addsFromMac }) { lines.append(String(localized: "New items are photos or videos this \(Device.kind) doesn't have, such as an edit made on the Mac.")) }
+        if changes.contains(where: { $0.action == .delete }) { lines.append(String(localized: "iOS asks once more before deleting.")) }
+        lines.append(String(localized: "To make changes from \(mac) without asking, turn on “Apply changes from Mac automatically” in Imago."))
         return lines.joined(separator: "\n")
     }
 }
@@ -103,7 +103,7 @@ struct StatusHero: View {
     var body: some View {
         let state = heroState
         VStack(spacing: 18) {
-            MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? "Mac")
+            MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? String(localized: "Mac"))
                 .chip()
             ProgressRing(progress: state.progress, symbol: state.symbol, tint: state.tint, busy: client.phase.isRunning)
                 .padding(.top, 8)
@@ -148,8 +148,8 @@ struct StatusHero: View {
     }
 
     private var buttonTitle: String {
-        if client.phase.isRunning { return "Backing Up…" }
-        return client.unfinished == nil ? "Back Up Now" : "Resume Backup"
+        if client.phase.isRunning { return String(localized: "Backing Up…") }
+        return client.unfinished == nil ? String(localized: "Back Up Now") : String(localized: "Resume Backup")
     }
 
     /// Under the button while a backup runs: when the last one was. Before iOS 26 a backup stops
@@ -157,10 +157,10 @@ struct StatusHero: View {
     private var footnote: (text: String, symbol: String)? {
         guard client.phase.isRunning else { return nil }
         if #unavailable(iOS 26) {
-            return ("Keep Imago open; your \(Device.kind) won't lock while it backs up. If anything stops it, it picks up where it left off.", "lock.open.display")
+            return (String(localized: "Keep Imago open; your \(Device.kind) won't lock while it backs up. If anything stops it, it picks up where it left off."), "lock.open.display")
         }
         guard let last = client.lastBackup else { return nil }
-        return ("Last backup \(last.ago())", "clock")
+        return (String(localized: "Last backup \(last.ago())"), "clock")
     }
 
     private struct HeroState {
@@ -172,44 +172,44 @@ struct StatusHero: View {
     }
 
     private var heroState: HeroState {
-        let mac = client.credential?.serverName ?? "your Mac"
+        let mac = client.credential?.serverName ?? String(localized: "your Mac")
         switch client.phase {
         case .idle:
             if let paused = client.unfinished {
-                return HeroState(symbol: "pause.fill", tint: .orange, title: "Backup paused",
-                                 subtitle: "\(paused.done.formatted()) of \(paused.total.formatted()) photos and videos are on \(mac). Resume to continue where it stopped.",
+                return HeroState(symbol: "pause.fill", tint: .orange, title: String(localized: "Backup paused"),
+                                 subtitle: String(localized: "\(paused.done.formatted()) of \(paused.total.formatted()) photos and videos are on \(mac). Resume to continue where it stopped."),
                                  progress: Double(paused.done) / Double(max(paused.total, 1)))
             }
             if let last = client.lastBackup {
-                return HeroState(symbol: "checkmark.shield.fill", tint: .green, title: "Backed up",
-                                 subtitle: "Last backup to \(mac) \(last.ago()).", progress: 1)
+                return HeroState(symbol: "checkmark.shield.fill", tint: .green, title: String(localized: "Backed up"),
+                                 subtitle: String(localized: "Last backup to \(mac) \(last.ago())."), progress: 1)
             }
-            return HeroState(symbol: "arrow.up", tint: .accentColor, title: "Ready to back up",
-                             subtitle: "Your first backup copies everything to \(mac).", progress: 0)
+            return HeroState(symbol: "arrow.up", tint: .accentColor, title: String(localized: "Ready to back up"),
+                             subtitle: String(localized: "Your first backup copies everything to \(mac)."), progress: 0)
         case .searching:
-            return HeroState(symbol: "wifi", tint: .accentColor, title: "Looking for \(mac)…",
-                             subtitle: "Make sure it's on and on the same Wi-Fi.")
+            return HeroState(symbol: "wifi", tint: .accentColor, title: String(localized: "Looking for \(mac)…"),
+                             subtitle: String(localized: "Make sure it's on and on the same Wi-Fi."))
         case .connecting:
-            return HeroState(symbol: "lock.fill", tint: .accentColor, title: "Connecting securely…", subtitle: mac)
+            return HeroState(symbol: "lock.fill", tint: .accentColor, title: String(localized: "Connecting securely…"), subtitle: mac)
         case .comparing:
-            return HeroState(symbol: "arrow.left.arrow.right", tint: .accentColor, title: "Comparing libraries…",
-                             subtitle: "Finding what \(mac) doesn't have yet.")
+            return HeroState(symbol: "arrow.left.arrow.right", tint: .accentColor, title: String(localized: "Comparing libraries…"),
+                             subtitle: String(localized: "Finding what \(mac) doesn't have yet."))
         case .uploading(let done, let total, let current):
             return HeroState(symbol: "arrow.up", tint: .accentColor, title: "\(done.formatted()) of \(total.formatted())",
                              subtitle: current, progress: Double(done) / Double(max(total, 1)))
         case .waitingToRetry(let attempt, let seconds, let reason):
-            return HeroState(symbol: "wifi.exclamationmark", tint: .orange, title: "Reconnecting in \(seconds)s",
-                             subtitle: "\(reason) Attempt \(attempt + 1); nothing already sent is lost.",
+            return HeroState(symbol: "wifi.exclamationmark", tint: .orange, title: String(localized: "Reconnecting in \(seconds)s"),
+                             subtitle: String(localized: "\(reason) Attempt \(attempt + 1); nothing already sent is lost."),
                              progress: client.unfinished.map { Double($0.done) / Double(max($0.total, 1)) } ?? 0)
         case .finished(let sent, let failed):
-            let title = sent == 0 ? "Everything's backed up" : "Backed up \(sent) \(sent == 1 ? "item" : "items")"
+            let title = sent == 0 ? String(localized: "Everything's backed up") : String(localized: "Backed up \(sent) \(sent == 1 ? "item" : "items")")
             let subtitle = failed > 0
-                ? "\(failed) couldn't be copied and will be retried next time."
-                : "Every photo and video is safe on \(mac)."
+                ? String(localized: "\(failed) couldn't be copied and will be retried next time.")
+                : String(localized: "Every photo and video is safe on \(mac).")
             return HeroState(symbol: "checkmark.shield.fill", tint: failed > 0 ? .orange : .green, title: title, subtitle: subtitle, progress: 1)
         case .failed(let message):
             let progress = client.unfinished.map { Double($0.done) / Double(max($0.total, 1)) } ?? 1
-            return HeroState(symbol: "exclamationmark.triangle.fill", tint: .orange, title: "Backup didn't finish",
+            return HeroState(symbol: "exclamationmark.triangle.fill", tint: .orange, title: String(localized: "Backup didn't finish"),
                              subtitle: message, progress: progress)
         }
     }
@@ -325,8 +325,8 @@ struct StorageCard: View {
                 HStack(spacing: 14) {
                     LegendDot(tint: .blue, title: "Photos")
                     LegendDot(tint: .pink, title: "Videos")
-                    LegendDot(tint: Color(.systemGray3), title: "Other")
-                    LegendDot(tint: Color(.tertiarySystemFill), title: "Free")
+                    LegendDot(tint: Color(.systemGray3), title: String(localized: "Other"))
+                    LegendDot(tint: Color(.tertiarySystemFill), title: String(localized: "Free"))
                 }
             }
 
@@ -375,8 +375,8 @@ struct StorageBar: View {
     }
 
     private var accessibilityText: String {
-        guard let storage, storage.totalBytes > 0 else { return "Measuring storage" }
-        return "Photos \(byteText(storage.photoBytes)), videos \(byteText(storage.videoBytes)), other \(byteText(storage.otherBytes)), \(byteText(storage.freeBytes)) free"
+        guard let storage, storage.totalBytes > 0 else { return String(localized: "Measuring storage") }
+        return String(localized: "Photos \(byteText(storage.photoBytes)), videos \(byteText(storage.videoBytes)), other \(byteText(storage.otherBytes)), \(byteText(storage.freeBytes)) free")
     }
 }
 
@@ -429,7 +429,7 @@ struct LegendDot: View {
 
 /// "12.4 GB", as Settings writes sizes.
 func byteText(_ count: Int64) -> String {
-    count == 0 ? "0 KB" : count.formatted(.byteCount(style: .file))
+    count == 0 ? String(localized: "0 KB") : count.formatted(.byteCount(style: .file))
 }
 
 /// The two switches, as rows in one card.
@@ -439,18 +439,18 @@ struct SettingsCard: View {
     var body: some View {
         @Bindable var client = client
         VStack(spacing: 0) {
-            SettingRow(symbol: "moon.stars.fill", tint: .indigo, title: "Back up overnight", isOn: $client.overnightBackup,
-                       note: client.overnightBackup ? "While charging on Wi-Fi. \(lastRunText)" : "While charging on Wi-Fi, when iOS allows.")
+            SettingRow(symbol: "moon.stars.fill", tint: .indigo, title: String(localized: "Back up overnight"), isOn: $client.overnightBackup,
+                       note: client.overnightBackup ? String(localized: "While charging on Wi-Fi. \(lastRunText)") : String(localized: "While charging on Wi-Fi, when iOS allows."))
             Divider().padding(.leading, 50)
-            SettingRow(symbol: "arrow.down.left.arrow.up.right", tint: .orange, title: "Apply changes from Mac automatically", isOn: $client.acceptMacChanges,
-                       note: client.acceptMacChanges ? "Made as they arrive, new items included. iOS still asks before deleting." : "Imago asks before making each change.")
+            SettingRow(symbol: "arrow.down.left.arrow.up.right", tint: .orange, title: String(localized: "Apply changes from Mac automatically"), isOn: $client.acceptMacChanges,
+                       note: client.acceptMacChanges ? String(localized: "Made as they arrive, new items included. iOS still asks before deleting.") : String(localized: "Imago asks before making each change."))
         }
         .card()
     }
 
     private var lastRunText: String {
-        guard let date = client.lastAutomaticRun else { return "Hasn't run yet." }
-        return "Last ran \(date.formatted(.relative(presentation: .named)))."
+        guard let date = client.lastAutomaticRun else { return String(localized: "Hasn't run yet.") }
+        return String(localized: "Last ran \(date.formatted(.relative(presentation: .named))).")
     }
 }
 
@@ -499,8 +499,8 @@ struct MacCard: View {
                     .frame(width: 44, height: 44)
                     .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(client.credential?.serverName ?? "Mac").font(.headline)
-                    MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? "Mac", short: true)
+                    Text(client.credential?.serverName ?? String(localized: "Mac")).font(.headline)
+                    MacConnection(live: live.state, backingUp: client.phase.isRunning, mac: client.credential?.serverName ?? String(localized: "Mac"), short: true)
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -525,7 +525,7 @@ struct MacCard: View {
             .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .card()
-        .confirmationDialog("Unpair from \(client.credential?.serverName ?? "Mac")?", isPresented: $confirmingUnpair, titleVisibility: .visible) {
+        .confirmationDialog("Unpair from \(client.credential?.serverName ?? String(localized: "Mac"))?", isPresented: $confirmingUnpair, titleVisibility: .visible) {
             Button("Unpair", role: .destructive) { client.unpair() }
         } message: {
             Text("Photos already on the Mac stay there. You can pair again anytime.")
@@ -559,11 +559,11 @@ struct MacConnection: View {
     }
 
     private var text: String {
-        if backingUp { return short ? "Backing up" : "Backing up to \(mac)" }
+        if backingUp { return short ? String(localized: "Backing up") : String(localized: "Backing up to \(mac)") }
         switch live {
-        case .connected: return short ? "Connected" : "Connected to \(mac)"
-        case .connecting: return short ? "Looking for it…" : "Looking for \(mac)…"
-        case .off: return short ? "Not connected · backs up on the same Wi-Fi" : "\(mac) not connected"
+        case .connected: return short ? "Connected" : String(localized: "Connected to \(mac)")
+        case .connecting: return short ? String(localized: "Looking for it…") : String(localized: "Looking for \(mac)…")
+        case .off: return short ? String(localized: "Not connected · backs up on the same Wi-Fi") : String(localized: "\(mac) not connected")
         }
     }
 }

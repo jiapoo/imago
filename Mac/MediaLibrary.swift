@@ -161,7 +161,7 @@ final class MediaLibrary {
     func cancelActivity() {
         guard activity?.canCancel == true else { return }
         stopFlag.set(true)
-        activity?.title = "Stopping…"
+        activity?.title = String(localized: "Stopping…")
         activity?.canCancel = false
     }
     /// Files about to go into a folder that already has identical ones: what to do, asked in the window.
@@ -657,12 +657,12 @@ final class MediaLibrary {
         kept.formUnion(ids)
         await Self.writeKept(kept, to: keptURL(server))
         revision += 1
-        return FileHistory.Step(name: ids.count == 1 ? "Keep Backup" : "Keep \(ids.count) Backups") { [weak self] in
+        return FileHistory.Step(name: ids.count == 1 ? String(localized: "Keep Backup") : String(localized: "Keep \(ids.count) Backups")) { [weak self] in
             guard let self else { return nil }
             kept.subtract(ids)
             await Self.writeKept(kept, to: keptURL(server))
             revision += 1
-            return FileHistory.Step(name: "Keep Backups") { [weak self] in await self?.keepBackups(items, server: server) }
+            return FileHistory.Step(name: String(localized: "Keep Backups")) { [weak self] in await self?.keepBackups(items, server: server) }
         }
     }
 
@@ -680,11 +680,11 @@ final class MediaLibrary {
         restoring.formUnion(asked.flatMap { device, ids in ids.map { "\(device.id)/\($0)" } })
         revision += 1
         let count = asked.reduce(0) { $0 + $1.1.count }
-        return FileHistory.Step(name: count == 1 ? "Put Back on iPhone" : "Put Back \(count) Items on iPhone") { [weak self] in
+        return FileHistory.Step(name: count == 1 ? String(localized: "Put Back on iPhone") : String(localized: "Put Back \(count) Items on iPhone")) { [weak self] in
             for (device, ids) in asked { server.withdrawRestore(Set(ids), on: device) }
             self?.restoring.subtract(asked.flatMap { device, ids in ids.map { "\(device.id)/\($0)" } })
             self?.revision += 1
-            return FileHistory.Step(name: "Put Back on iPhone") { [weak self] in await self?.putBackOnPhone(items, server: server) }
+            return FileHistory.Step(name: String(localized: "Put Back on iPhone")) { [weak self] in await self?.putBackOnPhone(items, server: server) }
         }
     }
 
@@ -930,9 +930,9 @@ final class MediaLibrary {
     /// item gets a numbered name beside its twin instead of taking the twin over as its own file.
     func move(_ items: [MediaItem], to place: Place, keepingBoth: Bool = false, server: BackupServer) async -> FileHistory.Step? {
         let name = switch place {
-        case .phoneFolder: "Move Back to iPhone's Folder"
-        case .folder(let path): "Move to “\((path as NSString).lastPathComponent)”"
-        case .trash: items.count == 1 ? "Delete" : "Delete \(items.count) Items"
+        case .phoneFolder: String(localized: "Move Back to iPhone's Folder")
+        case .folder(let path): String(localized: "Move to “\((path as NSString).lastPathComponent)”")
+        case .trash: items.count == 1 ? "Delete" : String(localized: "Delete \(items.count) Items")
         }
         return await moveStep(items.map { (Self.ref($0), place) }, name: name, keepingBoth: keepingBoth, server: server)
     }
@@ -945,13 +945,13 @@ final class MediaLibrary {
     /// Returns items from Recently Deleted to where they were deleted from.
     func putBack(_ items: [TrashedItem], server: BackupServer) async -> FileHistory.Step? {
         await moveStep(items.map { (Self.ref($0.item), $0.originalPlace) },
-                       name: items.count == 1 ? "Put Back" : "Put Back \(items.count) Items", server: server)
+                       name: items.count == 1 ? "Put Back" : String(localized: "Put Back \(items.count) Items"), server: server)
     }
 
     /// Deletes items in Recently Deleted for good. This can't be undone.
     func deleteNow(_ items: [TrashedItem], server: BackupServer) async {
         let trashURL = server.trashURL
-        activity = Activity(title: "Deleting for good", done: 0, total: items.count)
+        activity = Activity(title: String(localized: "Deleting for good"), done: 0, total: items.count)
         defer { activity = nil }
         await perform(server) {
             defer {
@@ -1044,9 +1044,9 @@ final class MediaLibrary {
         var landed: [(was: MediaItem, from: Place, to: Place, url: URL)] = []
         if let to = wanted.first?.to {
             let title = switch to {
-            case .trash: "Deleting"
-            case .phoneFolder: "Moving back to the iPhone's folder"
-            case .folder(let path): "Moving to “\((path as NSString).lastPathComponent)”"
+            case .trash: String(localized: "Deleting")
+            case .phoneFolder: String(localized: "Moving back to the iPhone's folder")
+            case .folder(let path): String(localized: "Moving to “\((path as NSString).lastPathComponent)”")
             }
             activity = Activity(title: title, done: 0, total: wanted.count, canCancel: true)
         }
@@ -1142,7 +1142,7 @@ final class MediaLibrary {
             guard let device = server.devices.first(where: { $0.id == deviceID }), let store = server.store(for: device) else { continue }
             let ids = removable.compactMap(\.assetID)
             verifying += ids.count
-            activity = Activity(title: "Checking against the backup", done: 0, total: ids.count, canCancel: true)
+            activity = Activity(title: String(localized: "Checking against the backup"), done: 0, total: ids.count, canCancel: true)
             let files = await store.storedFiles(of: ids)
             var verified: Set<String> = []
             // One asset at a time, so the progress panel moves; reading a big video takes a while.
@@ -1186,11 +1186,11 @@ final class MediaLibrary {
             requested.append((device, assets))
         }
         if failed > 0 {
-            error = "\(failed) \(failed == 1 ? "item doesn't" : "items don't") match the copy that was backed up, so \(failed == 1 ? "it stays" : "they stay") on the iPhone. Back up again to replace the copy here."
+            error = String(localized: "\(failed) \(failed == 1 ? String(localized: "item doesn't") : String(localized: "items don't")) match the copy that was backed up, so \(failed == 1 ? String(localized: "it stays") : String(localized: "they stay")) on the iPhone. Back up again to replace the copy here.")
         }
         guard !requested.isEmpty else { return nil }
         let count = requested.reduce(0) { $0 + $1.assets.count }
-        return FileHistory.Step(name: count == 1 ? "Remove from iPhone" : "Remove \(count) Items from iPhone") { [weak self] in
+        return FileHistory.Step(name: count == 1 ? "Remove from iPhone" : String(localized: "Remove \(count) Items from iPhone")) { [weak self] in
             for request in requested { server.keep(Set(request.assets.map(\.id)), on: request.device) }
             self?.pendingRemoval.subtract(requested.flatMap { request in request.assets.map { "\(request.device.id)/\($0.id)" } })
             return FileHistory.Step(name: "Remove from iPhone") { [weak self] in
@@ -1210,7 +1210,7 @@ final class MediaLibrary {
         let asked = Set(items.filter { pendingRemoval.contains($0.id) }.map(\.id))
         guard let removal, !asked.isEmpty else { return removal }
         await markDeleting(asked, true, server: server)
-        let name = asked.count == 1 ? "Delete" : "Delete \(asked.count) Items"
+        let name = asked.count == 1 ? "Delete" : String(localized: "Delete \(asked.count) Items")
         // Undo takes the request and the marks back; redo deletes again.
         return FileHistory.Step(name: name) { [weak self] in
             _ = await removal.run()
@@ -1228,7 +1228,7 @@ final class MediaLibrary {
         let driveOnly = items.filter { phoneAsset($0) == nil }
         let fromPhones = onPhones.isEmpty ? nil : await deleteFromPhoneAndHere(onPhones, server: server)
         let trashed = driveOnly.isEmpty ? nil : await trash(driveOnly, server: server)
-        return FileHistory.combine(items.count == 1 ? "Delete" : "Delete \(items.count) Items", [fromPhones, trashed])
+        return FileHistory.combine(items.count == 1 ? "Delete" : String(localized: "Delete \(items.count) Items"), [fromPhones, trashed])
     }
 
     // MARK: Folders
@@ -1289,7 +1289,7 @@ final class MediaLibrary {
         }
         guard renamed else { return nil }
         let oldName = (path as NSString).lastPathComponent
-        return (newPath, FileHistory.Step(name: "Rename Folder") { [weak self] in
+        return (newPath, FileHistory.Step(name: String(localized: "Rename Folder")) { [weak self] in
             await self?.renameFolder(newPath, to: oldName, server: server)?.undo
         })
     }
@@ -1340,11 +1340,11 @@ final class MediaLibrary {
         }
         guard moved else {
             if error == nil {
-                error = "There's already a folder named “\(name)” in “\(parent.isEmpty ? "Folders" : (parent as NSString).lastPathComponent)”."
+                error = String(localized: "There's already a folder named “\(name)” in “\(parent.isEmpty ? "Folders" : (parent as NSString).lastPathComponent)”.")
             }
             return nil
         }
-        return (newPath, FileHistory.Step(name: "Move Folder") { [weak self] in
+        return (newPath, FileHistory.Step(name: String(localized: "Move Folder")) { [weak self] in
             await self?.moveFolder(newPath, into: oldParent, server: server)?.undo
         })
     }
@@ -1369,7 +1369,7 @@ final class MediaLibrary {
         Task {
             var steps: [FileHistory.Step?] = []
             for path in paths { steps.append(await moveFolder(path, into: parent, server: server)?.undo) }
-            history.record(FileHistory.combine(paths.count == 1 ? "Move Folder" : "Move Folders", steps))
+            history.record(FileHistory.combine(paths.count == 1 ? String(localized: "Move Folder") : String(localized: "Move Folders"), steps))
         }
         return true
     }
@@ -1380,7 +1380,7 @@ final class MediaLibrary {
         let url = server.foldersURL.appending(path: path, directoryHint: .isDirectory)
         let left = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
         guard left.isEmpty else {
-            error = "“\((path as NSString).lastPathComponent)” isn't empty."
+            error = String(localized: "“\((path as NSString).lastPathComponent)” isn't empty.")
             return nil
         }
         do {

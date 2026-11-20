@@ -66,7 +66,7 @@ enum PhotoLibrary {
 
     enum ExportError: LocalizedError {
         case missing(ResourceKey)
-        var errorDescription: String? { "This item was deleted or changed on the \(Device.kind)." }
+        var errorDescription: String? { String(localized: "This item was deleted or changed on the \(Device.kind).") }
     }
 
     fileprivate static func entry(for asset: PHAsset, albums: [String]) -> ManifestEntry? {
@@ -161,11 +161,11 @@ enum PhotoLibrary {
         let found = PHAsset.fetchAssets(withLocalIdentifiers: change.assetIDs, options: nil).count
         guard found > 0 else {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "These items are no longer on the \(Device.kind).")
+                                detail: String(localized: "These items are no longer on the \(Device.kind)."))
         }
         if case .removeFromAlbum(let title) = change.action, editableAlbum(titled: title) == nil {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "There's no album named “\(title)” on the \(Device.kind) that can be changed.")
+                                detail: String(localized: "There's no album named “\(title)” on the \(Device.kind) that can be changed."))
         }
         do {
             try await PHPhotoLibrary.shared().performChanges {
@@ -200,7 +200,7 @@ enum PhotoLibrary {
     private static func deleteAlbum(titled title: String, change: LibraryChange) async -> ChangeReport {
         guard let album = editableAlbum(titled: title) else {
             return ChangeReport(changeID: change.id, outcome: .failed, assetCount: 0,
-                                detail: "There's no album named “\(title)” on the \(Device.kind) that can be deleted.")
+                                detail: String(localized: "There's no album named “\(title)” on the \(Device.kind) that can be deleted."))
         }
         let identifier = album.localIdentifier
         do {
@@ -253,7 +253,7 @@ enum PhotoLibrary {
 
     enum RestoreError: LocalizedError {
         case notCreated
-        var errorDescription: String? { "Photos didn't add it back." }
+        var errorDescription: String? { String(localized: "Photos didn't add it back.") }
     }
 
     /// A regular album the user made (not a smart or shared album) with this title.

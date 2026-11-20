@@ -78,9 +78,9 @@ actor BackupStore {
 
         var errorDescription: String? {
             switch self {
-            case .notStarted(let key): "Received data for \(key) before it was started."
-            case .checksumMismatch(let key): "Checksum mismatch for \(key); it will be sent again."
-            case .sizeMismatch(let key, let expected, let actual): "\(key) is \(actual) bytes, expected \(expected)."
+            case .notStarted(let key): String(localized: "Received data for \(key) before it was started.")
+            case .checksumMismatch(let key): String(localized: "Checksum mismatch for \(key); it will be sent again.")
+            case .sizeMismatch(let key, let expected, let actual): String(localized: "\(key) is \(actual) bytes, expected \(expected).")
             }
         }
     }
@@ -604,7 +604,7 @@ actor BackupStore {
 
     enum AdoptError: LocalizedError {
         case alreadyThere(String)
-        var errorDescription: String? { "It's already on its way to the iPhone, or on it." }
+        var errorDescription: String? { String(localized: "It's already on its way to the iPhone, or on it.") }
     }
 
     /// Takes assets out of the index without touching their files: copies of one file that went to

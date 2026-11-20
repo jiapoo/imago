@@ -91,7 +91,7 @@ struct PhoneBrowserView: View {
             }
         } message: {
             let one = (deletingAlbums?.count ?? 0) == 1
-            Text("\(one ? "The album is" : "The albums are") deleted on \(device.name); \(one ? "its" : "their") photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : "when you next open Imago on it").")
+            Text("\(one ? String(localized: "The album is") : String(localized: "The albums are")) deleted on \(device.name); \(one ? "its" : "their") photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : String(localized: "when you next open Imago on it")).")
         }
         .onAppear { openRequestedSection() }
         // Asked for while the page is open (Show Them, in the note about photos not backed up).
@@ -105,7 +105,7 @@ struct PhoneBrowserView: View {
 
     private var deleteAlbumsTitle: String {
         guard let albums = deletingAlbums else { return "" }
-        return albums.count == 1 ? "Delete “\(albums[0])”?" : "Delete \(albums.count) Albums?"
+        return albums.count == 1 ? String(localized: "Delete “\(albums[0])”?") : String(localized: "Delete \(albums.count) Albums?")
     }
 
     /// The albums among these sidebar rows.
@@ -121,10 +121,10 @@ struct PhoneBrowserView: View {
     }
 
     private var subtitle: String {
-        guard let takenAt = model.takenAt else { return "iPhone library" }
+        guard let takenAt = model.takenAt else { return String(localized: "iPhone library") }
         let waiting = model.queue.pending.count
-        return "\(model.assets.count.formatted()) items · as of \(takenAt.shortRelative)"
-            + (waiting > 0 ? " · \(waiting) \(waiting == 1 ? "change" : "changes") waiting" : "")
+        return String(localized: "\(model.assets.count.formatted()) items · as of \(takenAt.shortRelative)")
+            + (waiting > 0 ? String(localized: " · \(waiting) \(waiting == 1 ? "change" : "changes") waiting") : "")
     }
 
     /// Hidden while the viewer is open: the toolbar is the viewer's then.
@@ -167,7 +167,7 @@ struct PhoneBrowserView: View {
         List(selection: $sidebarSelection) {
             Section {
                 SectionRow(title: "Library", symbol: "photo.on.rectangle", detail: model.assets.count.formatted()).tag(PhoneSection.library)
-                SectionRow(title: "Favorites", symbol: "heart", detail: model.favorites.count.formatted()).tag(PhoneSection.favorites)
+                SectionRow(title: String(localized: "Favorites"), symbol: "heart", detail: model.favorites.count.formatted()).tag(PhoneSection.favorites)
                 SectionRow(title: "Places", symbol: "map",
                            detail: model.assets.count { $0.metadata.location != nil }.formatted()).tag(PhoneSection.places)
                 SectionRow(title: "On This Day", symbol: "calendar.badge.clock",
@@ -191,18 +191,18 @@ struct PhoneBrowserView: View {
                 }
             }
             Section("Free Up Space") {
-                SectionRow(title: "Duplicates", symbol: "plus.square.on.square", detail: groupDetail(model.duplicates)).tag(PhoneSection.duplicates)
-                SectionRow(title: "Similar Shots", symbol: "square.stack.3d.down.right",
-                           detail: model.similar.map { groupDetail($0 + model.bursts) } ?? (model.bursts.isEmpty ? "Not scanned" : groupDetail(model.bursts)))
+                SectionRow(title: String(localized: "Duplicates"), symbol: "plus.square.on.square", detail: groupDetail(model.duplicates)).tag(PhoneSection.duplicates)
+                SectionRow(title: String(localized: "Similar Shots"), symbol: "square.stack.3d.down.right",
+                           detail: model.similar.map { groupDetail($0 + model.bursts) } ?? (model.bursts.isEmpty ? String(localized: "Not scanned") : groupDetail(model.bursts)))
                     .tag(PhoneSection.similar)
-                SectionRow(title: "Large Videos", symbol: "film.stack", detail: listDetail(model.largeVideos)).tag(PhoneSection.largeVideos)
-                SectionRow(title: "Not Backed Up", symbol: "externaldrive.badge.xmark", detail: model.notBackedUp.count.formatted())
+                SectionRow(title: String(localized: "Large Videos"), symbol: "film.stack", detail: listDetail(model.largeVideos)).tag(PhoneSection.largeVideos)
+                SectionRow(title: String(localized: "Not Backed Up"), symbol: "externaldrive.badge.xmark", detail: model.notBackedUp.count.formatted())
                     .tag(PhoneSection.notBackedUp)
             }
             Section("Waiting for iPhone") {
-                SectionRow(title: "To Delete", symbol: "trash", detail: listDetail(model.deleting)).tag(PhoneSection.deleting)
-                SectionRow(title: "All Changes", symbol: "iphone.and.arrow.forward",
-                           detail: model.queue.pending.isEmpty ? "None" : model.queue.pending.count.formatted())
+                SectionRow(title: String(localized: "To Delete"), symbol: "trash", detail: listDetail(model.deleting)).tag(PhoneSection.deleting)
+                SectionRow(title: String(localized: "All Changes"), symbol: "iphone.and.arrow.forward",
+                           detail: model.queue.pending.isEmpty ? String(localized: "None") : model.queue.pending.count.formatted())
                     .tag(PhoneSection.queue)
             }
         }
@@ -239,11 +239,11 @@ struct PhoneBrowserView: View {
     }
 
     private func groupDetail(_ groups: [Cleanup.Group]) -> String {
-        groups.isEmpty ? "None" : groups.reduce(0) { $0 + $1.reclaimableBytes }.bytes
+        groups.isEmpty ? String(localized: "None") : groups.reduce(0) { $0 + $1.reclaimableBytes }.bytes
     }
 
     private func listDetail(_ assets: [PhoneAsset]) -> String {
-        assets.isEmpty ? "None" : assets.reduce(0) { $0 + $1.bytes }.bytes
+        assets.isEmpty ? String(localized: "None") : assets.reduce(0) { $0 + $1.bytes }.bytes
     }
 
     // MARK: Content
@@ -258,34 +258,34 @@ struct PhoneBrowserView: View {
         case .onThisDay:
             PhoneGrid(model: model, device: device, assets: onThisDay,
                       empty: ("Nothing on this day", "calendar.badge.clock",
-                              "Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here."))
+                              String(localized: "Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here.")))
         case .favorites:
             PhoneGrid(model: model, device: device, assets: model.favorites,
-                      empty: ("No Favorites", "heart", "Select photos and choose Favorite, or press the period key."))
+                      empty: (String(localized: "No Favorites"), "heart", String(localized: "Select photos and choose Favorite, or press the period key.")))
         case .mediaType(let type):
-            PhoneGrid(model: model, device: device, assets: model.assets(of: type), empty: ("No \(type.title)", type.symbol, nil))
+            PhoneGrid(model: model, device: device, assets: model.assets(of: type), empty: (String(localized: "No \(type.title)"), type.symbol, nil))
         case .album(let album):
             PhoneGrid(model: model, device: device, assets: model.assets(inAlbum: album), album: album,
-                      empty: ("“\(album)” is empty", "rectangle.stack", "Select photos anywhere and choose Add to Album."))
+                      empty: ("“\(album)” is empty", "rectangle.stack", String(localized: "Select photos anywhere and choose Add to Album.")))
         case .duplicates:
             GroupsView(model: model, device: device, groups: model.duplicates,
-                       explanation: "Exact copies: the original files are byte-for-byte the same. The copy marked Keep is the largest, which has an edit or a Live Photo's video with it; among copies of the same size, a favorite, in more albums, or the oldest.",
-                       emptyTitle: "No duplicates")
+                       explanation: String(localized: "Exact copies: the original files are byte-for-byte the same. The copy marked Keep is the largest, which has an edit or a Live Photo's video with it; among copies of the same size, a favorite, in more albums, or the oldest."),
+                       emptyTitle: String(localized: "No duplicates"))
         case .similar:
             SimilarView(model: model, device: device)
         case .largeVideos:
             PhoneGrid(model: model, device: device, assets: model.largeVideos, byDay: false,
-                      explanation: "Videos over 100 MB, biggest first.", empty: ("No large videos", "film.stack", nil))
+                      explanation: String(localized: "Videos over 100 MB, biggest first."), empty: (String(localized: "No large videos"), "film.stack", nil))
         case .notBackedUp:
             PhoneGrid(model: model, device: device, assets: model.notBackedUp,
-                      explanation: "On the iPhone but not fully on this Mac yet. They're copied at the next backup; until then they can't be deleted from here.",
+                      explanation: String(localized: "On the iPhone but not fully on this Mac yet. They're copied at the next backup; until then they can't be deleted from here."),
                       notesNotBackedUp: false,
-                      empty: ("Everything is backed up", "checkmark.circle", nil))
+                      empty: (String(localized: "Everything is backed up"), "checkmark.circle", nil))
         case .deleting:
             PhoneGrid(model: model, device: device, assets: model.deleting, isDeleting: true,
-                      explanation: "Waiting to be deleted from the iPhone. You confirm it there, and they go to Recently Deleted on the iPhone. They stay on this Mac.",
+                      explanation: String(localized: "Waiting to be deleted from the iPhone. You confirm it there, and they go to Recently Deleted on the iPhone. They stay on this Mac."),
                       notesNotBackedUp: false,
-                      empty: ("Nothing waiting to be deleted", "trash", nil))
+                      empty: (String(localized: "Nothing waiting to be deleted"), "trash", nil))
         case .queue:
             QueueView(model: model, device: device)
         }
@@ -352,9 +352,9 @@ enum LibraryZoom: String, CaseIterable, Identifiable {
     var id: Self { self }
     var title: String {
         switch self {
-        case .years: "Years"
-        case .months: "Months"
-        case .all: "All Photos"
+        case .years: String(localized: "Years")
+        case .months: String(localized: "Months")
+        case .all: String(localized: "All Photos")
         }
     }
 }
@@ -381,13 +381,13 @@ private struct LibraryView: View {
             }
         case .all:
             PhoneGrid(model: model, device: device, assets: model.libraryAssets, scrollTarget: $dayTarget,
-                      empty: ("No photos", "photo.on.rectangle", nil))
+                      empty: (String(localized: "No photos"), "photo.on.rectangle", nil))
         }
     }
 
     private var years: [Period] {
         Cleanup.byYear(model.libraryAssets).reversed().map { year in
-            Period(id: year.id, year: year.year, title: year.year.map(String.init) ?? "No Date", assets: year.assets.reversed())
+            Period(id: year.id, year: year.year, title: year.year.map(String.init) ?? String(localized: "No Date"), assets: year.assets.reversed())
         }
     }
 
@@ -397,7 +397,7 @@ private struct LibraryView: View {
                                    let date = Calendar.current.date(from: DateComponents(year: year, month: number)) {
                 date.formatted(.dateTime.month(.wide).year())
             } else {
-                "No Date"
+                String(localized: "No Date")
             }
             return Period(id: month.id, year: month.year, title: title, assets: month.assets.reversed())
         }
@@ -426,6 +426,7 @@ private struct PeriodGrid: View {
                     ForEach(periods) { period in
                         Button { open(period) } label: { card(period) }
                             .buttonStyle(.plain)
+                            .help("Show \(period.title)")
                             .id(period.id)
                     }
                 }
@@ -522,7 +523,7 @@ struct PhoneGrid: View {
     private func notBackedUp(in items: [PhoneAsset]) -> String? {
         let missing = items.count(where: Self.onlyOnDevice)
         if missing == 0 { return nil }
-        return missing == items.count ? "Not backed up yet" : "\(missing.formatted()) not backed up yet"
+        return missing == items.count ? String(localized: "Not backed up yet") : String(localized: "\(missing.formatted()) not backed up yet")
     }
 
     @ViewBuilder
@@ -530,7 +531,7 @@ struct PhoneGrid: View {
         let missing = assets.filter(Self.onlyOnDevice)
         if !missing.isEmpty {
             let what = missing.allSatisfy(\.isVideo) ? (missing.count == 1 ? "video" : "videos")
-                : missing.contains(where: \.isVideo) ? "photos and videos" : (missing.count == 1 ? "photo" : "photos")
+                : missing.contains(where: \.isVideo) ? String(localized: "photos and videos") : (missing.count == 1 ? "photo" : "photos")
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "externaldrive.badge.xmark").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
@@ -541,6 +542,7 @@ struct PhoneGrid: View {
                 }
                 Spacer(minLength: 12)
                 Button("Show Them") { model.requestedSection = .notBackedUp }
+                    .help("Show only the photos that aren't backed up yet")
             }
             .padding(12)
             .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -793,7 +795,7 @@ struct PhoneGrid: View {
             },
             info: { model.asset(ids[$0]).map(Self.info) ?? [] },
             banner: { [kind] index in
-                model.asset(ids[index]).flatMap { Self.onlyOnDevice($0) ? "Preview only · not on the backup drive yet. Back up the \(kind) to copy it." : nil }
+                model.asset(ids[index]).flatMap { Self.onlyOnDevice($0) ? String(localized: "Preview only · not on the backup drive yet. Back up the \(kind) to copy it.") : nil }
             },
             isFavorite: { model.asset(ids[$0])?.metadata.isFavorite ?? false },
             toggleFavorite: { index in model.asset(ids[index]).map { actions.toggleFavorite([$0]) } },
@@ -811,7 +813,7 @@ struct PhoneGrid: View {
             },
             // Only the backed-up file: a preview is too small to edit.
             canEdit: { model.files[ids[$0]] != nil },
-            deleteTitle: "Delete from iPhone (and the backup on this Mac once the iPhone agrees)",
+            deleteTitle: String(localized: "Delete from iPhone (and the backup on this Mac once the iPhone agrees)"),
             delete: { [library, server, history] index in
                 if let file = model.asset(ids[index]), file.isUnsynced {
                     // Not on the iPhone: only the file here goes, to Recently Deleted.
@@ -835,21 +837,21 @@ struct PhoneGrid: View {
         let metadata = asset.metadata
         var rows = [MediaViewerHost.InfoRow(label: "Name", value: metadata.originalFilename)]
         if let date = metadata.creationDate {
-            rows.append(.init(label: "Taken", value: date.formatted(date: .complete, time: .standard)))
+            rows.append(.init(label: String(localized: "Taken"), value: date.formatted(date: .complete, time: .standard)))
         }
         let kinds = PhoneMediaType.allCases.filter { $0 != .videos && $0.contains(asset) }.map(\.title)
-        rows.append(.init(label: "Kind", value: ([asset.isVideo ? "Video" : "Photo"] + kinds).joined(separator: " · ")))
-        rows.append(.init(label: "Dimensions", value: "\(metadata.pixelWidth) × \(metadata.pixelHeight)"))
+        rows.append(.init(label: String(localized: "Kind"), value: ([asset.isVideo ? String(localized: "Video") : String(localized: "Photo")] + kinds).joined(separator: " · ")))
+        rows.append(.init(label: String(localized: "Dimensions"), value: "\(metadata.pixelWidth) × \(metadata.pixelHeight)"))
         if asset.isVideo {
-            rows.append(.init(label: "Length", value: Duration.seconds(metadata.duration).formatted(.time(pattern: .minuteSecond))))
+            rows.append(.init(label: String(localized: "Length"), value: Duration.seconds(metadata.duration).formatted(.time(pattern: .minuteSecond))))
         }
         if asset.bytes > 0 { rows.append(.init(label: "Size", value: asset.bytes.bytes)) }
-        rows.append(.init(label: "On this Mac", value: asset.isBackedUp ? "Backed up" : "Not fully backed up yet"))
+        rows.append(.init(label: String(localized: "On this Mac"), value: asset.isBackedUp ? String(localized: "Backed up") : String(localized: "Not fully backed up yet")))
         if !metadata.albums.isEmpty {
             rows.append(.init(label: "Albums", value: metadata.albums.joined(separator: ", ")))
         }
         if let location = metadata.location {
-            rows.append(.init(label: "Location", value: String(format: "%.5f, %.5f", location.latitude, location.longitude)))
+            rows.append(.init(label: String(localized: "Location"), value: String(format: "%.5f, %.5f", location.latitude, location.longitude)))
         }
         return rows
     }
@@ -1000,7 +1002,7 @@ struct PhoneActions {
         let base = Dictionary(model.base.map { ($0.id, $0.metadata) }, uniquingKeysWith: { a, _ in a })
         let ids = titles.compactMap { server.requestAlbumDeletion($0, on: device, base: base) }
         guard !ids.isEmpty else { return nil }
-        let name = titles.count == 1 ? "Delete Album" : "Delete \(titles.count) Albums"
+        let name = titles.count == 1 ? "Delete Album" : String(localized: "Delete \(titles.count) Albums")
         return FileHistory.Step(name: name) { [self] in
             for id in ids { server.cancelChange(id, on: device) }
             return FileHistory.Step(name: name) { [self] in albumDeletion(titles) }
@@ -1012,7 +1014,7 @@ struct PhoneActions {
     func delete(_ assets: [PhoneAsset]) {
         let items = libraryItems(assets, includingDeleted: true)
         guard !items.isEmpty else {
-            library.error = "\(assets.count == 1 ? "It isn't" : "They aren't") backed up yet, so Imago doesn't delete \(assets.count == 1 ? "it" : "them") from the iPhone. Back up first, or delete in Photos on the iPhone."
+            library.error = String(localized: "\(assets.count == 1 ? String(localized: "It isn't") : String(localized: "They aren't")) backed up yet, so Imago doesn't delete \(assets.count == 1 ? "it" : "them") from the iPhone. Back up first, or delete in Photos on the iPhone.")
             return
         }
         Task { history.record(await library.deleteFromPhoneAndHere(items, server: server)) }
@@ -1095,7 +1097,7 @@ struct PhoneSelectionBar: View {
         let deletable = actions.deletable(selected)
         let skipped = selected.count - deletable.count
         FloatingBar(count: selected.count,
-                    detail: selected.reduce(0) { $0 + $1.bytes }.bytes + (skipped > 0 && !isDeleting ? " · \(skipped) not backed up" : ""),
+                    detail: selected.reduce(0) { $0 + $1.bytes }.bytes + (skipped > 0 && !isDeleting ? String(localized: " · \(skipped) not backed up") : ""),
                     clear: clear) {
             // The backed-up files: ones not backed up yet have none to share.
             ShareButton(urls: selected.compactMap { actions.model.files[$0.id] })
@@ -1106,6 +1108,7 @@ struct PhoneSelectionBar: View {
                 } label: {
                     Label("Keep on iPhone", systemImage: "arrow.uturn.backward")
                 }
+                .help("Don't delete these from the iPhone after all")
             } else {
                 // Files the iPhone doesn't have can be moved or put in Recently Deleted, not changed on it.
                 let onPhone = selected.filter { !$0.isUnsynced }
@@ -1127,6 +1130,7 @@ struct PhoneSelectionBar: View {
                 }
                 .menuStyle(.button)
                 .fixedSize()
+                .help("Add them to an album on the iPhone")
                 }
                 Menu {
                     ForEach(actions.folders, id: \.self) { path in
@@ -1231,11 +1235,11 @@ struct PhoneDialogs: ViewModifier {
     }
 
     private func deleteMessage(skipped: Int) -> String {
-        let when = actions.isLive ? "now" : "when you next open Imago on it, or at its next backup"
-        var text = "\(actions.device.name) asks you to confirm \(when); then they go to Recently Deleted on the iPhone for 30 days. "
-            + "Nothing changes on this Mac until it does: then the backed-up copies go to Recently Deleted in Imago, where Put Back returns them. If it says no, nothing is deleted. Each is checked against its backup first. "
-            + "If iCloud Photos is on, they're removed from your other devices too."
-        if skipped > 0 { text += " \(skipped) selected \(skipped == 1 ? "item isn't" : "items aren't") fully backed up yet and will be left alone." }
+        let when = actions.isLive ? "now" : String(localized: "when you next open Imago on it, or at its next backup")
+        var text = String(localized: "\(actions.device.name) asks you to confirm \(when); then they go to Recently Deleted on the iPhone for 30 days. ")
+            + String(localized: "Nothing changes on this Mac until it does: then the backed-up copies go to Recently Deleted in Imago, where Put Back returns them. If it says no, nothing is deleted. Each is checked against its backup first. ")
+            + String(localized: "If iCloud Photos is on, they're removed from your other devices too.")
+        if skipped > 0 { text += String(localized: " \(skipped) selected \(skipped == 1 ? String(localized: "item isn't") : String(localized: "items aren't")) fully backed up yet and will be left alone.") }
         return text
     }
 }

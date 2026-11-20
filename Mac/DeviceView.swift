@@ -109,6 +109,7 @@ struct DeviceView: View {
                         .foregroundStyle(tint)
                 }
                 .buttonStyle(.plain)
+                .help("See this iPhone's photos as they are on it")
                 Menu {
                     Button("Rename…") { newName = device.name; renaming = true }
                     DeviceColorMenu(device: device) { pickingColor = true }
@@ -122,6 +123,7 @@ struct DeviceView: View {
                         .frame(width: 34, height: 34)
                         .background(.white.opacity(0.18), in: Circle())
                 }
+                .help("Rename, color, show its folder, or remove this iPhone")
                 .menuStyle(.button)
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
@@ -149,14 +151,14 @@ struct DeviceView: View {
         let summary = server.summaries[device.id]
         var chips: [(String, String)] = []
         if let session = server.session(for: device) {
-            chips.append((session.total == 0 ? "Comparing libraries…" : "Backing up \(session.received) of \(session.total)", "arrow.triangle.2.circlepath"))
+            chips.append((session.total == 0 ? String(localized: "Comparing libraries…") : String(localized: "Backing up \(session.received) of \(session.total)"), "arrow.triangle.2.circlepath"))
         } else if summary?.isPartial == true {
-            chips.append(("Backup not finished", "exclamationmark.circle"))
+            chips.append((String(localized: "Backup not finished"), "exclamationmark.circle"))
         } else if model.state == .ready, model.backedUpCount == model.base.count, !model.base.isEmpty {
-            chips.append(("All backed up", "checkmark.circle.fill"))
+            chips.append((String(localized: "All backed up"), "checkmark.circle.fill"))
         }
-        chips.append(server.liveDevices.contains(device.id) ? ("Imago open on it", "dot.radiowaves.left.and.right") : ("Not connected", "wifi.slash"))
-        if let last = summary?.lastBackup { chips.append(("Last backup \(last.shortRelative)", "clock")) }
+        chips.append(server.liveDevices.contains(device.id) ? (String(localized: "Imago open on it"), "dot.radiowaves.left.and.right") : ("Not connected", "wifi.slash"))
+        if let last = summary?.lastBackup { chips.append((String(localized: "Last backup \(last.shortRelative)"), "clock")) }
         return chips
     }
 
@@ -166,11 +168,11 @@ struct DeviceView: View {
         let summary = server.summaries[device.id]
         let ready = model.state == .ready
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 16)], spacing: 16) {
-            NumberTile(title: "On the iPhone", value: ready ? model.base.count.formatted() : "–",
+            NumberTile(title: String(localized: "On the iPhone"), value: ready ? model.base.count.formatted() : "–",
                        detail: ready ? "\(model.base.count(where: \.isVideo).formatted()) videos" : nil, symbol: "iphone")
-            NumberTile(title: "Backed up", value: ready ? backedUpText : "–",
+            NumberTile(title: String(localized: "Backed up"), value: ready ? backedUpText : "–",
                        detail: ready ? notBackedUpText : nil, symbol: "checkmark.shield")
-            NumberTile(title: "On the backup drive", value: (summary?.totalBytes ?? 0).bytes,
+            NumberTile(title: String(localized: "On the backup drive"), value: (summary?.totalBytes ?? 0).bytes,
                        detail: "\((summary?.fileCount ?? 0).formatted()) files", symbol: "externaldrive")
             NumberTile(title: "Albums", value: ready ? model.albums.count.formatted() : "–",
                        detail: ready ? "\(model.favorites.count.formatted()) favorites" : nil, symbol: "rectangle.stack")
@@ -186,7 +188,7 @@ struct DeviceView: View {
 
     private var notBackedUpText: String {
         let left = model.base.count - model.backedUpCount
-        return left == 0 ? "Everything" : "\(left.formatted()) to go"
+        return left == 0 ? String(localized: "Everything") : String(localized: "\(left.formatted()) to go")
     }
 
     /// What this iPhone answered that needs a decision, and what was deleted on it since it was backed up.
@@ -214,6 +216,7 @@ struct DeviceView: View {
             Spacer()
             Button("Show in Finder") { server.revealInFinder(server.folderURL(for: device)) }
                 .buttonStyle(.link)
+                .help("Show this iPhone's backup folder in Finder")
                 .disabled(!server.location.isAvailable)
         }
         .font(.callout)
@@ -300,7 +303,7 @@ private struct SpaceCard: View {
         let photoBytes = photos.reduce(0) { $0 + $1.bytes }
         let total = max(videoBytes + photoBytes, 1)
         VStack(alignment: .leading, spacing: 18) {
-            CardTitle(title: "Space on the drive", symbol: "chart.bar.xaxis")
+            CardTitle(title: String(localized: "Space on the drive"), symbol: "chart.bar.xaxis")
             VStack(alignment: .leading, spacing: 2) {
                 Text((videoBytes + photoBytes).bytes)
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
@@ -372,7 +375,7 @@ private struct YearsCard: View {
         }
         let busiest = years.max { $0.count < $1.count }
         VStack(alignment: .leading, spacing: 18) {
-            CardTitle(title: "Over the years", symbol: "calendar")
+            CardTitle(title: String(localized: "Over the years"), symbol: "calendar")
             VStack(alignment: .leading, spacing: 2) {
                 if let hovered, let year = years.first(where: { $0.label == hovered }) {
                     Text(year.count.formatted()).font(.system(size: 30, weight: .semibold, design: .rounded))
@@ -416,7 +419,7 @@ private struct FreeUpSpaceCard: View {
         let backedUp = model.assets.filter(\.isBackedUp)
         let screenshots = model.assets(of: .screenshots) + model.assets(of: .screenRecordings)
         VStack(alignment: .leading, spacing: 18) {
-            CardTitle(title: "Free up space on the iPhone", symbol: "sparkles")
+            CardTitle(title: String(localized: "Free up space on the iPhone"), symbol: "sparkles")
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(backedUp.reduce(0) { $0 + $1.bytes }.bytes)
                     .font(.system(size: 30, weight: .semibold, design: .rounded))
@@ -424,17 +427,17 @@ private struct FreeUpSpaceCard: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
-                ActionTile(title: "Large Videos", symbol: "film.stack",
+                ActionTile(title: String(localized: "Large Videos"), symbol: "film.stack",
                            value: model.largeVideos.reduce(0) { $0 + $1.bytes }.bytes,
                            detail: count(model.largeVideos.count, "video")) { open(.largeVideos) }
-                ActionTile(title: "Duplicates", symbol: "plus.square.on.square",
+                ActionTile(title: String(localized: "Duplicates"), symbol: "plus.square.on.square",
                            value: model.duplicates.reduce(0) { $0 + $1.reclaimableBytes }.bytes,
                            detail: count(model.duplicates.count, "set")) { open(.duplicates) }
-                ActionTile(title: "Screenshots", symbol: "camera.viewfinder",
+                ActionTile(title: String(localized: "Screenshots"), symbol: "camera.viewfinder",
                            value: screenshots.reduce(0) { $0 + $1.bytes }.bytes,
                            detail: count(screenshots.count, "item")) { open(.mediaType(.screenshots)) }
                 if !model.deleting.isEmpty {
-                    ActionTile(title: "Waiting to Delete", symbol: "trash",
+                    ActionTile(title: String(localized: "Waiting to Delete"), symbol: "trash",
                                value: model.deleting.reduce(0) { $0 + $1.bytes }.bytes,
                                detail: count(model.deleting.count, "item")) { open(.deleting) }
                 }
@@ -495,14 +498,14 @@ private struct ContentsCard: View {
         let dates = model.base.compactMap(\.metadata.creationDate)
         let types = PhoneMediaType.allCases.filter { model.mediaTypeCounts[$0, default: 0] > 0 }
         VStack(alignment: .leading, spacing: 16) {
-            CardTitle(title: "What's on it", symbol: "photo.on.rectangle.angled") {
+            CardTitle(title: String(localized: "What's on it"), symbol: "photo.on.rectangle.angled") {
                 if let oldest = dates.min(), let newest = dates.max() {
-                    Text("\(oldest.formatted(.dateTime.month(.abbreviated).year())) – \(newest.formatted(.dateTime.month(.abbreviated).year()))")
+                    Text(String(localized: "\(oldest.formatted(.dateTime.month(.abbreviated).year())) – \(newest.formatted(.dateTime.month(.abbreviated).year()))"))
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
             FlowLayout(spacing: 8) {
-                Chip(title: "Favorites", symbol: "heart.fill", count: model.favorites.count) { open(.favorites) }
+                Chip(title: String(localized: "Favorites"), symbol: "heart.fill", count: model.favorites.count) { open(.favorites) }
                 ForEach(types) { type in
                     Chip(title: type.title, symbol: type.symbol, count: model.mediaTypeCounts[type, default: 0]) { open(.mediaType(type)) }
                 }
@@ -532,6 +535,7 @@ private struct Chip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help("Open \(title)")
     }
 }
 
@@ -591,8 +595,9 @@ private struct ChangesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            CardTitle(title: "Changes for the iPhone", symbol: "iphone.and.arrow.forward") {
+            CardTitle(title: String(localized: "Changes for the iPhone"), symbol: "iphone.and.arrow.forward") {
                 Button("See All", action: openQueue).buttonStyle(.link)
+                    .help("Every change waiting for this iPhone, and what it did with earlier ones")
             }
             if !model.queue.pending.isEmpty {
                 Text(model.queue.pending.count == 1 ? "1 change waiting for \(device.name)" : "\(model.queue.pending.count) changes waiting for \(device.name)")

@@ -107,8 +107,8 @@ enum ContinuedBackup {
 
         let request = BGContinuedProcessingTaskRequest(
             identifier: identifier,
-            title: "Backing up photos",
-            subtitle: "Connecting to your Mac…"
+            title: String(localized: "Backing up photos"),
+            subtitle: String(localized: "Connecting to your Mac…")
         )
         request.strategy = .fail
         do {

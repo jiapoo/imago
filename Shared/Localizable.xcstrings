@@ -1,0 +1,1348 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "  %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "  %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "  Nothing directly in it" : {
+
+    },
+    "· paired %@" : {
+
+    },
+    "“%@” has %@ items on the drive. Show Everything in the Folder to see them." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "“%1$@” has %2$@ items on the drive. Show Everything in the Folder to see them."
+          }
+        }
+      }
+    },
+    "“%@” is empty" : {
+
+    },
+    "“%@” isn't connected. Backups resume when you plug it in." : {
+
+    },
+    "“%@” isn't connected. iPhones are told to try again later, and backups resume as soon as you plug it in." : {
+
+    },
+    "%@ – %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ – %2$@"
+          }
+        }
+      }
+    },
+    "%@ (⇧⌘Z)" : {
+
+    },
+    "%@ (⌘⌫)" : {
+
+    },
+    "%@ (⌘Z)" : {
+
+    },
+    "%@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "%@ %@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%@ %@ %@ only on this %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ %3$@ only on this %4$@"
+          }
+        }
+      }
+    },
+    "%@ deleted on %@; %@ photos and videos stay in the library, as in Photos. %@ asks you to confirm %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ deleted on %2$@; %3$@ photos and videos stay in the library, as in Photos. %4$@ asks you to confirm %5$@."
+          }
+        }
+      }
+    },
+    "%@ free" : {
+
+    },
+    "%@ free of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ free of %2$@"
+          }
+        }
+      }
+    },
+    "%@ items" : {
+
+    },
+    "%@ items · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ items · %2$@"
+          }
+        }
+      }
+    },
+    "%@ items here are also still on your %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ items here are also still on your %2$@"
+          }
+        }
+      }
+    },
+    "%@ items here will be removed from your iPhone once you confirm it there." : {
+
+    },
+    "%@ name" : {
+
+    },
+    "%@ of %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@"
+          }
+        }
+      }
+    },
+    "%@ of %@ used" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ of %2$@ used"
+          }
+        }
+      }
+    },
+    "%@ photos and videos with a place" : {
+
+    },
+    "%@ photos here" : {
+
+    },
+    "%@ Storage" : {
+
+    },
+    "%@ suggests %lld %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ suggests %2$lld %3$@"
+          }
+        }
+      }
+    },
+    "%@ total" : {
+
+    },
+    "%lld" : {
+
+    },
+    "%lld bursts are already listed once you scan." : {
+
+    },
+    "%lld changes waiting for %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld changes waiting for %2$@"
+          }
+        }
+      }
+    },
+    "%lld here" : {
+
+    },
+    "%lld items · %@ extra" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld items · %2$@ extra"
+          }
+        }
+      }
+    },
+    "%lld things need your answer" : {
+
+    },
+    "+%lld" : {
+
+    },
+    "1 change waiting for %@" : {
+
+    },
+    "1 item" : {
+
+    },
+    "1 item here is also still on your %@" : {
+
+    },
+    "1 item here will be removed from your iPhone once you confirm it there." : {
+
+    },
+    "1 photo here" : {
+
+    },
+    "1 photo with a place" : {
+
+    },
+    "1 thing needs your answer" : {
+
+    },
+    "7 days" : {
+
+    },
+    "30 days" : {
+
+    },
+    "60 days" : {
+
+    },
+    "A change to this is waiting for the iPhone" : {
+
+    },
+    "A folder on your backup drive, next to your iPhones' folders." : {
+
+    },
+    "About %@" : {
+
+    },
+    "Add" : {
+
+    },
+    "Add an iPhone" : {
+
+    },
+    "Add Device" : {
+
+    },
+    "Add to Album" : {
+
+    },
+    "Add to another iPhone's Photos library. With Move, they're deleted from this iPhone after." : {
+
+    },
+    "Add to the iPhone's Photos library. It goes now if Imago is open on the iPhone, otherwise when it next connects. With Move, ones from another iPhone are deleted there." : {
+
+    },
+    "After %@'s next backup, its library shows up here." : {
+
+    },
+    "After %@'s next backup, what's on it shows here." : {
+
+    },
+    "Album name" : {
+
+    },
+    "Albums" : {
+
+    },
+    "All" : {
+
+    },
+    "and %lld more" : {
+
+    },
+    "Apply" : {
+
+    },
+    "Apply %lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apply %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Apply Automatically" : {
+
+    },
+    "Ask %@ to Delete Again" : {
+
+    },
+    "Ask Again" : {
+
+    },
+    "Ask First" : {
+
+    },
+    "Ask iPhone to Remove" : {
+
+    },
+    "Asked again: you said no before. Saying no again keeps things as they are." : {
+
+    },
+    "Available after the current backup" : {
+
+    },
+    "Back" : {
+
+    },
+    "Back to iPhone's Folder" : {
+
+    },
+    "Back to the grid (Esc)" : {
+
+    },
+    "Back up once to start" : {
+
+    },
+    "Back up to %@" : {
+
+    },
+    "Back up to your Mac" : {
+
+    },
+    "Backed up here, but deleted on %@ since" : {
+
+    },
+    "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide." : {
+
+    },
+    "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted %lld days after it left the iPhone (the days on each)." : {
+
+    },
+    "Backup drive not connected" : {
+
+    },
+    "Backups are saved to" : {
+
+    },
+    "Backups go here now" : {
+
+    },
+    "Can't use that folder" : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Change Location…" : {
+
+    },
+    "Change…" : {
+
+    },
+    "Changes" : {
+
+    },
+    "Changes from %@" : {
+
+    },
+    "Changes from iPhones" : {
+
+    },
+    "Changes go to %@ when you open Imago on it, or at its next backup." : {
+
+    },
+    "Changes you turn off are declined, and your Mac is told at the next backup." : {
+
+    },
+    "Changing the location starts new backups there. Existing backups stay where they are; move them in Finder if you like, and Imago picks them up from the new place." : {
+
+    },
+    "Choose…" : {
+
+    },
+    "Close" : {
+
+    },
+    "Color" : {
+
+    },
+    "Compare in Mimesis" : {
+
+    },
+    "Comparing photos taken close together…" : {
+
+    },
+    "Comparing…" : {
+
+    },
+    "Connect “%@” to see %@'s library." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Connect “%1$@” to see %2$@'s library."
+          }
+        }
+      }
+    },
+    "Connect “%@” to see what's on %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Connect “%1$@” to see what's on %2$@."
+          }
+        }
+      }
+    },
+    "Connect “%@” to see your photos and videos." : {
+
+    },
+    "Connect an external drive and it shows up here." : {
+
+    },
+    "Connect Now" : {
+
+    },
+    "Connected" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Copy %lld Items" : {
+
+    },
+    "Copy into a folder (Copy | Move in the toolbar)" : {
+
+    },
+    "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)" : {
+
+    },
+    "Copy Link" : {
+
+    },
+    "Copy Name" : {
+
+    },
+    "Copy Names" : {
+
+    },
+    "Copy the pairing link to paste into the iOS Simulator" : {
+
+    },
+    "Copy To" : {
+
+    },
+    "Copy: photos put into a folder are copied there; the iPhone keeps them" : {
+
+    },
+    "Couldn't finish" : {
+
+    },
+    "Create" : {
+
+    },
+    "Custom" : {
+
+    },
+    "Cut" : {
+
+    },
+    "Cut %lld Items" : {
+
+    },
+    "Decide" : {
+
+    },
+    "Decide for All" : {
+
+    },
+    "Decline All" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Delete %@ %@ from %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete %1$@ %2$@ from %3$@?"
+          }
+        }
+      }
+    },
+    "Delete %lld Albums…" : {
+
+    },
+    "Delete Album" : {
+
+    },
+    "Delete Album…" : {
+
+    },
+    "Delete Albums" : {
+
+    },
+    "Delete everything in Recently Deleted for good" : {
+
+    },
+    "Delete Folder" : {
+
+    },
+    "Delete from iPhone" : {
+
+    },
+    "Delete from iPhone…" : {
+
+    },
+    "Delete from the iPhone" : {
+
+    },
+    "Delete from This Mac Only" : {
+
+    },
+    "Delete from This Mac Too" : {
+
+    },
+    "Delete Now" : {
+
+    },
+    "Delete Now…" : {
+
+    },
+    "Delete them for good" : {
+
+    },
+    "Deleted items are already backed up on your Mac. They go to **Recently Deleted** for 30 days. If iCloud Photos is on, they're also removed from your other devices." : {
+
+    },
+    "Deleted on iPhone" : {
+
+    },
+    "Deleted photos and videos go to this folder on the backup drive, with a note of where they were, so Put Back returns them. It's inside the backup location, so deleting and putting back are instant." : {
+
+    },
+    "Deleted photos and videos wait here, so you can put them back." : {
+
+    },
+    "Deselect all" : {
+
+    },
+    "Deselect All" : {
+
+    },
+    "Don't Apply" : {
+
+    },
+    "Done" : {
+
+    },
+    "e.g. Jia's %@" : {
+
+    },
+    "Each iPhone has its own setting for changes made on this Mac, in Imago on the iPhone." : {
+
+    },
+    "Each iPhone you pair gets its own folder here." : {
+
+    },
+    "Each is checked against the copy here first. Your iPhone asks you to confirm; removed items go to Recently Deleted there, and stay on this drive." : {
+
+    },
+    "Edit" : {
+
+    },
+    "Empty…" : {
+
+    },
+    "Enclosing Folder" : {
+
+    },
+    "Favorite" : {
+
+    },
+    "Favorite on the iPhone" : {
+
+    },
+    "Favorite or unfavorite (.)" : {
+
+    },
+    "Find similar shots" : {
+
+    },
+    "Folder" : {
+
+    },
+    "Folders" : {
+
+    },
+    "for what's on %@ now" : {
+
+    },
+    "Forward" : {
+
+    },
+    "Free space on the iPhone. These stay on this drive." : {
+
+    },
+    "Free Up Space" : {
+
+    },
+    "Frees about %@" : {
+
+    },
+    "From the backup on your Mac" : {
+
+    },
+    "Give it a name you'll recognize, especially if you pair more than one." : {
+
+    },
+    "Go to “%@” (⌘↑ goes up one)" : {
+
+    },
+    "Hide" : {
+
+    },
+    "Hide the folders inside “%@”" : {
+
+    },
+    "Home" : {
+
+    },
+    "Imago" : {
+
+    },
+    "Imago is open on %@" : {
+
+    },
+    "Imago is open on %@, so these have reached it. Each is done once you approve it there, or right away if it's set to apply changes from this Mac." : {
+
+    },
+    "Imago is open on %@. Changes go to it right away." : {
+
+    },
+    "In “%@”" : {
+
+    },
+    "In “%@” and its folders" : {
+
+    },
+    "Info" : {
+
+    },
+    "Into folders" : {
+
+    },
+    "iPads" : {
+
+    },
+    "iPhone" : {
+
+    },
+    "iPhones" : {
+
+    },
+    "iPhones back up on their own while charging on Wi-Fi, usually at night. While one is backing up, Imago keeps this Mac from going to sleep." : {
+
+    },
+    "is backed up, so it's safe to remove from %@" : {
+
+    },
+    "It can't back up to this Mac until you pair it again. Its photos stay in the backup folder." : {
+
+    },
+    "It's made on %@ right away." : {
+
+    },
+    "It's made on %@ when the change reaches it." : {
+
+    },
+    "Items" : {
+
+    },
+    "Items are deleted for good %lld days after they're deleted. Put Back returns them where they were." : {
+
+    },
+    "Items stay until you empty Recently Deleted. Put Back returns them where they were." : {
+
+    },
+    "Items to put back were deleted on this %@. Your Mac sends the backed-up originals, and they're added to your library with their dates, places and albums. Keep Imago open until they're in." : {
+
+    },
+    "Its photos and videos stay in it." : {
+
+    },
+    "Its photos go to the “%@” folder. It stays paired until you remove it, and backs up whenever it's on the same network as this Mac." : {
+
+    },
+    "Keep" : {
+
+    },
+    "Keep All the Backups" : {
+
+    },
+    "Keep Both" : {
+
+    },
+    "Keep both on the same Wi-Fi. This code works once, and only while this window is open." : {
+
+    },
+    "Keep Copying" : {
+
+    },
+    "Keep deleted items for" : {
+
+    },
+    "Keep every backup here, put them all back on %@, or move them all to Recently Deleted" : {
+
+    },
+    "Keep on iPhone" : {
+
+    },
+    "Keep the Backup" : {
+
+    },
+    "Keep the Backups" : {
+
+    },
+    "Keep the Backups on This Mac" : {
+
+    },
+    "Keep them on %@ and on this Mac, as they are." : {
+
+    },
+    "Large Files" : {
+
+    },
+    "Later" : {
+
+    },
+    "Leave select mode and deselect" : {
+
+    },
+    "Library" : {
+
+    },
+    "Make a folder in the Files panel first" : {
+
+    },
+    "Media Types" : {
+
+    },
+    "More" : {
+
+    },
+    "More Colors…" : {
+
+    },
+    "Move" : {
+
+    },
+    "Move %lld Items Here" : {
+
+    },
+    "Move %lld Not Synced Files to Recently Deleted" : {
+
+    },
+    "Move All to Recently Deleted…" : {
+
+    },
+    "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)" : {
+
+    },
+    "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)" : {
+
+    },
+    "Move Item Here" : {
+
+    },
+    "Move Not Synced File to Recently Deleted" : {
+
+    },
+    "Move photos off the iPhone?" : {
+
+    },
+    "Move To" : {
+
+    },
+    "Move to Recently Deleted" : {
+
+    },
+    "Move to Recently Deleted on this Mac. These aren't on the iPhone." : {
+
+    },
+    "Move: photos put into a folder leave the iPhone's backup and are deleted from the iPhone" : {
+
+    },
+    "Name" : {
+
+    },
+    "Name on Mac" : {
+
+    },
+    "Needs your answer" : {
+
+    },
+    "Needs Your Answer" : {
+
+    },
+    "New Album" : {
+
+    },
+    "New Album…" : {
+
+    },
+    "New Folder" : {
+
+    },
+    "New Folder Inside…" : {
+
+    },
+    "New Folder…" : {
+
+    },
+    "No large files" : {
+
+    },
+    "No photos yet" : {
+
+    },
+    "No places yet" : {
+
+    },
+    "Not backed up" : {
+
+    },
+    "Not connected" : {
+
+    },
+    "Not Now" : {
+
+    },
+    "Not synced" : {
+
+    },
+    "Nothing deleted on the iPhone" : {
+
+    },
+    "Nothing here" : {
+
+    },
+    "Nothing here is on %@" : {
+
+    },
+    "Nothing on this day" : {
+
+    },
+    "Nothing to redo" : {
+
+    },
+    "Nothing to show yet" : {
+
+    },
+    "Nothing to undo" : {
+
+    },
+    "Nothing waiting." : {
+
+    },
+    "Nothing yet. What happens while Imago is open shows here." : {
+
+    },
+    "OK" : {
+
+    },
+    "On %@" : {
+
+    },
+    "On This Day" : {
+
+    },
+    "On your Mac, click **Copy Link** in Add iPhone, then paste it here." : {
+
+    },
+    "On your Mac, open Imago and click **Add iPhone**." : {
+
+    },
+    "Only items backed up on this Mac can be sent to another iPhone" : {
+
+    },
+    "Only items fully backed up on this Mac can be deleted from the iPhone" : {
+
+    },
+    "Only on the device: this is its preview. It's copied to the drive at the next backup." : {
+
+    },
+    "Only on this Mac, next to %@'s backup. It isn't on the iPhone." : {
+
+    },
+    "Open" : {
+
+    },
+    "Open “%@”. Drop photos here to put them in it." : {
+
+    },
+    "Open Copy in Finder" : {
+
+    },
+    "Open Energy Settings" : {
+
+    },
+    "Open Imago" : {
+
+    },
+    "Open Imago on your iPhone" : {
+
+    },
+    "Open in Mimesis to compare with another clip" : {
+
+    },
+    "Open in Photos" : {
+
+    },
+    "Open Photos" : {
+
+    },
+    "Open these two side by side in Mimesis" : {
+
+    },
+    "Open With" : {
+
+    },
+    "Other…" : {
+
+    },
+    "Overnight" : {
+
+    },
+    "Overnight backups" : {
+
+    },
+    "Pair" : {
+
+    },
+    "Pair an iPhone or iPad with this Mac" : {
+
+    },
+    "Pair with %@" : {
+
+    },
+    "Pair with Mac" : {
+
+    },
+    "Paired with %@" : {
+
+    },
+    "Paste" : {
+
+    },
+    "Paste %lld Items" : {
+
+    },
+    "Paste Item" : {
+
+    },
+    "photobackup://pair?…" : {
+
+    },
+    "Photos" : {
+
+    },
+    "Photos already on the Mac stay there. You can pair again anytime." : {
+
+    },
+    "Photos and videos appear here as your iPhones back up." : {
+
+    },
+    "Photos and videos deleted on the iPhone after they were backed up show here, as of its last backup." : {
+
+    },
+    "Photos and videos over %@ show here, biggest first." : {
+
+    },
+    "Photos and videos taken on %@ in earlier years show here." : {
+
+    },
+    "Photos and videos taken with Location Services on show here, where they were taken." : {
+
+    },
+    "Photos and videos you drag or send to a folder will be moved there from their iPhone's backup, and the iPhone will be asked to delete them, freeing space on it. Each is checked against its backup first, you confirm on the iPhone, and they stay in Recently Deleted there for 30 days." : {
+
+    },
+    "Photos deleted on an iPhone" : {
+
+    },
+    "Photos to put back come from your Mac. Keep Imago open near it." : {
+
+    },
+    "Pick a drive, then choose or create a folder on it. An external drive is a good way to keep backups off your Mac's own disk." : {
+
+    },
+    "Places" : {
+
+    },
+    "Point at the code in **Add iPhone** on your Mac." : {
+
+    },
+    "Point the camera at this code" : {
+
+    },
+    "Put All Back on %@" : {
+
+    },
+    "Put Back" : {
+
+    },
+    "Put Back on %@" : {
+
+    },
+    "Putting photos back from your Mac…" : {
+
+    },
+    "Quit Imago" : {
+
+    },
+    "Reading your library…" : {
+
+    },
+    "Recently Deleted" : {
+
+    },
+    "Recently Deleted has %@ items. Show Everything in Recently Deleted to see them." : {
+
+    },
+    "Recently Deleted is empty" : {
+
+    },
+    "Redo" : {
+
+    },
+    "Remove “%@”?" : {
+
+    },
+    "Remove from “%@”" : {
+
+    },
+    "Remove from %@…" : {
+
+    },
+    "Remove from Album" : {
+
+    },
+    "Remove from iPhone" : {
+
+    },
+    "Remove from iPhone…" : {
+
+    },
+    "Remove iPhone" : {
+
+    },
+    "Remove iPhone…" : {
+
+    },
+    "Removing it from the %@ frees %@ there. The backup on this drive stays." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Removing it from the %1$@ frees %2$@ there. The backup on this drive stays."
+          }
+        }
+      }
+    },
+    "Removing them from the %@ frees %@ there. The backups on this drive stay." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Removing them from the %1$@ frees %2$@ there. The backups on this drive stay."
+          }
+        }
+      }
+    },
+    "Rename" : {
+
+    },
+    "Rename iPhone" : {
+
+    },
+    "Rename…" : {
+
+    },
+    "Replace" : {
+
+    },
+    "Return them where they were deleted from" : {
+
+    },
+    "Review" : {
+
+    },
+    "Review…" : {
+
+    },
+    "Scan %@ Photos" : {
+
+    },
+    "See All" : {
+
+    },
+    "See the next page (⌘])" : {
+
+    },
+    "See the previous page (⌘[)" : {
+
+    },
+    "Select" : {
+
+    },
+    "Select %@ in the grid" : {
+
+    },
+    "Select All" : {
+
+    },
+    "Select All Extras" : {
+
+    },
+    "Select everything here (⌘A)" : {
+
+    },
+    "Select photos or videos and choose Move To, or drag them onto this folder in the sidebar or the Files panel." : {
+
+    },
+    "Select several items with single clicks" : {
+
+    },
+    "Send to iPhone" : {
+
+    },
+    "Share" : {
+
+    },
+    "Share these %lld with AirDrop, Messages, WeChat or another app" : {
+
+    },
+    "Share with AirDrop, Messages, WeChat or another app" : {
+
+    },
+    "Share…" : {
+
+    },
+    "Show" : {
+
+    },
+    "Show a copy in Finder" : {
+
+    },
+    "Show as iPad" : {
+
+    },
+    "Show as iPhone" : {
+
+    },
+    "Show details" : {
+
+    },
+    "Show Folder in Finder" : {
+
+    },
+    "Show in “%@”" : {
+
+    },
+    "Show in Finder" : {
+
+    },
+    "Show It" : {
+
+    },
+    "Show Not Backed Up on %@" : {
+
+    },
+    "Show photos, videos or both" : {
+
+    },
+    "Show the %lld copies in folders on the drive in Finder" : {
+
+    },
+    "Show the copy in a folder on the drive in Finder" : {
+
+    },
+    "Show the copy in Finder" : {
+
+    },
+    "Show the folders inside “%@”" : {
+
+    },
+    "Show Them" : {
+
+    },
+    "Show this folder in Finder" : {
+
+    },
+    "Show what's in the subfolders too" : {
+
+    },
+    "Show what's on %@ (as of their last backup), on one of them, or everything on the backup drive" : {
+
+    },
+    "Showing what's in the subfolders too" : {
+
+    },
+    "Size" : {
+
+    },
+    "Skip Duplicates" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Stop after the file under way. What's done stays, and Undo takes it back." : {
+
+    },
+    "Storage" : {
+
+    },
+    "Subfolders" : {
+
+    },
+    "taken in %@" : {
+
+    },
+    "Tap **Pair with Mac**" : {
+
+    },
+    "the busiest year, with %@" : {
+
+    },
+    "The folder name stays the same." : {
+
+    },
+    "The Mac compares photos taken within a minute of each other, using the backed-up copies. Nothing leaves this Mac." : {
+
+    },
+    "Their backups on this Mac go straight to Recently Deleted, where you can put them back for %@." : {
+
+    },
+    "Their backups stay on this Mac, and the bell asks whether to delete them here too, keep them, or put them back on the iPhone." : {
+
+    },
+    "These go to %@ when you open Imago on it, or at its next backup. Nothing changes there until you approve it." : {
+
+    },
+    "They show here as previews until they're backed up. Open Imago on the %@ and back up to copy them to the drive." : {
+
+    },
+    "They were deleted on the iPhone already; this moves the backed-up copies to Recently Deleted on this Mac. Put Back returns them, and ⌘Z undoes it." : {
+
+    },
+    "They're deleted from the backup drive for good. This can't be undone." : {
+
+    },
+    "Thumbnail size" : {
+
+    },
+    "To let a sleeping Mac accept backups, turn on **Wake for network access** in System Settings › Energy." : {
+
+    },
+    "Turn, flip, crop or trim a copy (⌘E or ⌘T). The original stays as it is." : {
+
+    },
+    "Undo" : {
+
+    },
+    "Unfavorite" : {
+
+    },
+    "Unfavorite on the iPhone" : {
+
+    },
+    "Unpair" : {
+
+    },
+    "Unpair from %@?" : {
+
+    },
+    "Until emptied" : {
+
+    },
+    "Use Move" : {
+
+    },
+    "Videos" : {
+
+    },
+    "Videos %@, photos %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Videos %1$@, photos %2$@"
+          }
+        }
+      }
+    },
+    "Waiting for %@" : {
+
+    },
+    "Waiting for iPhone" : {
+
+    },
+    "Year" : {
+
+    },
+    "Years, months, or every photo by day" : {
+
+    },
+    "Your Mac shows this %@ by this name and saves its photos in a folder with the same name." : {
+
+    },
+    "Your photos and videos copy to your own Mac over Wi-Fi, encrypted, at full quality. Nothing goes through the cloud." : {
+
+    }
+  },
+  "version" : "1.0"
+}
