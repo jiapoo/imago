@@ -157,7 +157,7 @@ struct DeviceView: View {
         } else if model.state == .ready, model.backedUpCount == model.base.count, !model.base.isEmpty {
             chips.append((String(localized: "All backed up"), "checkmark.circle.fill"))
         }
-        chips.append(server.liveDevices.contains(device.id) ? (String(localized: "Imago open on it"), "dot.radiowaves.left.and.right") : ("Not connected", "wifi.slash"))
+        chips.append(server.liveDevices.contains(device.id) ? (String(localized: "Imago open on it"), "dot.radiowaves.left.and.right") : (String(localized: "Not connected"), "wifi.slash"))
         if let last = summary?.lastBackup { chips.append((String(localized: "Last backup \(last.shortRelative)"), "clock")) }
         return chips
     }
@@ -174,7 +174,7 @@ struct DeviceView: View {
                        detail: ready ? notBackedUpText : nil, symbol: "checkmark.shield")
             NumberTile(title: String(localized: "On the backup drive"), value: (summary?.totalBytes ?? 0).bytes,
                        detail: "\((summary?.fileCount ?? 0).formatted()) files", symbol: "externaldrive")
-            NumberTile(title: "Albums", value: ready ? model.albums.count.formatted() : "–",
+            NumberTile(title: String(localized: "Albums"), value: ready ? model.albums.count.formatted() : "–",
                        detail: ready ? "\(model.favorites.count.formatted()) favorites" : nil, symbol: "rectangle.stack")
         }
     }
@@ -201,8 +201,8 @@ struct DeviceView: View {
             model.state == .unavailable ? "Backup drive not connected" : "Nothing to show yet",
             systemImage: model.state == .unavailable ? "externaldrive.badge.xmark" : "iphone.and.arrow.forward",
             description: Text(model.state == .unavailable
-                              ? "Connect “\(server.location.volumeName)” to see what's on \(device.name)."
-                              : "After \(device.name)'s next backup, what's on it shows here.")
+                              ? String(localized: "Connect “\(server.location.volumeName)” to see what's on \(device.name).")
+                              : String(localized: "After \(device.name)'s next backup, what's on it shows here."))
         )
         .modernCard()
     }
@@ -324,9 +324,9 @@ private struct SpaceCard: View {
             .accessibilityElement()
             .accessibilityLabel("Videos \(videoBytes.bytes), photos \(photoBytes.bytes)")
             HStack(alignment: .top, spacing: 28) {
-                LegendValue(color: .chartVideos, title: "Videos", value: videoBytes.bytes,
+                LegendValue(color: .chartVideos, title: String(localized: "Videos"), value: videoBytes.bytes,
                             detail: "\(videos.count.formatted()) · \(share(videoBytes, of: total))")
-                LegendValue(color: .chartPhotos, title: "Photos", value: photoBytes.bytes,
+                LegendValue(color: .chartPhotos, title: String(localized: "Photos"), value: photoBytes.bytes,
                             detail: "\(photos.count.formatted()) · \(share(photoBytes, of: total))")
             }
         }
@@ -386,7 +386,7 @@ private struct YearsCard: View {
                 }
             }
             Chart(years) { year in
-                BarMark(x: .value("Year", year.label), y: .value("Items", year.count))
+                BarMark(x: .value(String(localized: "Year"), year.label), y: .value(String(localized: "Items"), year.count))
                     .foregroundStyle(hovered == nil || hovered == year.label ? Color.imago : Color.imago.opacity(0.35))
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, topTrailingRadius: 4))
             }

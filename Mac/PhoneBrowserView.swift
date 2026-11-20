@@ -84,14 +84,16 @@ struct PhoneBrowserView: View {
         .confirmationDialog(deleteAlbumsTitle, isPresented: Binding(
             get: { deletingAlbums != nil }, set: { if !$0 { deletingAlbums = nil } }
         ), titleVisibility: .visible) {
-            Button((deletingAlbums?.count ?? 0) > 1 ? "Delete Albums" : "Delete Album", role: .destructive) {
+            Button((deletingAlbums?.count ?? 0) > 1 ? String(localized: "Delete Albums") : String(localized: "Delete Album"), role: .destructive) {
                 guard let albums = deletingAlbums else { return }
                 if case .album(let open) = section, albums.contains(open) { section = .library }
                 PhoneActions(server: server, model: model, device: device, library: library, history: history).deleteAlbums(albums)
             }
         } message: {
             let one = (deletingAlbums?.count ?? 0) == 1
-            Text("\(one ? String(localized: "The album is") : String(localized: "The albums are")) deleted on \(device.name); \(one ? "its" : "their") photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(server.liveDevices.contains(device.id) ? "now" : String(localized: "when you next open Imago on it")).")
+            let when = server.liveDevices.contains(device.id) ? String(localized: "now") : String(localized: "when you next open Imago on it")
+            Text(one ? String(localized: "The album is deleted on \(device.name); its photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(when).")
+                     : String(localized: "The albums are deleted on \(device.name); their photos and videos stay in the library, as in Photos. \(device.name) asks you to confirm \(when)."))
         }
         .onAppear { openRequestedSection() }
         // Asked for while the page is open (Show Them, in the note about photos not backed up).
@@ -124,7 +126,7 @@ struct PhoneBrowserView: View {
         guard let takenAt = model.takenAt else { return String(localized: "iPhone library") }
         let waiting = model.queue.pending.count
         return String(localized: "\(model.assets.count.formatted()) items · as of \(takenAt.shortRelative)")
-            + (waiting > 0 ? String(localized: " · \(waiting) \(waiting == 1 ? "change" : "changes") waiting") : "")
+            + (waiting == 1 ? String(localized: " · 1 change waiting") : waiting > 1 ? String(localized: " · \(waiting) changes waiting") : "")
     }
 
     /// Hidden while the viewer is open: the toolbar is the viewer's then.
@@ -166,11 +168,11 @@ struct PhoneBrowserView: View {
     private var sidebar: some View {
         List(selection: $sidebarSelection) {
             Section {
-                SectionRow(title: "Library", symbol: "photo.on.rectangle", detail: model.assets.count.formatted()).tag(PhoneSection.library)
+                SectionRow(title: String(localized: "Library"), symbol: "photo.on.rectangle", detail: model.assets.count.formatted()).tag(PhoneSection.library)
                 SectionRow(title: String(localized: "Favorites"), symbol: "heart", detail: model.favorites.count.formatted()).tag(PhoneSection.favorites)
-                SectionRow(title: "Places", symbol: "map",
+                SectionRow(title: String(localized: "Places"), symbol: "map",
                            detail: model.assets.count { $0.metadata.location != nil }.formatted()).tag(PhoneSection.places)
-                SectionRow(title: "On This Day", symbol: "calendar.badge.clock",
+                SectionRow(title: String(localized: "On This Day"), symbol: "calendar.badge.clock",
                            detail: onThisDay.count.formatted()).tag(PhoneSection.onThisDay)
             }
             let types = PhoneMediaType.allCases.filter { model.mediaTypeCounts[$0, default: 0] > 0 }
@@ -257,7 +259,7 @@ struct PhoneBrowserView: View {
             PhonePlacesView(model: model, device: device, kind: placesKind)
         case .onThisDay:
             PhoneGrid(model: model, device: device, assets: onThisDay,
-                      empty: ("Nothing on this day", "calendar.badge.clock",
+                      empty: (String(localized: "Nothing on this day"), "calendar.badge.clock",
                               String(localized: "Photos and videos taken on \(Date.now.formatted(.dateTime.month(.wide).day())) in earlier years show here.")))
         case .favorites:
             PhoneGrid(model: model, device: device, assets: model.favorites,
@@ -298,13 +300,13 @@ private struct ConnectionPill: View {
     let isLive: Bool
 
     var body: some View {
-        Label(isLive ? "Connected" : "Not connected", systemImage: isLive ? "iphone.radiowaves.left.and.right" : "iphone.slash")
+        Label(isLive ? String(localized: "Connected") : String(localized: "Not connected"), systemImage: isLive ? "iphone.radiowaves.left.and.right" : "iphone.slash")
             .labelStyle(.titleAndIcon)
             .font(.callout.weight(.medium))
             .foregroundStyle(isLive ? .green : .secondary)
             .padding(.horizontal, 8)
-            .help(isLive ? "Imago is open on \(device.name). Changes go to it right away."
-                         : "Changes go to \(device.name) when you open Imago on it, or at its next backup.")
+            .help(isLive ? String(localized: "Imago is open on \(device.name). Changes go to it right away.")
+                         : String(localized: "Changes go to \(device.name) when you open Imago on it, or at its next backup."))
     }
 }
 
@@ -493,7 +495,7 @@ struct PhoneGrid: View {
     /// Off where the page is about that already (Not Backed Up) or about something else (To Delete).
     var notesNotBackedUp = true
     var scrollTarget: Binding<Date?> = .constant(nil)
-    var empty: (title: String, symbol: String, detail: String?) = ("Nothing here", "photo", nil)
+    var empty: (title: String, symbol: String, detail: String?) = (String(localized: "Nothing here"), "photo", nil)
 
     @AppStorage("phoneTileSize") private var tileSize = 150.0
     @State private var selection = GridSelection()
@@ -530,12 +532,15 @@ struct PhoneGrid: View {
     private var notBackedUpNote: some View {
         let missing = assets.filter(Self.onlyOnDevice)
         if !missing.isEmpty {
-            let what = missing.allSatisfy(\.isVideo) ? (missing.count == 1 ? "video" : "videos")
-                : missing.contains(where: \.isVideo) ? String(localized: "photos and videos") : (missing.count == 1 ? "photo" : "photos")
+            let n = missing.count
+            let title = missing.allSatisfy(\.isVideo)
+                ? (n == 1 ? String(localized: "1 video is only on this \(kind)") : String(localized: "\(n.formatted()) videos are only on this \(kind)"))
+                : missing.contains(where: \.isVideo) ? String(localized: "\(n.formatted()) photos and videos are only on this \(kind)")
+                : (n == 1 ? String(localized: "1 photo is only on this \(kind)") : String(localized: "\(n.formatted()) photos are only on this \(kind)"))
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "externaldrive.badge.xmark").foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(missing.count.formatted()) \(what) \(missing.count == 1 ? "is" : "are") only on this \(kind)")
+                    Text(title)
                         .fontWeight(.semibold)
                     Text("They show here as previews until they're backed up. Open Imago on the \(kind) and back up to copy them to the drive.")
                         .foregroundStyle(.secondary)
@@ -628,7 +633,7 @@ struct PhoneGrid: View {
             preview: { openViewer(on: selected.count == 1 ? selected.first : (assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first)) },
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
-            deleteTitle: "Delete from iPhone…",
+            deleteTitle: String(localized: "Delete from iPhone…"),
             copy: { selected.compactMap { model.files[$0.id] } },
             extra: [".": { if !selected.isEmpty { actions.toggleFavorite(selected) } }]
         ))
@@ -705,7 +710,7 @@ struct PhoneGrid: View {
         if isDeleting {
             Button("Keep on iPhone") { actions.keep(targets); selection.selected = [] }
         } else {
-            Button(targets.allSatisfy(\.metadata.isFavorite) ? "Unfavorite" : "Favorite") { actions.toggleFavorite(targets) }
+            Button(targets.allSatisfy(\.metadata.isFavorite) ? String(localized: "Unfavorite") : String(localized: "Favorite")) { actions.toggleFavorite(targets) }
             Menu("Add to Album") {
                 ForEach(model.albums, id: \.self) { name in
                     Button(name) { actions.request(.addToAlbum(name), targets) }
@@ -835,7 +840,7 @@ struct PhoneGrid: View {
     /// What the viewer's Info panel shows about an asset.
     private static func info(_ asset: PhoneAsset) -> [MediaViewerHost.InfoRow] {
         let metadata = asset.metadata
-        var rows = [MediaViewerHost.InfoRow(label: "Name", value: metadata.originalFilename)]
+        var rows = [MediaViewerHost.InfoRow(label: String(localized: "Name"), value: metadata.originalFilename)]
         if let date = metadata.creationDate {
             rows.append(.init(label: String(localized: "Taken"), value: date.formatted(date: .complete, time: .standard)))
         }
@@ -845,10 +850,10 @@ struct PhoneGrid: View {
         if asset.isVideo {
             rows.append(.init(label: String(localized: "Length"), value: Duration.seconds(metadata.duration).formatted(.time(pattern: .minuteSecond))))
         }
-        if asset.bytes > 0 { rows.append(.init(label: "Size", value: asset.bytes.bytes)) }
+        if asset.bytes > 0 { rows.append(.init(label: String(localized: "Size"), value: asset.bytes.bytes)) }
         rows.append(.init(label: String(localized: "On this Mac"), value: asset.isBackedUp ? String(localized: "Backed up") : String(localized: "Not fully backed up yet")))
         if !metadata.albums.isEmpty {
-            rows.append(.init(label: "Albums", value: metadata.albums.joined(separator: ", ")))
+            rows.append(.init(label: String(localized: "Albums"), value: metadata.albums.joined(separator: ", ")))
         }
         if let location = metadata.location {
             rows.append(.init(label: String(localized: "Location"), value: String(format: "%.5f, %.5f", location.latitude, location.longitude)))
@@ -1014,7 +1019,9 @@ struct PhoneActions {
     func delete(_ assets: [PhoneAsset]) {
         let items = libraryItems(assets, includingDeleted: true)
         guard !items.isEmpty else {
-            library.error = String(localized: "\(assets.count == 1 ? String(localized: "It isn't") : String(localized: "They aren't")) backed up yet, so Imago doesn't delete \(assets.count == 1 ? "it" : "them") from the iPhone. Back up first, or delete in Photos on the iPhone.")
+            library.error = assets.count == 1
+                ? String(localized: "It isn't backed up yet, so Imago doesn't delete it from the iPhone. Back up first, or delete in Photos on the iPhone.")
+                : String(localized: "They aren't backed up yet, so Imago doesn't delete them from the iPhone. Back up first, or delete in Photos on the iPhone.")
             return
         }
         Task { history.record(await library.deleteFromPhoneAndHere(items, server: server)) }
@@ -1059,9 +1066,9 @@ struct PhoneActions {
     func keep(_ assets: [PhoneAsset]) {
         let ids = Set(assets.map(\.id))
         server.keep(ids, on: device)
-        history.record(FileHistory.Step(name: "Keep on iPhone") { [self] in
+        history.record(FileHistory.Step(name: String(localized: "Keep on iPhone")) { [self] in
             server.request(.delete, for: model.baseAssets(ids), on: device)
-            return FileHistory.Step(name: "Keep on iPhone") { [self] in
+            return FileHistory.Step(name: String(localized: "Keep on iPhone")) { [self] in
                 server.keep(ids, on: device)
                 return nil
             }
@@ -1116,7 +1123,7 @@ struct PhoneSelectionBar: View {
                 let allFavorites = onPhone.allSatisfy(\.metadata.isFavorite)
                 if !onPhone.isEmpty {
                 Button { actions.toggleFavorite(selected) } label: {
-                    Label(allFavorites ? "Unfavorite" : "Favorite", systemImage: allFavorites ? "heart.slash" : "heart")
+                    Label(allFavorites ? String(localized: "Unfavorite") : String(localized: "Favorite"), systemImage: allFavorites ? "heart.slash" : "heart")
                 }
                 .help("Favorite or unfavorite (.)")
                 Menu {
@@ -1146,8 +1153,8 @@ struct PhoneSelectionBar: View {
                 .fixedSize()
                 .disabled(deletable.isEmpty && notSynced.isEmpty)
                 .help(transferMode == TransferMode.move.rawValue
-                      ? "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)"
-                      : "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)")
+                      ? String(localized: "Move into a folder on the drive and remove from the iPhone (Copy | Move in the toolbar)")
+                      : String(localized: "Copy into a folder on the drive; the iPhone keeps them (Copy | Move in the toolbar)"))
                 let items = actions.libraryItems(selected)
                 if !actions.otherPhones.isEmpty {
                     Menu {
@@ -1160,8 +1167,8 @@ struct PhoneSelectionBar: View {
                     .menuStyle(.button)
                     .fixedSize()
                     .disabled(items.isEmpty)
-                    .help(items.isEmpty ? "Only items backed up on this Mac can be sent to another iPhone"
-                          : "Add to another iPhone's Photos library. With Move, they're deleted from this iPhone after.")
+                    .help(items.isEmpty ? String(localized: "Only items backed up on this Mac can be sent to another iPhone")
+                          : String(localized: "Add to another iPhone's Photos library. With Move, they're deleted from this iPhone after."))
                 }
                 let copies = actions.folderCopies(selected)
                 if !copies.isEmpty {
@@ -1180,7 +1187,7 @@ struct PhoneSelectionBar: View {
                         Label("Delete", systemImage: "trash")
                     }
                     .disabled(deletable.isEmpty)
-                    .help(deletable.isEmpty ? "Only items fully backed up on this Mac can be deleted from the iPhone" : "Delete from the iPhone")
+                    .help(deletable.isEmpty ? String(localized: "Only items fully backed up on this Mac can be deleted from the iPhone") : String(localized: "Delete from the iPhone"))
                 } else {
                     Button(role: .destructive) {
                         let items = actions.libraryItems(notSynced)
@@ -1210,7 +1217,7 @@ struct PhoneDialogs: ViewModifier {
         let name = actions.device.name
         content
             .confirmationDialog(
-                "Delete \(deletable.count.formatted()) \(deletable.count == 1 ? "item" : "items") from \(name)?",
+                deletable.count == 1 ? String(localized: "Delete 1 item from \(name)?") : String(localized: "Delete \(deletable.count.formatted()) items from \(name)?"),
                 isPresented: $confirmingDelete, titleVisibility: .visible
             ) {
                 Button("Delete from iPhone", role: .destructive) {
@@ -1230,16 +1237,17 @@ struct PhoneDialogs: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) { albumName = "" }
             } message: {
-                Text(actions.isLive ? "It's made on \(name) right away." : "It's made on \(name) when the change reaches it.")
+                Text(actions.isLive ? String(localized: "It's made on \(name) right away.") : String(localized: "It's made on \(name) when the change reaches it."))
             }
     }
 
     private func deleteMessage(skipped: Int) -> String {
-        let when = actions.isLive ? "now" : String(localized: "when you next open Imago on it, or at its next backup")
+        let when = actions.isLive ? String(localized: "now") : String(localized: "when you next open Imago on it, or at its next backup")
         var text = String(localized: "\(actions.device.name) asks you to confirm \(when); then they go to Recently Deleted on the iPhone for 30 days. ")
             + String(localized: "Nothing changes on this Mac until it does: then the backed-up copies go to Recently Deleted in Imago, where Put Back returns them. If it says no, nothing is deleted. Each is checked against its backup first. ")
             + String(localized: "If iCloud Photos is on, they're removed from your other devices too.")
-        if skipped > 0 { text += String(localized: " \(skipped) selected \(skipped == 1 ? String(localized: "item isn't") : String(localized: "items aren't")) fully backed up yet and will be left alone.") }
+        if skipped == 1 { text += String(localized: " 1 selected item isn't fully backed up yet and will be left alone.") }
+        if skipped > 1 { text += String(localized: " \(skipped) selected items aren't fully backed up yet and will be left alone.") }
         return text
     }
 }

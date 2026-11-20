@@ -202,7 +202,7 @@ struct StatusHero: View {
                              subtitle: String(localized: "\(reason) Attempt \(attempt + 1); nothing already sent is lost."),
                              progress: client.unfinished.map { Double($0.done) / Double(max($0.total, 1)) } ?? 0)
         case .finished(let sent, let failed):
-            let title = sent == 0 ? String(localized: "Everything's backed up") : String(localized: "Backed up \(sent) \(sent == 1 ? "item" : "items")")
+            let title = sent == 0 ? String(localized: "Everything's backed up") : (sent == 1 ? String(localized: "Backed up 1 item") : String(localized: "Backed up \(sent) items"))
             let subtitle = failed > 0
                 ? String(localized: "\(failed) couldn't be copied and will be retried next time.")
                 : String(localized: "Every photo and video is safe on \(mac).")
@@ -323,21 +323,21 @@ struct StorageCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 StorageBar(storage: storage)
                 HStack(spacing: 14) {
-                    LegendDot(tint: .blue, title: "Photos")
-                    LegendDot(tint: .pink, title: "Videos")
+                    LegendDot(tint: .blue, title: String(localized: "Photos"))
+                    LegendDot(tint: .pink, title: String(localized: "Videos"))
                     LegendDot(tint: Color(.systemGray3), title: String(localized: "Other"))
                     LegendDot(tint: Color(.tertiarySystemFill), title: String(localized: "Free"))
                 }
             }
 
             VStack(spacing: 0) {
-                StorageRow(symbol: "square.stack.fill", tint: .indigo, title: "All",
+                StorageRow(symbol: "square.stack.fill", tint: .indigo, title: String(localized: "All"),
                            count: client.photoCount + client.videoCount, bytes: storage.map { $0.photoBytes + $0.videoBytes })
                 Divider().padding(.leading, 50)
-                StorageRow(symbol: "photo.fill", tint: .blue, title: "Photos",
+                StorageRow(symbol: "photo.fill", tint: .blue, title: String(localized: "Photos"),
                            count: client.photoCount, bytes: storage?.photoBytes)
                 Divider().padding(.leading, 50)
-                StorageRow(symbol: "video.fill", tint: .pink, title: "Videos",
+                StorageRow(symbol: "video.fill", tint: .pink, title: String(localized: "Videos"),
                            count: client.videoCount, bytes: storage?.videoBytes)
             }
         }
@@ -397,7 +397,7 @@ struct StorageRow: View {
                 .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.body.weight(.medium))
-                Text("\(count.formatted()) \(count == 1 ? "item" : "items")")
+                Text(count == 1 ? String(localized: "1 item") : String(localized: "\(count.formatted()) items"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .contentTransition(.numericText())

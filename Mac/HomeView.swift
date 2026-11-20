@@ -223,11 +223,11 @@ private struct ShortcutsCard: View {
     var body: some View {
         let large = library.items(in: .large)
         HStack(spacing: 12) {
-            Shortcut(title: "Library", symbol: "photo.on.rectangle.angled",
+            Shortcut(title: String(localized: "Library"), symbol: "photo.on.rectangle.angled",
                      detail: "\(library.items.count.formatted()) items") { selection = .library }
-            Shortcut(title: "Large Files", symbol: "externaldrive.fill.badge.minus",
+            Shortcut(title: String(localized: "Large Files"), symbol: "externaldrive.fill.badge.minus",
                      detail: large.isEmpty ? String(localized: "None") : "\(large.count.formatted()) · \(large.reduce(0) { $0 + $1.bytes }.bytes)") { selection = .large }
-            Shortcut(title: "Recently Deleted", symbol: "trash",
+            Shortcut(title: String(localized: "Recently Deleted"), symbol: "trash",
                      detail: library.trash.isEmpty ? String(localized: "Empty") : "\(library.trash.count.formatted()) items") { selection = .trash }
         }
     }

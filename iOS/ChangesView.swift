@@ -17,7 +17,8 @@ struct MacChangesCard: View {
                     .frame(width: 44, height: 44)
                     .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(client.credential?.serverName ?? String(localized: "Your Mac")) suggests \(changes.count) \(changes.count == 1 ? "change" : "changes")")
+                    Text(changes.count == 1 ? String(localized: "\(client.credential?.serverName ?? String(localized: "Your Mac")) suggests 1 change")
+                         : String(localized: "\(client.credential?.serverName ?? String(localized: "Your Mac")) suggests \(changes.count) changes"))
                         .font(.headline)
                     if let bytes = freed(changes) {
                         Text(String(localized: "Frees about \(bytes.formatted(.byteCount(style: .file)))"))
@@ -116,7 +117,7 @@ struct ChangesReviewSheet: View {
                             if client.isApplyingChanges {
                                 ProgressView().tint(.white)
                             } else {
-                                Text(approved.isEmpty ? "Decline All" : "Apply \(approved.count) of \(client.macChanges.count)")
+                                Text(approved.isEmpty ? String(localized: "Decline All") : String(localized: "Apply \(approved.count) of \(client.macChanges.count)"))
                                     .font(.headline)
                             }
                         }

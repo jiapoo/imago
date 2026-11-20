@@ -244,7 +244,7 @@ struct PhonePlacesView: View {
             if let group {
                 let assets = group.compactMap(model.asset)
                 PlacePanel(count: assets.count, close: { self.group = nil }) {
-                    PhoneGrid(model: model, device: device, assets: assets, empty: ("Nothing here", "map", nil))
+                    PhoneGrid(model: model, device: device, assets: assets, empty: (String(localized: "Nothing here"), "map", nil))
                 }
                 .transition(.move(edge: .trailing))
             }

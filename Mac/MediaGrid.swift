@@ -53,8 +53,8 @@ struct Day<Item: Dated>: Identifiable {
     var summary: String {
         let videos = items.count { $0.isVideo }
         let photos = items.count - videos
-        return [photos > 0 ? "\(photos) \(photos == 1 ? "photo" : "photos")" : nil,
-                videos > 0 ? "\(videos) \(videos == 1 ? "video" : "videos")" : nil]
+        return [photos > 0 ? (photos == 1 ? String(localized: "1 photo") : String(localized: "\(photos) photos")) : nil,
+                videos > 0 ? (videos == 1 ? String(localized: "1 video") : String(localized: "\(videos) videos")) : nil]
             .compactMap { $0 }.joined(separator: ", ")
     }
 }
@@ -136,7 +136,7 @@ struct GridKeys: ViewModifier {
     var open: () -> Void
     var delete: () -> Void
     /// For Edit › Delete: "Move to Recently Deleted", "Delete from iPhone…"…
-    var deleteTitle = "Move to Recently Deleted"
+    var deleteTitle = String(localized: "Move to Recently Deleted")
     /// Edit › Copy (⌘C): the selected files, to paste in Finder.
     var copy: (() -> [URL])? = nil
     /// Edit › Paste (⌘V): files from Finder, or copied here; nil where nothing can be pasted.
@@ -583,7 +583,7 @@ struct GridCommands: Commands {
             Button("Deselect All") { grid?.deselectAll() }
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(grid == nil)
-            Button(grid?.deleteTitle ?? "Move to Recently Deleted") { grid?.delete() }
+            Button(grid?.deleteTitle ?? String(localized: "Move to Recently Deleted")) { grid?.delete() }
                 .keyboardShortcut(.delete, modifiers: .command)
                 .disabled(grid == nil)
         }

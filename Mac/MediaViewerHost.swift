@@ -128,8 +128,8 @@ final class MediaViewerHost {
         let alert = NSAlert()
         alert.messageText = String(localized: "Delete “\(request.name(deleting))”?")
         alert.informativeText = (request.deleteTitle ?? "Move to Recently Deleted") + String(localized: ". ⌘Z undoes it.")
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: String(localized: "Delete"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         guard await alert.askOnWindow() else { return }
         guard await delete(deleting) else { return }
         let before = shown
@@ -450,10 +450,10 @@ private struct ViewerToolbar: ToolbarContent {
             if let isFavorite = request.isFavorite, let toggle = request.toggleFavorite {
                 let favorite = isFavorite(index)
                 Button { toggle(index) } label: {
-                    Label(favorite ? "Unfavorite" : "Favorite", systemImage: favorite ? "heart.fill" : "heart")
+                    Label(favorite ? String(localized: "Unfavorite") : String(localized: "Favorite"), systemImage: favorite ? "heart.fill" : "heart")
                         .foregroundStyle(favorite ? Color.imago : Color.primary)
                 }
-                .help(favorite ? "Unfavorite on the iPhone" : "Favorite on the iPhone")
+                .help(favorite ? String(localized: "Unfavorite on the iPhone") : String(localized: "Favorite on the iPhone"))
             }
             if let title = request.deleteTitle {
                 Button { Task { await host.deleteCurrent() } } label: {

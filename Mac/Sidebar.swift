@@ -353,7 +353,7 @@ struct PhoneRow: View {
 
     private var help: String {
         if server.session(for: device) != nil { return String(localized: "Backing up now") }
-        if server.liveDevices.contains(device.id) { return "Imago is open on \(device.name)" }
+        if server.liveDevices.contains(device.id) { return String(localized: "Imago is open on \(device.name)") }
         if server.summaries[device.id]?.isPartial == true { return String(localized: "The last backup didn't finish") }
         return device.name
     }

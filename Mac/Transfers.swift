@@ -324,7 +324,7 @@ extension MediaLibrary {
             let name = path.isEmpty ? server.location.url.lastPathComponent : (path as NSString).lastPathComponent
             note(moving.isEmpty && outside.isEmpty
                  ? (alreadyThere == 1 ? String(localized: "It's already in “\(name)”") : String(localized: "All \(alreadyThere) are already in “\(name)”"))
-                 : String(localized: "\(alreadyThere) \(alreadyThere == 1 ? "was" : "were") already in “\(name)”"))
+                 : (alreadyThere == 1 ? String(localized: "1 was already in “\(name)”") : String(localized: "\(alreadyThere) were already in “\(name)”")))
         }
         guard !moving.isEmpty || !outside.isEmpty else { return alreadyThere > 0 }
         DragSession.urls = []
@@ -472,7 +472,7 @@ extension MediaLibrary {
         let undo = FileHistory.Step(name: copies.count == 1 ? "Copy" : "Copy \(copies.count) Items") { [weak self] in
             for copy in copies { try? FileManager.default.removeItem(at: copy) }
             self?.hideRemoved(copies, server: server)
-            return FileHistory.Step(name: "Copy") { [weak self] in await self?.copyFiles(files, to: path, server: server, cameFrom: cameFrom).undo }
+            return FileHistory.Step(name: String(localized: "Copy")) { [weak self] in await self?.copyFiles(files, to: path, server: server, cameFrom: cameFrom).undo }
         }
         return (undo, copies.map(\.lexicallyStandardized))
     }

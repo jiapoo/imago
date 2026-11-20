@@ -72,7 +72,7 @@ private struct DestinationCard: View {
                     Label("Change Location…", systemImage: "folder.badge.gearshape")
                 }
                 .buttonStyle(.borderedProminent)
-                .help(server.isBackingUp ? "Not while an iPhone is backing up" : "Choose another folder or drive for the backups")
+                .help(server.isBackingUp ? String(localized: "Not while an iPhone is backing up") : String(localized: "Choose another folder or drive for the backups"))
                 .controlSize(.large)
                 .disabled(server.isBackingUp)
 
@@ -216,7 +216,7 @@ private struct DriveTile: View {
         .buttonStyle(.plain)
         .disabled(!enabled || isCurrent)
         .onHover { hovering = $0 }
-        .help(isCurrent ? "Backups go here now" : "Back up to \(name)")
+        .help(isCurrent ? String(localized: "Backups go here now") : String(localized: "Back up to \(name)"))
     }
 }
 
@@ -229,7 +229,7 @@ private struct RecentlyDeletedCard: View {
     var body: some View {
         @Bindable var server = server
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Recently Deleted", symbol: "trash")
+            SectionHeader(title: String(localized: "Recently Deleted"), symbol: "trash")
             HStack {
                 Text(server.location.displayPath + "/" + server.trashFolder)
                     .font(.callout).foregroundStyle(.secondary)
@@ -279,7 +279,7 @@ private struct FoldersCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title: "Folders", symbol: "folder")
+            SectionHeader(title: String(localized: "Folders"), symbol: "folder")
             if server.devices.isEmpty {
                 Text("Each iPhone you pair gets its own folder here.")
                     .font(.callout).foregroundStyle(.secondary)

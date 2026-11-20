@@ -1186,14 +1186,16 @@ final class MediaLibrary {
             requested.append((device, assets))
         }
         if failed > 0 {
-            error = String(localized: "\(failed) \(failed == 1 ? String(localized: "item doesn't") : String(localized: "items don't")) match the copy that was backed up, so \(failed == 1 ? String(localized: "it stays") : String(localized: "they stay")) on the iPhone. Back up again to replace the copy here.")
+            error = failed == 1
+                ? String(localized: "1 item doesn't match the copy that was backed up, so it stays on the iPhone. Back up again to replace the copy here.")
+                : String(localized: "\(failed) items don't match the copy that was backed up, so they stay on the iPhone. Back up again to replace the copy here.")
         }
         guard !requested.isEmpty else { return nil }
         let count = requested.reduce(0) { $0 + $1.assets.count }
         return FileHistory.Step(name: count == 1 ? "Remove from iPhone" : String(localized: "Remove \(count) Items from iPhone")) { [weak self] in
             for request in requested { server.keep(Set(request.assets.map(\.id)), on: request.device) }
             self?.pendingRemoval.subtract(requested.flatMap { request in request.assets.map { "\(request.device.id)/\($0.id)" } })
-            return FileHistory.Step(name: "Remove from iPhone") { [weak self] in
+            return FileHistory.Step(name: String(localized: "Remove from iPhone")) { [weak self] in
                 await self?.removeFromPhone(items, server: server)
             }
         }
@@ -1259,7 +1261,7 @@ final class MediaLibrary {
     }
 
     private func removeFolderStep(_ path: String, server: BackupServer) -> FileHistory.Step {
-        FileHistory.Step(name: "New Folder") { [weak self] in
+        FileHistory.Step(name: String(localized: "New Folder")) { [weak self] in
             guard let self, await self.deleteFolder(path, server: server) != nil else { return nil }
             let parent = (path as NSString).deletingLastPathComponent
             return await self.createFolder((path as NSString).lastPathComponent, in: parent, server: server)?.undo
@@ -1390,10 +1392,10 @@ final class MediaLibrary {
             return nil
         }
         folders = Self.tree(Self.paths(of: folders).filter { $0 != path && !$0.hasPrefix(path + "/") }, items: items)
-        return FileHistory.Step(name: "Delete Folder") { [weak self] in
+        return FileHistory.Step(name: String(localized: "Delete Folder")) { [weak self] in
             let parent = (path as NSString).deletingLastPathComponent
             guard let made = await self?.createFolder((path as NSString).lastPathComponent, in: parent, server: server) else { return nil }
-            return FileHistory.Step(name: "Delete Folder") { [weak self] in await self?.deleteFolder(made.path, server: server) }
+            return FileHistory.Step(name: String(localized: "Delete Folder")) { [weak self] in await self?.deleteFolder(made.path, server: server) }
         }
     }
 

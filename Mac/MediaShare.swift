@@ -36,7 +36,7 @@ struct ShareButton: View {
             Label("Share", systemImage: "square.and.arrow.up")
         }
         .disabled(urls.isEmpty)
-        .help(urls.count > 1 ? "Share these \(urls.count) with AirDrop, Messages, WeChat or another app" : "Share with AirDrop, Messages, WeChat or another app")
+        .help(urls.count > 1 ? String(localized: "Share these \(urls.count) with AirDrop, Messages, WeChat or another app") : String(localized: "Share with AirDrop, Messages, WeChat or another app"))
     }
 }
 

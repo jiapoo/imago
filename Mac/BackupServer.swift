@@ -419,7 +419,7 @@ final class BackupServer {
                     // Over the live link the list comes after each change on the iPhone, and the
                     // changes went when it connected: no need to say so again.
                     if !pending.isEmpty, !isLive {
-                        addLog(String(localized: "Sent \(pending.count) \(pending.count == 1 ? "change" : "changes") to \(device.name) to review"), symbol: "iphone.and.arrow.forward")
+                        addLog(pending.count == 1 ? String(localized: "Sent 1 change to \(device.name) to review") : String(localized: "Sent \(pending.count) changes to \(device.name) to review"), symbol: "iphone.and.arrow.forward")
                     }
                     libraryChanged(device.id)
                     // A backup has the library read again when it ends.
@@ -747,7 +747,7 @@ final class BackupServer {
         }
         let assets = await store.restoreAssets(change.assetIDs)
         let found = Set(assets.map(\.asset.metadata.assetID))
-        addLog(String(localized: "Sending \(assets.count) \(assets.count == 1 ? "item" : "items") back to \(device.name)"), symbol: "arrow.uturn.backward.circle")
+        addLog(assets.count == 1 ? String(localized: "Sending 1 item back to \(device.name)") : String(localized: "Sending \(assets.count) items back to \(device.name)"), symbol: "arrow.uturn.backward.circle")
         for (asset, urls) in assets {
             try await peer.send(.control(.restoreAsset(asset)))
             for (file, url) in zip(asset.files, urls) {
@@ -1157,7 +1157,7 @@ extension BackupServer {
                           subtitle: String(localized: "Pair an iPhone and its photos back up to this Mac over Wi-Fi."))
         }
         if !location.isAvailable {
-            return Health(symbol: "externaldrive.fill.badge.xmark", tint: .orange, title: "Backup drive not connected",
+            return Health(symbol: "externaldrive.fill.badge.xmark", tint: .orange, title: String(localized: "Backup drive not connected"),
                           subtitle: String(localized: "Connect “\(location.volumeName)” and backups pick up where they left off."))
         }
         if isBackingUp {

@@ -249,7 +249,7 @@ private final class RestoreReceiver {
         }
         incoming = []
         discard()
-        let detail = failed > 0 ? String(localized: "\(failed) \(failed == 1 ? String(localized: "item couldn't") : String(localized: "items couldn't")) be put back.") : nil
+        let detail = failed > 0 ? (failed == 1 ? String(localized: "1 item couldn't be put back.") : String(localized: "\(failed) items couldn't be put back.")) : nil
         return ChangeReport(changeID: changeID, outcome: restored.isEmpty ? .failed : .applied, assetCount: restored.count,
                             detail: detail, restored: restored)
     }

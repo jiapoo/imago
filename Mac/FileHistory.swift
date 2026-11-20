@@ -38,8 +38,8 @@ final class FileHistory {
 
     var canUndo: Bool { !undoStack.isEmpty && !isBusy }
     var canRedo: Bool { !redoStack.isEmpty && !isBusy }
-    var undoTitle: String { undoStack.last.map { String(localized: "Undo \($0.name)") } ?? "Undo" }
-    var redoTitle: String { redoStack.last.map { String(localized: "Redo \($0.name)") } ?? "Redo" }
+    var undoTitle: String { undoStack.last.map { String(localized: "Undo \($0.name)") } ?? String(localized: "Undo") }
+    var redoTitle: String { redoStack.last.map { String(localized: "Redo \($0.name)") } ?? String(localized: "Redo") }
 
     /// Records an action that just happened. A new action ends what could be redone.
     func record(_ step: Step?) {

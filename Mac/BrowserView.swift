@@ -290,7 +290,7 @@ struct BrowserView: View {
             // Beside an iPhone's backups, not on it yet: an edited copy, or a file sent to it.
             guard library.waitingFor(item) != nil else { return nil }
             if item.deviceID != nil { return String(localized: "Sending") }
-            return item.name.contains("(Edited)") ? String(localized: "Edited") : "Not synced"
+            return item.name.contains("(Edited)") ? String(localized: "Edited") : String(localized: "Not synced")
         }
     }
 
@@ -394,14 +394,14 @@ struct BrowserView: View {
                     Text(removable.count == 1 ? "1 item here is also still on your \(phones)" : "\(removable.count.formatted()) items here are also still on your \(phones)")
                         .font(.headline)
                     Text(removable.count == 1
-                         ? "Removing it from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backup on this drive stays."
-                         : "Removing them from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backups on this drive stay.")
+                         ? String(localized: "Removing it from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backup on this drive stays.")
+                         : String(localized: "Removing them from the \(phones) frees \(removable.reduce(0) { $0 + $1.bytes }.bytes) there. The backups on this drive stay."))
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(removable.count == 1 ? "Show It" : "Show Them") { show(removable) }
                     .controlSize(.large)
-                    .help("Select \(removable.count == 1 ? "it" : "them") in the grid")
+                    .help(removable.count == 1 ? String(localized: "Select it in the grid") : String(localized: "Select them in the grid"))
                 Button("Remove from \(phones)…") { removing = removable }
                     .controlSize(.large)
                     .help("Ask to delete them from the iPhone. You confirm on the iPhone; the backups here stay.")
@@ -411,7 +411,7 @@ struct BrowserView: View {
             .padding(.top, 14)
         } else if pending > 0 {
             Label(pending == 1 ? "1 item here will be removed from your iPhone once you confirm it there."
-                               : "\(pending.formatted()) items here will be removed from your iPhone once you confirm it there.",
+                               : String(localized: "\(pending.formatted()) items here will be removed from your iPhone once you confirm it there."),
                   systemImage: "clock")
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -423,8 +423,8 @@ struct BrowserView: View {
     /// Recently Deleted: how long items stay.
     private var trashBanner: some View {
         Label(server.trashDays > 0
-              ? "Items are deleted for good \(server.trashDays) days after they're deleted. Put Back returns them where they were."
-              : "Items stay until you empty Recently Deleted. Put Back returns them where they were.",
+              ? String(localized: "Items are deleted for good \(server.trashDays) days after they're deleted. Put Back returns them where they were.")
+              : String(localized: "Items stay until you empty Recently Deleted. Put Back returns them where they were."),
               systemImage: "trash")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -435,8 +435,8 @@ struct BrowserView: View {
     /// Deleted on iPhone: what these are, and what to do with them.
     private var deletedOnPhoneBanner: some View {
         Label(server.trashDays > 0
-              ? "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each)."
-              : "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide.",
+              ? String(localized: "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). Undecided, each moves to Recently Deleted \(server.trashDays) days after it left the iPhone (the days on each).")
+              : String(localized: "Backed up on this Mac, but deleted on the iPhone since. Delete them from this Mac too, keep the backups on this Mac, or put them back on the iPhone (right-click, or Decide for All). They stay until you decide."),
               systemImage: "iphone.slash")
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -534,7 +534,7 @@ struct BrowserView: View {
                 guard !selected.isEmpty else { return }
                 if isTrash { deletingNow = selected.compactMap(library.trashed) } else { trash(selected) }
             },
-            deleteTitle: isTrash ? "Delete Now…" : deletesOnPhone ? "Delete" : "Move to Recently Deleted",
+            deleteTitle: isTrash ? String(localized: "Delete Now…") : deletesOnPhone ? String(localized: "Delete") : String(localized: "Move to Recently Deleted"),
             copy: { selected.map(\.url) },
             paste: pasteTarget.map { path in { urls in
                 _ = library.drop(urls, onto: .folder(path), mode: Clipboard.shared.pasteMode(for: urls), server: server, history: history)
@@ -589,11 +589,12 @@ struct BrowserView: View {
         var info = driveOnly.count == 1 ? String(localized: "It's only on this drive.") : String(localized: "They're only on this drive.")
         if total > driveOnly.count {
             let onPhones = total - driveOnly.count
-            info += String(localized: " The other \(onPhones == 1 ? String(localized: "one is") : "\(onPhones.formatted()) are") on an iPhone: deleted there once the iPhone agrees, and here then.")
+            info += onPhones == 1 ? String(localized: " The other one is on an iPhone: deleted there once the iPhone agrees, and here then.")
+                : String(localized: " The other \(onPhones.formatted()) are on an iPhone: deleted there once the iPhone agrees, and here then.")
         }
-        alert.informativeText = info + String(localized: " You can put \(driveOnly.count == 1 ? "it" : "them") back from Recently Deleted.")
-        alert.addButton(withTitle: "Move to Recently Deleted")
-        alert.addButton(withTitle: "Cancel")
+        alert.informativeText = info + (driveOnly.count == 1 ? String(localized: " You can put it back from Recently Deleted.") : String(localized: " You can put them back from Recently Deleted."))
+        alert.addButton(withTitle: String(localized: "Move to Recently Deleted"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         return await alert.askOnWindow()
     }
 
@@ -739,7 +740,7 @@ extension BrowserView {
                             .rotationEffect(.degrees(showSubfolderCards ? 90 : 0))
                         Text("Folders").font(.headline)
                         Text(inside.count.formatted()).font(.callout).foregroundStyle(.secondary)
-                        Text(showSubfolderCards ? "Hide" : "Show")
+                        Text(showSubfolderCards ? String(localized: "Hide") : String(localized: "Show"))
                             .font(.callout.weight(.medium))
                             .foregroundStyle(.tint)
                             .padding(.leading, 4)
@@ -747,7 +748,7 @@ extension BrowserView {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(showSubfolderCards ? "Hide the folders inside “\(parts.last ?? path)”" : "Show the folders inside “\(parts.last ?? path)”")
+                .help(showSubfolderCards ? String(localized: "Hide the folders inside “\(parts.last ?? path)”") : String(localized: "Show the folders inside “\(parts.last ?? path)”"))
                 if showSubfolderCards {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
                         ForEach(inside) { folder in
@@ -759,9 +760,9 @@ extension BrowserView {
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                Text(includeSubfolders ? "In “\(parts.last ?? path)” and its folders" : "In “\(parts.last ?? path)”")
+                Text(includeSubfolders ? String(localized: "In “\(parts.last ?? path)” and its folders") : String(localized: "In “\(parts.last ?? path)”"))
                     .font(.headline)
-                    + Text(includeSubfolders ? "" : count == 0 ? "  Nothing directly in it" : "  \(count.formatted()) \(count == 1 ? "item" : "items")")
+                    + Text(includeSubfolders ? "" : count == 0 ? String(localized: "  Nothing directly in it") : count == 1 ? String(localized: "  1 item") : String(localized: "  \(count.formatted()) items"))
                     .font(.callout).foregroundColor(.secondary)
             }
         }
@@ -814,7 +815,7 @@ extension BrowserView {
                     }
                     .toggleStyle(.button)
                     .labelStyle(.titleAndIcon)
-                    .help(includeSubfolders ? "Showing what's in the subfolders too" : "Show what's in the subfolders too")
+                    .help(includeSubfolders ? String(localized: "Showing what's in the subfolders too") : String(localized: "Show what's in the subfolders too"))
                 }
                 if case .folder(let path) = scope {
                     Button { server.revealInFinder(server.foldersURL.appending(path: path)) } label: {
@@ -864,7 +865,7 @@ extension BrowserView {
                 EmptyView() // The subfolders' cards are there, and the header says nothing is directly in it.
             case .folder(let path) where source != .drive && !library.items(in: scope).isEmpty:
                 ContentUnavailableView(
-                    "Nothing here is on \(sourceName)", systemImage: "iphone.slash",
+                    String(localized: "Nothing here is on \(sourceName)"), systemImage: "iphone.slash",
                     description: Text("“\((path as NSString).lastPathComponent)” has \(library.items(in: scope).count.formatted()) items on the drive. Show Everything in the Folder to see them.")
                 )
             case .folder(let path):
@@ -874,7 +875,7 @@ extension BrowserView {
                 )
             case .trash where source != .drive && !library.trash.isEmpty:
                 ContentUnavailableView(
-                    "Nothing here is on \(sourceName)", systemImage: "iphone.slash",
+                    String(localized: "Nothing here is on \(sourceName)"), systemImage: "iphone.slash",
                     description: Text("Recently Deleted has \(library.trash.count.formatted()) items. Show Everything in Recently Deleted to see them.")
                 )
             case .trash:
@@ -993,17 +994,17 @@ extension BrowserView {
             },
             info: { index in
                 let item = items[index]
-                var rows = [MediaViewerHost.InfoRow(label: "Name", value: item.name)]
+                var rows = [MediaViewerHost.InfoRow(label: String(localized: "Name"), value: item.name)]
                 if let date = item.date { rows.append(.init(label: String(localized: "Taken"), value: date.formatted(date: .complete, time: .standard))) }
                 if item.isVideo, item.duration > 0 {
                     rows.append(.init(label: String(localized: "Length"), value: Duration.seconds(item.duration).formatted(.time(pattern: .minuteSecond))))
                 }
-                rows.append(.init(label: "Size", value: item.bytes.bytes))
+                rows.append(.init(label: String(localized: "Size"), value: item.bytes.bytes))
                 if item.isPreview {
                     rows.append(.init(label: String(localized: "Source"), value: String(localized: "Only on \(item.deviceID.flatMap { devices[$0] } ?? String(localized: "the device")), not backed up yet")))
                     return rows
                 }
-                if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: "Folder", value: folder)) }
+                if let folder = item.folder, !folder.isEmpty { rows.append(.init(label: String(localized: "Folder"), value: folder)) }
                 let copies = (library.inFolders[item.id] ?? []).filter { $0.folder != item.folder }
                 if !copies.isEmpty {
                     rows.append(.init(label: copies.count == 1 ? String(localized: "Also in") : String(localized: "Also in Folders"), value: copies.map { FolderMark.name($0.folder) }.joined(separator: "\n")))
@@ -1033,7 +1034,7 @@ extension BrowserView {
             },
             // A preview is too small to edit, and there's no file to edit.
             canEdit: { !items[$0].isPreview },
-            deleteTitle: isTrash ? nil : deletesOnPhone ? String(localized: "Delete (from the iPhone, and its backup here once the iPhone agrees)") : "Move to Recently Deleted",
+            deleteTitle: isTrash ? nil : deletesOnPhone ? String(localized: "Delete (from the iPhone, and its backup here once the iPhone agrees)") : String(localized: "Move to Recently Deleted"),
             delete: isTrash ? nil : { [library, server, history, deletesOnPhone] index in
                 // Nothing on the drive to delete; Imago never deletes from a device what isn't backed up.
                 guard !items[index].isPreview else { return false }
@@ -1324,7 +1325,7 @@ struct SourceBadge: View {
                 let name = server.devices.first { $0.id == id }?.name ?? String(localized: "an iPhone")
                 initial = name.first.map { String($0).uppercased() } ?? "?"
                 color = server.color(of: id)
-                help = cameFrom ? String(localized: "From \(name)") : waiting ? String(localized: "On \(name) · waiting to be deleted there") : "On \(name)"
+                help = cameFrom ? String(localized: "From \(name)") : waiting ? String(localized: "On \(name) · waiting to be deleted there") : String(localized: "On \(name)")
                 self.waiting = waiting
                 self.cameFrom = cameFrom
             case .drive:
@@ -1406,12 +1407,15 @@ struct SourceBadge: View {
             }
             return rank(a) < rank(b)
         }
-        let on = cameFrom ? "from" : "on", drive = cameFrom ? String(localized: "from elsewhere") : String(localized: "only on the drive")
         if order.count == 1 {
-            return order[0] == .drive ? (cameFrom ? String(localized: "Not from an iPhone") : String(localized: "Only on the drive")) : "\(on.capitalized) \(name(order[0]))"
+            let only = order[0]
+            if only == .drive { return cameFrom ? String(localized: "Not from an iPhone") : String(localized: "Only on the drive") }
+            return cameFrom ? String(localized: "From \(name(only))") : String(localized: "On \(name(only))")
         }
         return order.map { origin in
-            origin == .drive ? "\(counts[origin]!) \(drive)" : "\(counts[origin]!) \(on) \(name(origin))"
+            let n = counts[origin]!
+            if origin == .drive { return cameFrom ? String(localized: "\(n) from elsewhere") : String(localized: "\(n) only on the drive") }
+            return cameFrom ? String(localized: "\(n) from \(name(origin))") : String(localized: "\(n) on \(name(origin))")
         }.joined(separator: ", ")
     }
 }
@@ -1458,8 +1462,8 @@ private struct SelectionBar: View {
             .menuStyle(.button)
             .fixedSize()
             .help(transferMode == TransferMode.move.rawValue
-                  ? "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)"
-                  : "Copy into a folder (Copy | Move in the toolbar)")
+                  ? String(localized: "Move into a folder; ones still on an iPhone are removed there (Copy | Move in the toolbar)")
+                  : String(localized: "Copy into a folder (Copy | Move in the toolbar)"))
 
             if !sendable.isEmpty {
                 Menu {
@@ -1555,10 +1559,10 @@ private struct FolderNameAlert: ViewModifier {
         content
             .alert(title, isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
                 TextField("Name", text: $name)
-                Button(isRename ? "Rename" : "Create") { commit() }
+                Button(isRename ? String(localized: "Rename") : String(localized: "Create")) { commit() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text(isRename ? "Its photos and videos stay in it." : "A folder on your backup drive, next to your iPhones' folders.")
+                Text(isRename ? String(localized: "Its photos and videos stay in it.") : String(localized: "A folder on your backup drive, next to your iPhones' folders."))
             }
             .onChange(of: naming?.id) {
                 if case .rename(let old) = naming { name = (old as NSString).lastPathComponent } else { name = "" }
@@ -1570,7 +1574,7 @@ private struct FolderNameAlert: ViewModifier {
         return false
     }
 
-    private var title: String { isRename ? String(localized: "Rename Folder") : "New Folder" }
+    private var title: String { isRename ? String(localized: "Rename Folder") : String(localized: "New Folder") }
 
     private func commit() {
         let request = naming

@@ -156,12 +156,12 @@ struct MainView: View {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
                     .disabled(!history.canUndo)
-                    .help(history.canUndo ? "\(history.undoTitle) (⌘Z)" : "Nothing to undo")
+                    .help(history.canUndo ? "\(history.undoTitle) (⌘Z)" : String(localized: "Nothing to undo"))
                     Button { Task { await history.redo() } } label: {
                         Label("Redo", systemImage: "arrow.uturn.forward")
                     }
                     .disabled(!history.canRedo)
-                    .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : "Nothing to redo")
+                    .help(history.canRedo ? "\(history.redoTitle) (⇧⌘Z)" : String(localized: "Nothing to redo"))
                 }
                 }
                 if !viewer.isOpen {
@@ -340,8 +340,9 @@ struct MainView: View {
 
     private var duplicateMessage: String {
         guard let question = library.duplicateQuestion else { return "" }
-        let verb = question.isMove ? "moving" : "copying"
-        return String(localized: "They're exactly the same as files already there. Skip them and go on \(verb) the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted.")
+        return question.isMove
+            ? String(localized: "They're exactly the same as files already there. Skip them and go on moving the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted.")
+            : String(localized: "They're exactly the same as files already there. Skip them and go on copying the rest; keep both, and the new ones get a numbered name; or replace, and the ones already there go to Recently Deleted.")
     }
 
     /// Copy | Move: what putting photos into a folder does. Move asks first.
@@ -358,8 +359,8 @@ struct MainView: View {
         .pickerStyle(.segmented)
         .fixedSize()
         .help(transferMode == TransferMode.move.rawValue
-              ? "Move: photos put into a folder leave the iPhone's backup and are deleted from the iPhone"
-              : "Copy: photos put into a folder are copied there; the iPhone keeps them")
+              ? String(localized: "Move: photos put into a folder leave the iPhone's backup and are deleted from the iPhone")
+              : String(localized: "Copy: photos put into a folder are copied there; the iPhone keeps them"))
     }
 }
 
@@ -673,8 +674,8 @@ private struct ChangesSettings: View {
             .pickerStyle(.radioGroup)
             .help("When an iPhone deletes photos, ask you first or delete their backups here too")
             Text(server.acceptPhoneChanges
-                 ? "Their backups on this Mac go straight to Recently Deleted, where you can put them back for \(server.trashDays > 0 ? "\(server.trashDays) days" : String(localized: "as long as you like"))."
-                 : "Their backups stay on this Mac, and the bell asks whether to delete them here too, keep them, or put them back on the iPhone.")
+                 ? String(localized: "Their backups on this Mac go straight to Recently Deleted, where you can put them back for \(server.trashDays > 0 ? "\(server.trashDays) days" : String(localized: "as long as you like")).")
+                 : String(localized: "Their backups stay on this Mac, and the bell asks whether to delete them here too, keep them, or put them back on the iPhone."))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Each iPhone has its own setting for changes made on this Mac, in Imago on the iPhone.")

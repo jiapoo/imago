@@ -148,8 +148,8 @@ struct QueueView: View {
                 Text("Waiting for \(device.name)")
             } footer: {
                 Text(server.liveDevices.contains(device.id)
-                     ? "Imago is open on \(device.name), so these have reached it. Each is done once you approve it there, or right away if it's set to apply changes from this Mac."
-                     : "These go to \(device.name) when you open Imago on it, or at its next backup. Nothing changes there until you approve it.")
+                     ? String(localized: "Imago is open on \(device.name), so these have reached it. Each is done once you approve it there, or right away if it's set to apply changes from this Mac.")
+                     : String(localized: "These go to \(device.name) when you open Imago on it, or at its next backup. Nothing changes there until you approve it."))
             }
 
             if !model.queue.done.isEmpty {
@@ -257,7 +257,9 @@ struct DecisionsCard: View {
                 ? (decline.change.assetIDs.count == 1 ? String(localized: "\(phone) kept 1 item you deleted") : String(localized: "\(phone) kept \(decline.change.assetIDs.count.formatted()) items you deleted"))
                 : String(localized: "\(phone) said no: \(decline.change.summary.lowercasedFirst)"),
             detail: isDelete
-                ? String(localized: "You deleted \(decline.change.assetIDs.count == 1 ? "it" : "them") on this Mac, but \(phone) said no, so nothing was deleted: \(decline.change.assetIDs.count == 1 ? "it's" : "they're") still on \(phone) and here. Keep \(decline.change.assetIDs.count == 1 ? "it" : "them"), delete \(decline.change.assetIDs.count == 1 ? String(localized: "the backup") : String(localized: "the backups")) from this Mac only, or ask \(phone) again.")
+                ? (decline.change.assetIDs.count == 1
+                    ? String(localized: "You deleted it on this Mac, but \(phone) said no, so nothing was deleted: it's still on \(phone) and here. Keep it, delete the backup from this Mac only, or ask \(phone) again.")
+                    : String(localized: "You deleted them on this Mac, but \(phone) said no, so nothing was deleted: they're still on \(phone) and here. Keep them, delete the backups from this Mac only, or ask \(phone) again."))
                 : String(localized: "Ask \(phone) once more, or leave it as it is.")
                     + (decline.change.isAskedAgain ? String(localized: " This was the second time it was asked.") : "")
         ) {
