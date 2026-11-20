@@ -288,7 +288,7 @@ private struct MediaViewerOverlay: ViewModifier {
         if host.editing, request.urls.indices.contains(host.index) {
             // The editor takes the viewer's place, as in Photos; it saves a new file only.
             // Its Cancel, Reset and Save as Copy in the window's toolbar: one row at the top.
-            MediaEditView(url: request.urls[host.index], accent: .imago, buttons: .toolbar,
+            MediaEditView(url: request.urls[host.index], accent: .imago, strings: .imago, buttons: .toolbar,
                           onCancel: { host.editing = false },
                           onSave: { await host.saveEdit($0) })
                 .id(request.urls[host.index])
@@ -588,5 +588,19 @@ extension NSAlert {
         return await withCheckedContinuation { answer in
             beginSheetModal(for: window) { answer.resume(returning: $0 == .alertFirstButtonReturn) }
         }
+    }
+}
+
+extension MediaEditStrings {
+    /// The editor's words in the app's language (AreteMedia's own are English).
+    static var imago: MediaEditStrings {
+        MediaEditStrings(
+            cancel: String(localized: "Cancel"), done: String(localized: "Done"), reset: String(localized: "Reset"),
+            freeform: String(localized: "Freeform"), original: String(localized: "Original"),
+            square: String(localized: "Square"), wallpaper: String(localized: "Wallpaper"),
+            rotate: String(localized: "Rotate"), flipHorizontal: String(localized: "Flip Horizontal"),
+            flipVertical: String(localized: "Flip Vertical"), saveCopy: String(localized: "Save as Copy"),
+            saving: String(localized: "Saving…")
+        )
     }
 }
