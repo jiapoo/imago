@@ -1090,10 +1090,16 @@ final class MediaLibrary {
             for move in wanted where move.item.deviceID == nil {
                 if stop.isSet { break }
                 guard let target = directory(move.to) else { continue }
-                try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
-                let destination = Self.unusedURL(target.appending(path: move.item.url.lastPathComponent))
                 activity?.detail = move.item.name
-                try FileManager.default.moveItem(at: move.item.url, to: destination)
+                // Off the main thread: with a backup writing to the same drive, each step can wait seconds,
+                // and the window froze for as long.
+                let source = move.item.url
+                let destination = try await Task.detached(priority: .userInitiated) {
+                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                    let destination = Self.unusedURL(target.appending(path: source.lastPathComponent))
+                    try FileManager.default.moveItem(at: source, to: destination)
+                    return destination
+                }.value
                 activity?.done += 1
                 done.append((.file(destination.lexicallyStandardized), move.from))
                 moved.append((move.item, .file(destination.lexicallyStandardized)))
@@ -1144,8 +1150,11 @@ final class MediaLibrary {
                 // Cancel: nothing more is checked, and the iPhone isn't asked about these.
                 if stop.isSet { break }
                 activity?.detail = assetFiles.first?.url.lastPathComponent
-                // A big video takes a while to read: the ring follows its bytes.
-                let size = assetFiles.reduce(UInt64(0)) { $0 + ((try? $1.url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0) }
+                // A big video takes a while to read: the ring follows its bytes. Read off the main thread.
+                let urls = assetFiles.map(\.url)
+                let size = await Task.detached(priority: .userInitiated) {
+                    urls.reduce(UInt64(0)) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0) }
+                }.value
                 activity?.bytes = size > 64 << 20 ? (0, size) : nil
                 let matches = await Task.detached(priority: .userInitiated) { [weak self] in
                     var before: UInt64 = 0
@@ -1734,6 +1743,12 @@ final class MediaLibrary {
         let files = items.filter { $0.deviceID == nil && $0.folder != nil }
         let cacheURL = server.location.url.appending(path: ".photobackup/folder-hashes.json")
         folderCopySearch = Task { [weak self] in
+            // Not while an iPhone is backing up: it can read gigabytes from the drive the backup is
+            // writing to, and the two together left the Mac barely responding.
+            while server.isBackingUp {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { return }
+            }
             let found = await Task.detached(priority: .utility) {
                 FolderCopies.find(phone: phone, files: files, cacheURL: cacheURL)
             }.value
@@ -2012,7 +2027,7 @@ final class MediaLibrary {
         return trimmed.isEmpty || trimmed.hasPrefix(".") ? nil : trimmed
     }
 
-    private static func unusedURL(_ url: URL) -> URL {
+    nonisolated private static func unusedURL(_ url: URL) -> URL {
         var candidate = url
         var n = 2
         while FileManager.default.fileExists(atPath: candidate.path) {
@@ -2117,6 +2132,10 @@ enum FolderCopies {
         }
         var cache = (try? Data(contentsOf: cacheURL)).flatMap { try? JSONDecoder().decode([String: Known].self, from: $0) } ?? [:]
         var changed = false
+        // A file that only moved keeps its size and date: its fingerprint goes with it, rather than the
+        // whole video being read again (a move of fifty videos read them all).
+        var bySizeAndDate: [String: Known] = [:]
+        for known in cache.values { bySizeAndDate["\(known.size)|\(known.modified.timeIntervalSinceReferenceDate)"] = known }
         for file in files {
             guard let folder = file.folder, sizes.contains(file.bytes) else { continue }
             if Task.isCancelled { break }
@@ -2124,6 +2143,10 @@ enum FolderCopies {
             let sha: String
             if let known = cache[file.url.path], known.size == file.bytes, known.modified == modified {
                 sha = known.sha256
+            } else if let moved = bySizeAndDate["\(file.bytes)|\(modified.timeIntervalSinceReferenceDate)"] {
+                sha = moved.sha256
+                cache[file.url.path] = moved
+                changed = true
             } else {
                 guard let read = try? FileHasher.sha256(of: file.url) else { continue }
                 sha = read

@@ -213,18 +213,23 @@ extension MediaLibrary {
     /// size, then the same content), each with the file there it matches.
     func identicalFiles(_ files: [URL], inFolder path: String, server: BackupServer) async -> [URL: URL] {
         let folder = path.isEmpty ? server.foldersURL : server.foldersURL.appending(path: path, directoryHint: .isDirectory)
-        let present: [(url: URL, size: Int)] = ((try? FileManager.default.contentsOfDirectory(
-            at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey], options: [.skipsHiddenFiles]
-        )) ?? []).compactMap { url in
-            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true,
-                  let size = values.fileSize else { return nil }
-            return (url, size)
-        }
-        let bySize = Dictionary(grouping: present, by: \.size)
-        let candidates = files.filter { file in
-            guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
-            return bySize[size] != nil && file.deletingLastPathComponent().lexicallyStandardized != folder.lexicallyStandardized
-        }
+        // Listing the folder and reading sizes: off the main thread. A folder of a thousand videos on a
+        // drive busy with a backup took long enough to freeze the window.
+        let (bySize, candidates) = await Task.detached(priority: .userInitiated) { () -> ([Int: [(url: URL, size: Int)]], [URL]) in
+            let present: [(url: URL, size: Int)] = ((try? FileManager.default.contentsOfDirectory(
+                at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey], options: [.skipsHiddenFiles]
+            )) ?? []).compactMap { url in
+                guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true,
+                      let size = values.fileSize else { return nil }
+                return (url, size)
+            }
+            let bySize = Dictionary(grouping: present, by: \.size)
+            let candidates = files.filter { file in
+                guard let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+                return bySize[size] != nil && file.deletingLastPathComponent().lexicallyStandardized != folder.lexicallyStandardized
+            }
+            return (bySize, candidates)
+        }.value
         guard !candidates.isEmpty else { return [:] }
         activity = Activity(title: "Checking for duplicates", done: 0, total: candidates.count, canCancel: true)
         defer { activity = nil }
@@ -234,10 +239,10 @@ extension MediaLibrary {
             // Cancel: the copy or move doesn't go ahead (see `transfer`).
             if stopFlag.isSet { break }
             activity?.detail = file.lastPathComponent
-            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
-            let others = bySize[size]?.map(\.url) ?? []
             let same = await Task.detached(priority: .userInitiated) { () -> URL? in
-                guard let mine = try? FileHasher.sha256(of: file) else { return nil }
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? -1
+                let others = bySize[size]?.map(\.url) ?? []
+                guard !others.isEmpty, let mine = try? FileHasher.sha256(of: file) else { return nil }
                 return others.first { (try? FileHasher.sha256(of: $0)) == mine }
             }.value
             if let same { identical[file] = same }
