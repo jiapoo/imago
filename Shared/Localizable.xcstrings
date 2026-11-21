@@ -17821,6 +17821,64 @@
         }
       }
     },
+    "Delete from iPad" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom iPad löschen"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar del iPad"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer de l’iPad"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina dall’iPad"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPadから削除"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPad에서 삭제"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apagar do iPad"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 iPad 删除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 iPad 刪除"
+          }
+        }
+      }
+    },
     "Delete from iPhone" : {
       "localizations" : {
         "de" : {
@@ -17879,6 +17937,64 @@
         }
       }
     },
+    "Delete from iPad (and the backup on this Mac once the iPad agrees)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom iPad löschen (und das Backup auf diesem Mac, sobald das iPad zustimmt)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar del iPad (y la copia de este Mac cuando el iPad lo acepte)"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer de l’iPad (et la sauvegarde sur ce Mac une fois que l’iPad accepte)"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina dall’iPad (e il backup su questo Mac quando l’iPad accetta)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPadから削除（iPadが承認したらこのMacのバックアップも）"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPad에서 삭제(iPad가 승인하면 이 Mac의 백업도)"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apagar do iPad (e o backup deste Mac quando o iPad aceitar)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 iPad 删除（iPad 同意后也删除这台 Mac 上的备份）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 iPad 刪除（iPad 同意後也刪除這部 Mac 上的備份）"
+          }
+        }
+      }
+    },
     "Delete from iPhone (and the backup on this Mac once the iPhone agrees)" : {
       "localizations" : {
         "de" : {
@@ -17933,6 +18049,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從 iPhone 刪除（iPhone 同意後也刪除這部 Mac 上的備份）"
+          }
+        }
+      }
+    },
+    "Delete from iPad…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vom iPad löschen …"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar del iPad…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer de l’iPad…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina dall’iPad…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPadから削除…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPad에서 삭제…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apagar do iPad…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从 iPad 删除…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 iPad 刪除⋯"
           }
         }
       }
@@ -23745,60 +23919,60 @@
         }
       }
     },
-    "Imago is unlocked for your family. Thank you!" : {
+    "Imago is unlocked for your family. Thank you! Everyone in your Family Sharing group just installs Imago on their own iPhone or iPad, and it's unlocked for them too." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago ist für deine Familie freigeschaltet. Danke!"
+            "value" : "Imago ist für deine Familie freigeschaltet. Danke! Alle in deiner Familienfreigabe installieren Imago einfach auf ihrem eigenen iPhone oder iPad – dort ist es ebenfalls freigeschaltet."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago está desbloqueado para tu familia. ¡Gracias!"
+            "value" : "Imago está desbloqueado para tu familia. ¡Gracias! Cada miembro de tu grupo En familia solo tiene que instalar Imago en su propio iPhone o iPad, y también estará desbloqueado para él."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago est déverrouillé pour votre famille. Merci !"
+            "value" : "Imago est déverrouillé pour votre famille. Merci ! Chaque membre de votre groupe de Partage familial installe simplement Imago sur son propre iPhone ou iPad, et il est aussi déverrouillé pour lui."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago è sbloccato per la tua famiglia. Grazie!"
+            "value" : "Imago è sbloccato per la tua famiglia. Grazie! Ogni membro del tuo gruppo In famiglia deve solo installare Imago sul proprio iPhone o iPad, e sarà sbloccato anche per lui."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imagoはご家族向けにロック解除されています。ありがとうございます！"
+            "value" : "Imagoはご家族向けにロック解除されています。ありがとうございます！ファミリー共有グループのメンバーは、自分のiPhoneやiPadにImagoをインストールするだけで、ロック解除された状態で使えます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "가족 모두 Imago 잠금이 해제되었습니다. 감사합니다!"
+            "value" : "가족 모두 Imago 잠금이 해제되었습니다. 감사합니다! 가족 공유 그룹의 구성원은 각자의 iPhone이나 iPad에 Imago를 설치하기만 하면 잠금이 해제된 상태로 사용할 수 있습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Imago está desbloqueado para sua família. Obrigado!"
+            "value" : "O Imago está desbloqueado para sua família. Obrigado! Cada pessoa do seu grupo de Compartilhamento Familiar só precisa instalar o Imago no próprio iPhone ou iPad, e ele também estará desbloqueado."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago 已为你的家人解锁。谢谢！"
+            "value" : "Imago 已为你的家人解锁。谢谢！家人共享群组中的每个人只需在自己的 iPhone 或 iPad 上安装 Imago，即可直接解锁使用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Imago 已為你的家人解鎖。謝謝！"
+            "value" : "Imago 已為你的家人解鎖。謝謝！家人共享群組中的每個人只需在自己的 iPhone 或 iPad 上安裝 Imago，即可直接解鎖使用。"
           }
         }
       }
@@ -52699,6 +52873,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的購買僅供你本人使用。升級後，家人共享群組中最多 6 人都能在各自的 iPhone 和 iPad 上使用。"
+          }
+        }
+      }
+    },
+    "With Imago Family, everyone in your Family Sharing group just installs Imago on their own iPhone or iPad. It's unlocked for them automatically." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit Imago Familie installieren alle in deiner Familienfreigabe Imago einfach auf ihrem eigenen iPhone oder iPad. Dort ist es automatisch freigeschaltet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con Imago Familia, cada miembro de tu grupo En familia solo tiene que instalar Imago en su propio iPhone o iPad. Se desbloquea automáticamente."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avec Imago Famille, chaque membre de votre groupe de Partage familial installe simplement Imago sur son propre iPhone ou iPad. Il est déverrouillé automatiquement."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Con Imago Famiglia, ogni membro del tuo gruppo In famiglia deve solo installare Imago sul proprio iPhone o iPad. Si sblocca automaticamente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imago ファミリーなら、ファミリー共有グループのメンバーは自分のiPhoneやiPadにImagoをインストールするだけ。自動的にロック解除されます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imago 패밀리를 사용하면 가족 공유 그룹의 구성원은 각자의 iPhone이나 iPad에 Imago를 설치하기만 하면 됩니다. 잠금은 자동으로 해제됩니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Com o Imago Família, cada pessoa do seu grupo de Compartilhamento Familiar só precisa instalar o Imago no próprio iPhone ou iPad. Ele é desbloqueado automaticamente."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Imago 家庭版，家人共享群组中的每个人只需在自己的 iPhone 或 iPad 上安装 Imago，即可自动解锁。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Imago 家庭版，家人共享群組中的每個人只需在自己的 iPhone 或 iPad 上安裝 Imago，即可自動解鎖。"
           }
         }
       }

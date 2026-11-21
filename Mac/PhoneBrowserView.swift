@@ -633,7 +633,7 @@ struct PhoneGrid: View {
             preview: { openViewer(on: selected.count == 1 ? selected.first : (assets.first { $0.id == selection.anchor && selection.selected.contains($0.id) } ?? selected.first)) },
             open: { selected.compactMap { model.files[$0.id] }.forEach { NSWorkspace.shared.open($0) } },
             delete: { if !isDeleting, !actions.deletable(selected).isEmpty { confirmingDelete = true } },
-            deleteTitle: String(localized: "Delete from iPhone…"),
+            deleteTitle: device.isPad ? String(localized: "Delete from iPad…") : String(localized: "Delete from iPhone…"),
             copy: { selected.compactMap { model.files[$0.id] } },
             extra: [".": { if !selected.isEmpty { actions.toggleFavorite(selected) } }]
         ))
@@ -731,7 +731,7 @@ struct PhoneGrid: View {
             }
             Divider()
             if targets.contains(where: { !$0.isUnsynced }) {
-                Button("Delete from iPhone…", role: .destructive) {
+                Button(device.isPad ? String(localized: "Delete from iPad…") : String(localized: "Delete from iPhone…"), role: .destructive) {
                     selection.selected = Set(targets.filter { !$0.isUnsynced }.map(\.id))
                     confirmingDelete = true
                 }
@@ -818,7 +818,9 @@ struct PhoneGrid: View {
             },
             // Only the backed-up file: a preview is too small to edit.
             canEdit: { model.files[ids[$0]] != nil },
-            deleteTitle: String(localized: "Delete from iPhone (and the backup on this Mac once the iPhone agrees)"),
+            deleteTitle: device.isPad
+                ? String(localized: "Delete from iPad (and the backup on this Mac once the iPad agrees)")
+                : String(localized: "Delete from iPhone (and the backup on this Mac once the iPhone agrees)"),
             delete: { [library, server, history] index in
                 if let file = model.asset(ids[index]), file.isUnsynced {
                     // Not on the iPhone: only the file here goes, to Recently Deleted.
@@ -1220,7 +1222,7 @@ struct PhoneDialogs: ViewModifier {
                 deletable.count == 1 ? String(localized: "Delete 1 item from \(name)?") : String(localized: "Delete \(deletable.count.formatted()) items from \(name)?"),
                 isPresented: $confirmingDelete, titleVisibility: .visible
             ) {
-                Button("Delete from iPhone", role: .destructive) {
+                Button(actions.device.isPad ? String(localized: "Delete from iPad") : String(localized: "Delete from iPhone"), role: .destructive) {
                     actions.delete(deletable)
                     done()
                 }

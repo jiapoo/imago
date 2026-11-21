@@ -433,7 +433,7 @@ struct UnlockSheet: View {
         case .unlocked(family: false):
             String(localized: "Your purchase covers you. Upgrade to cover up to 6 people in your Family Sharing group, each on their own iPhones and iPads.")
         case .unlocked(family: true):
-            String(localized: "Imago is unlocked for your family. Thank you!")
+            String(localized: "Imago is unlocked for your family. Thank you! Everyone in your Family Sharing group just installs Imago on their own iPhone or iPad, and it's unlocked for them too.")
         case .unknown:
             ""
         }
@@ -465,6 +465,13 @@ struct UnlockSheet: View {
                        note: String(localized: "For up to 6 people with Family Sharing"), prominent: true)
             case .unlocked(family: true):
                 EmptyView()
+            }
+            if unlock.access != .unlocked(family: true) {
+                Text("With Imago Family, everyone in your Family Sharing group just installs Imago on their own iPhone or iPad. It's unlocked for them automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
             }
         }
     }
