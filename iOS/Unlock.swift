@@ -354,7 +354,7 @@ struct UnlockSheet: View {
                             Task { await unlock.restore() }
                         }
                         .disabled(unlock.restoring || unlock.buying != nil)
-                        Text("One-time purchase. No subscription. Photos already on your Mac are always yours, unlocked or not.")
+                        Text("One-time purchase. No subscription. Restoring photos is always free, and photos already on your Mac stay yours, unlocked or not.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)

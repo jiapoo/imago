@@ -89,16 +89,26 @@ public struct ChangeReport: Codable, Sendable, Hashable {
 }
 
 extension LibraryChange {
-    /// "Delete 12 items", "Add 3 items to “Trip”"…
+    /// "Delete 12 items", "Add 3 items to “Trip”"…, in the app's language. The keys live in the
+    /// app's string catalog (Shared/Localizable.xcstrings), so they're looked up in Bundle.main.
     public var summary: String {
-        let items = assetIDs.count == 1 ? "1 item" : "\(assetIDs.count.formatted()) items"
+        let n = assetIDs.count
+        let one = n == 1
         switch action {
-        case .delete: return "Delete \(items)"
-        case .addToAlbum(let album): return "Add \(items) to “\(album)”"
-        case .removeFromAlbum(let album): return "Remove \(items) from “\(album)”"
-        case .setFavorite(let on): return on ? "Favorite \(items)" : "Unfavorite \(items)"
-        case .deleteAlbum(let album): return "Delete album “\(album)”"
-        case .restore: return isNew == true ? "Add \(items) from the Mac" : "Put back \(items)"
+        case .delete:
+            return one ? String(localized: "Delete 1 item", bundle: .main) : String(localized: "Delete \(n) items", bundle: .main)
+        case .addToAlbum(let album):
+            return one ? String(localized: "Add 1 item to “\(album)”", bundle: .main) : String(localized: "Add \(n) items to “\(album)”", bundle: .main)
+        case .removeFromAlbum(let album):
+            return one ? String(localized: "Remove 1 item from “\(album)”", bundle: .main) : String(localized: "Remove \(n) items from “\(album)”", bundle: .main)
+        case .setFavorite(let on):
+            if on { return one ? String(localized: "Favorite 1 item", bundle: .main) : String(localized: "Favorite \(n) items", bundle: .main) }
+            return one ? String(localized: "Unfavorite 1 item", bundle: .main) : String(localized: "Unfavorite \(n) items", bundle: .main)
+        case .deleteAlbum(let album):
+            return String(localized: "Delete album “\(album)”", bundle: .main)
+        case .restore:
+            if isNew == true { return one ? String(localized: "Add 1 item from the Mac", bundle: .main) : String(localized: "Add \(n) items from the Mac", bundle: .main) }
+            return one ? String(localized: "Put back 1 item", bundle: .main) : String(localized: "Put back \(n) items", bundle: .main)
         }
     }
 

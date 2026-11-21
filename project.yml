@@ -9,7 +9,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     CODE_SIGN_STYLE: Automatic
     # Text in the code is gathered into Shared/Localizable.xcstrings, translated there.
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -39,9 +39,13 @@ targets:
       path: Mac/Info.plist
       properties:
         CFBundleDisplayName: Imago
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.photography
         NSLocalNetworkUsageDescription: Imago receives photos from your iPhone over your local network.
         NSBonjourServices: [_photobackup._tcp]
+        # Only Apple's standard TLS: exempt from export paperwork.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Mac/ImagoMac.entitlements
       properties:
@@ -70,6 +74,8 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: Imago
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # On iPad every way round, as iPad apps are (and as split view needs).
@@ -80,6 +86,8 @@ targets:
         NSBonjourServices: [_photobackup._tcp]
         UIBackgroundModes: [processing]
         BGTaskSchedulerPermittedIdentifiers: [com.ljworkshop.imago.processing, com.ljworkshop.imago.continued.*]
+        # Only Apple's standard TLS: exempt from export paperwork.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: iOS/ImagoiOS.entitlements
       properties:
